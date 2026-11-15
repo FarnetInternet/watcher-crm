@@ -1,0 +1,87 @@
+<?php
+/**
+ * @var \App\View\AppView $this
+ * @var iterable<\App\Model\Entity\SoldEquipment> $soldEquipments
+ */
+?>
+<?= $this->Form->create(null, ['type' => 'get', 'valueSources' => ['query', 'context']]) ?>
+<div class="row">
+    <div class="column">
+        <?= $this->Form->control('search', [
+            'label' => __('Search'),
+            'type' => 'search',
+            'onchange' => $this::SUBMIT_ON_CHANGE,
+        ]) ?>
+    </div>
+</div>
+<?= $this->Form->end() ?>
+
+<div class="soldEquipments index content">
+    <?= $this->AuthLink->link(
+        __('New Sold Equipment'),
+        ['action' => 'add'],
+        ['class' => 'button float-right win-link'],
+    ) ?>
+    <?= $this->heading(__('Sold Equipments')) ?>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th><?= $this->Paginator->sort('customer_id') ?></th>
+                    <th><?= $this->Paginator->sort('Customers.nid', __('Customer Number')) ?></th>
+                    <th><?= $this->Paginator->sort('contract_id') ?></th>
+                    <th><?= $this->Paginator->sort('equipment_type_id') ?></th>
+                    <th><?= $this->Paginator->sort('serial_number') ?></th>
+                    <th><?= $this->Paginator->sort('date_of_sale') ?></th>
+                    <th class="actions"><?= __('Actions') ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($soldEquipments as $soldEquipment) : ?>
+                <tr style="<?= $soldEquipment->style ?>">
+                    <td>
+                        <?= $soldEquipment->customer !== null ? $this->Html->link(
+                            $soldEquipment->customer->name ?? '(' . $soldEquipment->customer->id . ')',
+                            ['controller' => 'Customers', 'action' => 'view', $soldEquipment->customer->id],
+                        ) : '' ?>
+                    </td>
+                    <td><?= $soldEquipment->customer !== null ? h($soldEquipment->customer->number) : '' ?></td>
+                    <td>
+                        <?= $soldEquipment->contract !== null ? $this->Html->link(
+                            $soldEquipment->contract->number ?? '--',
+                            [
+                                'controller' => 'Contracts',
+                                'action' => 'view',
+                                $soldEquipment->contract->id,
+                                'customer_id' => $soldEquipment->contract->customer_id,
+                            ],
+                        ) : '' ?>
+                    </td>
+                    <td>
+                        <?= $soldEquipment->equipment_type !== null ? $this->Html->link(
+                            $soldEquipment->equipment_type->name ?? '(' . $soldEquipment->equipment_type->id . ')',
+                            ['controller' => 'EquipmentTypes', 'action' => 'view', $soldEquipment->equipment_type->id],
+                        ) : '' ?>
+                    </td>
+                    <td><?= h($soldEquipment->serial_number) ?></td>
+                    <td><?= h($soldEquipment->date_of_sale) ?></td>
+                    <td class="actions">
+                        <?= $this->AuthLink->link(__('View'), ['action' => 'view', $soldEquipment->id]) ?>
+                        <?= $this->AuthLink->link(
+                            __('Edit'),
+                            ['action' => 'edit', $soldEquipment->id],
+                            ['class' => 'win-link'],
+                        ) ?>
+                        <?= $this->AuthLink->postLink(
+                            __('Delete'),
+                            ['action' => 'delete', $soldEquipment->id],
+                            ['confirm' => __('Are you sure you want to delete # {0}?', $soldEquipment->id)],
+                        ) ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?= $this->element('common/paginator') ?>
+</div>

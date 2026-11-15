@@ -1,0 +1,53 @@
+<?php
+/**
+ * @var \App\View\AppView $this
+ * @var iterable<\App\Model\Entity\Commission> $commissions
+ */
+?>
+<?= $this->Form->create(null, ['type' => 'get', 'valueSources' => ['query', 'context']]) ?>
+<div class="row">
+    <div class="column">
+        <?= $this->Form->control('search', [
+            'label' => __('Search'),
+            'type' => 'search',
+            'onchange' => $this::SUBMIT_ON_CHANGE,
+        ]) ?>
+    </div>
+</div>
+<?= $this->Form->end() ?>
+
+<div class="commissions index content">
+    <?= $this->AuthLink->link(__('New Commission'), ['action' => 'add'], ['class' => 'button float-right win-link']) ?>
+    <?= $this->heading(__('Commissions')) ?>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th><?= $this->Paginator->sort('name') ?></th>
+                    <th class="actions"><?= __('Actions') ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($commissions as $commission) : ?>
+                <tr>
+                    <td><?= h($commission->name) ?></td>
+                    <td class="actions">
+                        <?= $this->AuthLink->link(__('View'), ['action' => 'view', $commission->id]) ?>
+                        <?= $this->AuthLink->link(
+                            __('Edit'),
+                            ['action' => 'edit', $commission->id],
+                            ['class' => 'win-link'],
+                        ) ?>
+                        <?= $this->AuthLink->postLink(
+                            __('Delete'),
+                            ['action' => 'delete', $commission->id],
+                            ['confirm' => __('Are you sure you want to delete # {0}?', $commission->id)],
+                        ) ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?= $this->element('common/paginator') ?>
+</div>

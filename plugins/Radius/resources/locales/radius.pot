@@ -1,0 +1,1492 @@
+# LANGUAGE translation of CakePHP Application
+# Copyright YEAR NAME <EMAIL@ADDRESS>
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"POT-Creation-Date: 2026-11-10 14:44+0100\n"
+"PO-Revision-Date: YYYY-mm-DD HH:MM+ZZZZ\n"
+"Last-Translator: NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <EMAIL@ADDRESS>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
+
+#: ./plugins/Radius/src/Check/AbstractRadiusCheck.php:61
+msgid "The RADIUS database could not be read, so this was not checked."
+msgstr ""
+
+#: ./plugins/Radius/src/Check/RadiusAccountWithoutTariffCheck.php:30
+msgid "Active RADIUS Account Without a Tariff"
+msgstr ""
+
+#: ./plugins/Radius/src/Check/RadiusAccountWithoutTariffCheck.php:39
+msgid "Every active RADIUS account has a tariff naming its group."
+msgstr ""
+
+#: ./plugins/Radius/src/Check/RadiusAddressOutsideContractCheck.php:31
+msgid "Active RADIUS Account With an Address Outside Its Contract"
+msgstr ""
+
+#: ./plugins/Radius/src/Check/RadiusAddressOutsideContractCheck.php:40
+msgid "Every active RADIUS account keeps to the addresses of its contract."
+msgstr ""
+
+#: ./plugins/Radius/src/Check/RadiusCompetingAddressesCheck.php:31
+msgid "Active RADIUS Account With More Than One IP Address"
+msgstr ""
+
+#: ./plugins/Radius/src/Check/RadiusCompetingAddressesCheck.php:40
+msgid "No active RADIUS account is handed more than one IPv4 or IPv6 address."
+msgstr ""
+
+#: ./plugins/Radius/src/Check/RadiusGroupMismatchCheck.php:30
+msgid "RADIUS Group Not Matching the Tariff"
+msgstr ""
+
+#: ./plugins/Radius/src/Check/RadiusGroupMismatchCheck.php:39
+msgid "Every active RADIUS account is in the group its tariff names."
+msgstr ""
+
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:37
+msgid "Required state of accounts."
+msgstr ""
+
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:48
+msgid "Update RADIUS Checks."
+msgstr ""
+
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:52
+msgid "Update RADIUS Replies."
+msgstr ""
+
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:56
+msgid "Update RADIUS User Groups."
+msgstr ""
+
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:61
+msgid "Reconnect Modified RADIUS Accounts."
+msgstr ""
+
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:66
+msgid "Send the change log by email."
+msgstr ""
+
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:95
+#: ./plugins/Radius/templates/element/Accounts/UpdateRelatedRecordsSummary.php:8
+msgid "The changes could not be applied to these accounts."
+msgstr ""
+
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:99
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:120
+#: ./plugins/Radius/templates/Accounts/add.php:30
+#: ./plugins/Radius/templates/Accounts/edit.php:37
+#: ./plugins/Radius/templates/Accounts/index.php:35
+#: ./plugins/Radius/templates/Accounts/monitoring.php:93
+#: ./plugins/Radius/templates/Accounts/view.php:68
+#: ./plugins/Radius/templates/element/Accounts/UpdateRelatedRecordsSummary.php:13
+#: ./plugins/Radius/templates/element/Accounts/UpdateRelatedRecordsSummary.php:36
+#: ./plugins/Radius/templates/element/ContractChecks/radius_account_without_tariff.php:24
+#: ./plugins/Radius/templates/element/ContractChecks/radius_address_outside_contract.php:23
+#: ./plugins/Radius/templates/element/ContractChecks/radius_competing_addresses.php:24
+#: ./plugins/Radius/templates/element/ContractChecks/radius_group_mismatch.php:20
+msgid "Customer"
+msgstr ""
+
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:100
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:121
+#: ./plugins/Radius/templates/Accounts/add.php:38
+#: ./plugins/Radius/templates/Accounts/edit.php:44
+#: ./plugins/Radius/templates/Accounts/index.php:37
+#: ./plugins/Radius/templates/Accounts/monitoring.php:109
+#: ./plugins/Radius/templates/Accounts/view.php:84
+#: ./plugins/Radius/templates/cell/Accounts/display.php:27
+#: ./plugins/Radius/templates/element/Accounts/UpdateRelatedRecordsSummary.php:14
+#: ./plugins/Radius/templates/element/Accounts/UpdateRelatedRecordsSummary.php:37
+#: ./plugins/Radius/templates/element/ContractChecks/radius_account_without_tariff.php:27
+#: ./plugins/Radius/templates/element/ContractChecks/radius_address_outside_contract.php:26
+#: ./plugins/Radius/templates/element/ContractChecks/radius_competing_addresses.php:27
+#: ./plugins/Radius/templates/element/ContractChecks/radius_group_mismatch.php:23
+msgid "Contract"
+msgstr ""
+
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:101
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:122
+#: ./plugins/Radius/templates/element/Accounts/UpdateRelatedRecordsSummary.php:15
+#: ./plugins/Radius/templates/element/Accounts/UpdateRelatedRecordsSummary.php:38
+msgid "RADIUS Username"
+msgstr ""
+
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:102
+#: ./plugins/Radius/templates/element/Accounts/UpdateRelatedRecordsSummary.php:16
+msgid "Reason"
+msgstr ""
+
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:123
+#: ./plugins/Radius/templates/Radcheck/index.php:13
+#: ./plugins/Radius/templates/element/Accounts/UpdateRelatedRecordsSummary.php:39
+#: ./plugins/Radius/templates/element/Accounts/UpdateRelatedRecordsSummary.php:40
+msgid "RADIUS Checks"
+msgstr ""
+
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:124
+#: ./plugins/Radius/templates/Radreply/index.php:13
+#: ./plugins/Radius/templates/cell/Accounts/display.php:36
+#: ./plugins/Radius/templates/element/Accounts/UpdateRelatedRecordsSummary.php:41
+#: ./plugins/Radius/templates/element/Accounts/UpdateRelatedRecordsSummary.php:42
+msgid "RADIUS Replies"
+msgstr ""
+
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:125
+#: ./plugins/Radius/templates/Radusergroup/index.php:13
+#: ./plugins/Radius/templates/cell/Accounts/display.php:35
+#: ./plugins/Radius/templates/element/Accounts/UpdateRelatedRecordsSummary.php:43
+#: ./plugins/Radius/templates/element/Accounts/UpdateRelatedRecordsSummary.php:44
+#: ./plugins/Radius/templates/element/ContractChecks/radius_account_without_tariff.php:31
+#: ./plugins/Radius/templates/element/ContractChecks/radius_address_outside_contract.php:29
+#: ./plugins/Radius/templates/element/ContractChecks/radius_competing_addresses.php:30
+#: ./plugins/Radius/templates/element/ContractChecks/radius_group_mismatch.php:26
+msgid "RADIUS User Groups"
+msgstr ""
+
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:132
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:133
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:134
+#: ./plugins/Radius/templates/Accounts/index.php:43
+msgid "Modified"
+msgstr ""
+
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:143
+msgid "Error during RADIUS accounts update: {0}"
+msgstr ""
+
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:150
+msgid "RADIUS accounts update failed"
+msgstr ""
+
+#: ./plugins/Radius/src/Command/UpdateRelatedRecordsForAccountsCommand.php:151
+msgid "RADIUS accounts update failed."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/AccountsController.php:170
+#: ./plugins/Radius/src/Controller/AccountsController.php:283
+msgid "The RADIUS account has been saved."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/AccountsController.php:174
+#: ./plugins/Radius/src/Controller/AccountsController.php:298
+msgid "The RADIUS account could not be saved. Please, try again."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/AccountsController.php:345
+msgid "The RADIUS account has been deleted."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/AccountsController.php:348
+msgid "The RADIUS account could not be deleted. Please, try again."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/AccountsController.php:386
+#: ./plugins/Radius/src/Updater/AccountsUpdater.php:122
+#: ./plugins/Radius/src/Updater/AccountsUpdater.php:239
+msgid "No active RADIUS session for {0} found."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/NasController.php:56
+#: ./plugins/Radius/src/Controller/NasController.php:80
+msgid "The RADIUS NAS has been saved."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/NasController.php:60
+#: ./plugins/Radius/src/Controller/NasController.php:84
+msgid "The RADIUS NAS could not be saved. Please, try again."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/NasController.php:103
+msgid "The RADIUS NAS has been deleted."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/NasController.php:106
+msgid "The RADIUS NAS could not be deleted. Please, try again."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadacctController.php:58
+#: ./plugins/Radius/src/Controller/RadacctController.php:85
+msgid "The RADIUS accounting has been saved."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadacctController.php:62
+#: ./plugins/Radius/src/Controller/RadacctController.php:89
+msgid "The RADIUS accounting could not be saved. Please, try again."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadacctController.php:111
+msgid "The RADIUS accounting has been deleted."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadacctController.php:114
+msgid "The RADIUS accounting could not be deleted. Please, try again."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadcheckController.php:58
+#: ./plugins/Radius/src/Controller/RadcheckController.php:85
+msgid "The RADIUS check has been saved."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadcheckController.php:62
+#: ./plugins/Radius/src/Controller/RadcheckController.php:89
+msgid "The RADIUS check could not be saved. Please, try again."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadcheckController.php:111
+msgid "The RADIUS check has been deleted."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadcheckController.php:114
+msgid "The RADIUS check could not be deleted. Please, try again."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadgroupcheckController.php:56
+#: ./plugins/Radius/src/Controller/RadgroupcheckController.php:80
+msgid "The RADIUS group check has been saved."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadgroupcheckController.php:60
+#: ./plugins/Radius/src/Controller/RadgroupcheckController.php:84
+msgid "The RADIUS group check could not be saved. Please, try again."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadgroupcheckController.php:103
+msgid "The RADIUS group check has been deleted."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadgroupcheckController.php:106
+msgid "The RADIUS group check could not be deleted. Please, try again."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadgroupreplyController.php:56
+#: ./plugins/Radius/src/Controller/RadgroupreplyController.php:80
+msgid "The RADIUS group reply has been saved."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadgroupreplyController.php:60
+#: ./plugins/Radius/src/Controller/RadgroupreplyController.php:84
+msgid "The RADIUS group reply could not be saved. Please, try again."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadgroupreplyController.php:103
+msgid "The RADIUS group reply has been deleted."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadgroupreplyController.php:106
+msgid "The RADIUS group reply could not be deleted. Please, try again."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadpostauthController.php:58
+#: ./plugins/Radius/src/Controller/RadpostauthController.php:85
+msgid "The RADIUS post authentication has been saved."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadpostauthController.php:62
+#: ./plugins/Radius/src/Controller/RadpostauthController.php:89
+msgid "The RADIUS post authentication could not be saved. Please, try again."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadpostauthController.php:111
+msgid "The RADIUS post authentication has been deleted."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadpostauthController.php:115
+msgid "The RADIUS post authentication could not be deleted. Please, try again."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadreplyController.php:58
+#: ./plugins/Radius/src/Controller/RadreplyController.php:85
+msgid "The RADIUS reply has been saved."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadreplyController.php:62
+#: ./plugins/Radius/src/Controller/RadreplyController.php:89
+msgid "The RADIUS reply could not be saved. Please, try again."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadreplyController.php:111
+msgid "The RADIUS reply has been deleted."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadreplyController.php:114
+msgid "The RADIUS reply could not be deleted. Please, try again."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadusergroupController.php:58
+#: ./plugins/Radius/src/Controller/RadusergroupController.php:96
+msgid "The RADIUS user group has been saved."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadusergroupController.php:62
+#: ./plugins/Radius/src/Controller/RadusergroupController.php:100
+msgid "The RADIUS user group could not be saved. Please, try again."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadusergroupController.php:136
+msgid "The RADIUS user group has been deleted."
+msgstr ""
+
+#: ./plugins/Radius/src/Controller/RadusergroupController.php:139
+msgid "The RADIUS user group could not be deleted. Please, try again."
+msgstr ""
+
+#: ./plugins/Radius/src/Model/Enum/AccountType.php:23
+msgid "PPPoE"
+msgstr ""
+
+#: ./plugins/Radius/src/Model/Table/AccountsTable.php:173
+msgid "An active RADIUS account cannot be deleted. Deactivate it first."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccessListCleaner.php:50
+msgid "No RADIUS session for {0} found."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccessListCleaner.php:60
+msgid "The last RADIUS session of {0} carries no MAC address."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccessListCleaner.php:72
+msgid "Problem connecting to an access point: {0}"
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccessListCleaner.php:75
+#: ./plugins/Radius/src/Updater/RadiusRequestSender.php:77
+msgid "Watcher Agent is not configured."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccessListCleaner.php:83
+msgid "Removed MAC address entry {0} on interface {1} from router {2}."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccessListCleaner.php:93
+msgid "Access point updated."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccessListCleaner.php:94
+msgid "Nothing has changed."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccountsUpdater.php:98
+msgid "The RADIUS account has been updated."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccountsUpdater.php:106
+msgid "The RADIUS account could not be updated. Please, try again."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccountsUpdater.php:179
+msgid "Nothing has been selected for update."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccountsUpdater.php:223
+msgid "The RADIUS account {0} could not be updated. Please, try again."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccountsUpdater.php:230
+msgid "The RADIUS account could not be updated."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccountsUpdater.php:246
+msgid "No active RADIUS session found."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccountsUpdater.php:263
+msgid "The RADIUS session started on {0} at {1} could not be disconnected ({2})."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccountsUpdater.php:289
+msgid "Related entries for {0} RADIUS accounts were processed, {1} accounts were updated, and {2} accounts failed to update."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccountsUpdater.php:319
+msgid "Automatic RADIUS account changes"
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccountsUpdater.php:336
+msgid "These automatic RADIUS account changes have just taken place."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccountsUpdater.php:343
+msgid "Automatic RADIUS account changes have been reported."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccountsUpdater.php:349
+msgid "Automatic RADIUS account changes cannot be reported."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccountsUpdater.php:508
+msgid "The RADIUS replies for {0} could not be found automatically. Please, set it manually."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccountsUpdater.php:514
+msgid "The IP addresses for the contract are probably not set correctly."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccountsUpdater.php:553
+msgid "The RADIUS user groups for {0} could not be found automatically. Please, set it manually."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/AccountsUpdater.php:559
+msgid "The billings for the contract for the current or upcoming period are probably not set correctly."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/RadiusRequestSender.php:43
+msgid "The RADIUS session for {0} started on {1} has been disconnected ({2})."
+msgstr ""
+
+#: ./plugins/Radius/src/Updater/RadiusRequestSender.php:51
+msgid "The RADIUS session for {0} started on {1} could not be disconnected ({2})."
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/add.php:14
+#: ./plugins/Radius/templates/Accounts/edit.php:13
+#: ./plugins/Radius/templates/Accounts/index.php:44
+#: ./plugins/Radius/templates/Accounts/monitoring.php:18
+#: ./plugins/Radius/templates/Accounts/monitoring.php:232
+#: ./plugins/Radius/templates/Accounts/monitoring.php:342
+#: ./plugins/Radius/templates/Accounts/update_related_records_for_all_accounts.php:10
+#: ./plugins/Radius/templates/Accounts/view.php:10
+#: ./plugins/Radius/templates/Accounts/view.php:132
+#: ./plugins/Radius/templates/Accounts/view.php:179
+#: ./plugins/Radius/templates/Accounts/view.php:225
+#: ./plugins/Radius/templates/Nas/add.php:10
+#: ./plugins/Radius/templates/Nas/edit.php:10
+#: ./plugins/Radius/templates/Nas/index.php:26
+#: ./plugins/Radius/templates/Nas/view.php:10
+#: ./plugins/Radius/templates/Radacct/add.php:11
+#: ./plugins/Radius/templates/Radacct/edit.php:11
+#: ./plugins/Radius/templates/Radacct/index.php:45
+#: ./plugins/Radius/templates/Radacct/view.php:10
+#: ./plugins/Radius/templates/Radcheck/add.php:11
+#: ./plugins/Radius/templates/Radcheck/edit.php:11
+#: ./plugins/Radius/templates/Radcheck/index.php:22
+#: ./plugins/Radius/templates/Radcheck/view.php:10
+#: ./plugins/Radius/templates/Radgroupcheck/add.php:10
+#: ./plugins/Radius/templates/Radgroupcheck/edit.php:10
+#: ./plugins/Radius/templates/Radgroupcheck/index.php:22
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:10
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:70
+#: ./plugins/Radius/templates/Radgroupreply/add.php:10
+#: ./plugins/Radius/templates/Radgroupreply/edit.php:10
+#: ./plugins/Radius/templates/Radgroupreply/index.php:22
+#: ./plugins/Radius/templates/Radgroupreply/view.php:10
+#: ./plugins/Radius/templates/Radgroupreply/view.php:70
+#: ./plugins/Radius/templates/Radpostauth/add.php:11
+#: ./plugins/Radius/templates/Radpostauth/edit.php:11
+#: ./plugins/Radius/templates/Radpostauth/index.php:24
+#: ./plugins/Radius/templates/Radpostauth/view.php:10
+#: ./plugins/Radius/templates/Radreply/add.php:11
+#: ./plugins/Radius/templates/Radreply/edit.php:11
+#: ./plugins/Radius/templates/Radreply/index.php:22
+#: ./plugins/Radius/templates/Radreply/view.php:10
+#: ./plugins/Radius/templates/Radusergroup/add.php:12
+#: ./plugins/Radius/templates/Radusergroup/edit.php:12
+#: ./plugins/Radius/templates/Radusergroup/index.php:21
+#: ./plugins/Radius/templates/Radusergroup/view.php:10
+#: ./plugins/Radius/templates/Radusergroup/view.php:70
+#: ./plugins/Radius/templates/Radusergroup/view.php:114
+#: ./plugins/Radius/templates/cell/Accounts/display.php:39
+msgid "Actions"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/add.php:16
+#: ./plugins/Radius/templates/Accounts/edit.php:23
+#: ./plugins/Radius/templates/Accounts/monitoring.php:33
+#: ./plugins/Radius/templates/Accounts/update_related_records_for_all_accounts.php:12
+#: ./plugins/Radius/templates/Accounts/view.php:25
+#: ./plugins/Radius/templates/Settings/index.php:24
+msgid "List RADIUS Accounts"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/add.php:26
+msgid "Add RADIUS Account"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/add.php:47
+#: ./plugins/Radius/templates/Accounts/edit.php:53
+#: ./plugins/Radius/templates/Accounts/index.php:38
+#: ./plugins/Radius/templates/Accounts/monitoring.php:122
+#: ./plugins/Radius/templates/Accounts/monitoring.php:325
+#: ./plugins/Radius/templates/Accounts/view.php:97
+#: ./plugins/Radius/templates/Radacct/view.php:41
+#: ./plugins/Radius/templates/Radcheck/view.php:41
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:67
+#: ./plugins/Radius/templates/Radgroupreply/view.php:67
+#: ./plugins/Radius/templates/Radpostauth/view.php:41
+#: ./plugins/Radius/templates/Radreply/view.php:41
+#: ./plugins/Radius/templates/Radusergroup/view.php:41
+#: ./plugins/Radius/templates/cell/Accounts/display.php:29
+#: ./plugins/Radius/templates/element/ContractChecks/radius_account_without_tariff.php:30
+#: ./plugins/Radius/templates/element/ContractChecks/radius_address_outside_contract.php:28
+#: ./plugins/Radius/templates/element/ContractChecks/radius_competing_addresses.php:29
+#: ./plugins/Radius/templates/element/ContractChecks/radius_group_mismatch.php:25
+msgid "Username"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/add.php:52
+#: ./plugins/Radius/templates/Accounts/edit.php:58
+#: ./plugins/Radius/templates/Accounts/index.php:39
+#: ./plugins/Radius/templates/Accounts/monitoring.php:126
+#: ./plugins/Radius/templates/Accounts/view.php:101
+#: ./plugins/Radius/templates/cell/Accounts/display.php:31
+msgid "Password"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/add.php:56
+#: ./plugins/Radius/templates/Accounts/edit.php:62
+#: ./plugins/Radius/templates/Accounts/index.php:40
+#: ./plugins/Radius/templates/Accounts/monitoring.php:134
+#: ./plugins/Radius/templates/Accounts/update_related_records_for_all_accounts.php:29
+#: ./plugins/Radius/templates/Accounts/view.php:109
+#: ./plugins/Radius/templates/cell/Accounts/display.php:33
+msgid "Active"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/add.php:59
+#: ./plugins/Radius/templates/Accounts/edit.php:74
+#: ./plugins/Radius/templates/Accounts/update_related_records_for_all_accounts.php:56
+#: ./plugins/Radius/templates/Nas/add.php:34
+#: ./plugins/Radius/templates/Nas/edit.php:42
+#: ./plugins/Radius/templates/Radacct/add.php:54
+#: ./plugins/Radius/templates/Radacct/edit.php:62
+#: ./plugins/Radius/templates/Radcheck/add.php:35
+#: ./plugins/Radius/templates/Radcheck/edit.php:39
+#: ./plugins/Radius/templates/Radgroupcheck/add.php:30
+#: ./plugins/Radius/templates/Radgroupcheck/edit.php:38
+#: ./plugins/Radius/templates/Radgroupreply/add.php:30
+#: ./plugins/Radius/templates/Radgroupreply/edit.php:38
+#: ./plugins/Radius/templates/Radpostauth/add.php:33
+#: ./plugins/Radius/templates/Radpostauth/edit.php:41
+#: ./plugins/Radius/templates/Radreply/add.php:35
+#: ./plugins/Radius/templates/Radreply/edit.php:39
+#: ./plugins/Radius/templates/Radusergroup/add.php:38
+#: ./plugins/Radius/templates/Radusergroup/edit.php:39
+msgid "Submit"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/edit.php:15
+#: ./plugins/Radius/templates/Accounts/monitoring.php:25
+#: ./plugins/Radius/templates/Accounts/view.php:17
+msgid "Delete RADIUS Account"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/edit.php:18
+#: ./plugins/Radius/templates/Accounts/index.php:89
+#: ./plugins/Radius/templates/Accounts/monitoring.php:28
+#: ./plugins/Radius/templates/Accounts/monitoring.php:300
+#: ./plugins/Radius/templates/Accounts/monitoring.php:366
+#: ./plugins/Radius/templates/Accounts/view.php:20
+#: ./plugins/Radius/templates/Accounts/view.php:152
+#: ./plugins/Radius/templates/Accounts/view.php:199
+#: ./plugins/Radius/templates/Accounts/view.php:244
+#: ./plugins/Radius/templates/Nas/edit.php:15
+#: ./plugins/Radius/templates/Nas/index.php:50
+#: ./plugins/Radius/templates/Nas/view.php:20
+#: ./plugins/Radius/templates/Radacct/edit.php:16
+#: ./plugins/Radius/templates/Radacct/index.php:92
+#: ./plugins/Radius/templates/Radacct/view.php:20
+#: ./plugins/Radius/templates/Radcheck/edit.php:16
+#: ./plugins/Radius/templates/Radcheck/index.php:47
+#: ./plugins/Radius/templates/Radcheck/view.php:20
+#: ./plugins/Radius/templates/Radgroupcheck/edit.php:15
+#: ./plugins/Radius/templates/Radgroupcheck/index.php:42
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:20
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:90
+#: ./plugins/Radius/templates/Radgroupreply/edit.php:15
+#: ./plugins/Radius/templates/Radgroupreply/index.php:42
+#: ./plugins/Radius/templates/Radgroupreply/view.php:20
+#: ./plugins/Radius/templates/Radgroupreply/view.php:90
+#: ./plugins/Radius/templates/Radpostauth/edit.php:16
+#: ./plugins/Radius/templates/Radpostauth/index.php:46
+#: ./plugins/Radius/templates/Radpostauth/view.php:20
+#: ./plugins/Radius/templates/Radreply/edit.php:16
+#: ./plugins/Radius/templates/Radreply/index.php:47
+#: ./plugins/Radius/templates/Radreply/view.php:20
+#: ./plugins/Radius/templates/Radusergroup/edit.php:17
+#: ./plugins/Radius/templates/Radusergroup/index.php:40
+#: ./plugins/Radius/templates/Radusergroup/view.php:20
+#: ./plugins/Radius/templates/Radusergroup/view.php:91
+#: ./plugins/Radius/templates/Radusergroup/view.php:135
+#: ./plugins/Radius/templates/cell/Accounts/display.php:129
+msgid "Are you sure you want to delete # {0}?"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/edit.php:33
+#: ./plugins/Radius/templates/Accounts/monitoring.php:20
+#: ./plugins/Radius/templates/Accounts/view.php:12
+msgid "Edit RADIUS Account"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/edit.php:67
+msgid "Remove the MAC address from the access point"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/index.php:11
+msgid "Search"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/index.php:21
+msgid "Settings"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/index.php:26
+#: ./plugins/Radius/templates/Accounts/monitoring.php:38
+#: ./plugins/Radius/templates/Accounts/view.php:30
+msgid "New RADIUS Account"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/index.php:30
+msgid "RADIUS Accounts"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/index.php:36
+#: ./plugins/Radius/templates/Accounts/monitoring.php:105
+#: ./plugins/Radius/templates/Accounts/view.php:80
+msgid "Customer Number"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/index.php:41
+#: ./plugins/Radius/templates/Accounts/monitoring.php:130
+#: ./plugins/Radius/templates/Accounts/view.php:105
+#: ./plugins/Radius/templates/Nas/view.php:62
+msgid "Type"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/index.php:42
+msgid "Created"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/index.php:71
+#: ./plugins/Radius/templates/Accounts/monitoring.php:135
+#: ./plugins/Radius/templates/Accounts/view.php:110
+#: ./plugins/Radius/templates/cell/Accounts/display.php:63
+msgid "Yes"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/index.php:71
+#: ./plugins/Radius/templates/Accounts/monitoring.php:135
+#: ./plugins/Radius/templates/Accounts/view.php:110
+#: ./plugins/Radius/templates/cell/Accounts/display.php:63
+msgid "No"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/index.php:77
+#: ./plugins/Radius/templates/Accounts/monitoring.php:87
+#: ./plugins/Radius/templates/cell/Accounts/display.php:133
+msgid "Monitoring"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/index.php:80
+#: ./plugins/Radius/templates/Accounts/monitoring.php:289
+#: ./plugins/Radius/templates/Accounts/monitoring.php:355
+#: ./plugins/Radius/templates/Accounts/view.php:141
+#: ./plugins/Radius/templates/Accounts/view.php:188
+#: ./plugins/Radius/templates/Accounts/view.php:233
+#: ./plugins/Radius/templates/Nas/index.php:41
+#: ./plugins/Radius/templates/Radacct/index.php:83
+#: ./plugins/Radius/templates/Radcheck/index.php:38
+#: ./plugins/Radius/templates/Radgroupcheck/index.php:33
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:79
+#: ./plugins/Radius/templates/Radgroupreply/index.php:33
+#: ./plugins/Radius/templates/Radgroupreply/view.php:79
+#: ./plugins/Radius/templates/Radpostauth/index.php:37
+#: ./plugins/Radius/templates/Radreply/index.php:38
+#: ./plugins/Radius/templates/Radusergroup/index.php:31
+#: ./plugins/Radius/templates/Radusergroup/view.php:80
+#: ./plugins/Radius/templates/Radusergroup/view.php:124
+#: ./plugins/Radius/templates/cell/Accounts/display.php:103
+msgid "View"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/index.php:82
+#: ./plugins/Radius/templates/Accounts/monitoring.php:293
+#: ./plugins/Radius/templates/Accounts/monitoring.php:359
+#: ./plugins/Radius/templates/Accounts/view.php:145
+#: ./plugins/Radius/templates/Accounts/view.php:192
+#: ./plugins/Radius/templates/Accounts/view.php:237
+#: ./plugins/Radius/templates/Nas/index.php:43
+#: ./plugins/Radius/templates/Radacct/index.php:85
+#: ./plugins/Radius/templates/Radcheck/index.php:40
+#: ./plugins/Radius/templates/Radgroupcheck/index.php:35
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:83
+#: ./plugins/Radius/templates/Radgroupreply/index.php:35
+#: ./plugins/Radius/templates/Radgroupreply/view.php:83
+#: ./plugins/Radius/templates/Radpostauth/index.php:39
+#: ./plugins/Radius/templates/Radreply/index.php:40
+#: ./plugins/Radius/templates/Radusergroup/index.php:33
+#: ./plugins/Radius/templates/Radusergroup/view.php:84
+#: ./plugins/Radius/templates/Radusergroup/view.php:128
+#: ./plugins/Radius/templates/cell/Accounts/display.php:112
+msgid "Edit"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/index.php:87
+#: ./plugins/Radius/templates/Accounts/monitoring.php:298
+#: ./plugins/Radius/templates/Accounts/monitoring.php:364
+#: ./plugins/Radius/templates/Accounts/view.php:150
+#: ./plugins/Radius/templates/Accounts/view.php:197
+#: ./plugins/Radius/templates/Accounts/view.php:242
+#: ./plugins/Radius/templates/Nas/index.php:48
+#: ./plugins/Radius/templates/Radacct/index.php:90
+#: ./plugins/Radius/templates/Radcheck/index.php:45
+#: ./plugins/Radius/templates/Radgroupcheck/index.php:40
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:88
+#: ./plugins/Radius/templates/Radgroupreply/index.php:40
+#: ./plugins/Radius/templates/Radgroupreply/view.php:88
+#: ./plugins/Radius/templates/Radpostauth/index.php:44
+#: ./plugins/Radius/templates/Radreply/index.php:45
+#: ./plugins/Radius/templates/Radusergroup/index.php:38
+#: ./plugins/Radius/templates/Radusergroup/view.php:89
+#: ./plugins/Radius/templates/Radusergroup/view.php:133
+#: ./plugins/Radius/templates/cell/Accounts/display.php:122
+msgid "Delete"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:45
+#: ./plugins/Radius/templates/Accounts/view.php:37
+msgid "List Historical Connections"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:59
+msgid "View RADIUS Account"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:64
+msgid "Remove MAC address"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:67
+msgid "Are you sure you want to remove the last active MAC address from the access list on the access point for account {0}?"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:77
+msgid "RADIUS Disconnect Request"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:80
+#: ./plugins/Radius/templates/cell/Accounts/display.php:162
+msgid "Are you sure you want to disconnect {0}?"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:85
+#: ./plugins/Radius/templates/Accounts/view.php:63
+msgid "RADIUS Account"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:147
+msgid "Show Details"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:153
+msgid "Related RADIUS Accountings"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:161
+#: ./plugins/Radius/templates/Radacct/view.php:170
+msgid "Service Type"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:164
+#: ./plugins/Radius/templates/Radacct/view.php:176
+msgid "Framed Protocol"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:167
+#: ./plugins/Radius/templates/Accounts/monitoring.php:334
+#: ./plugins/Radius/templates/Radacct/view.php:152
+#: ./plugins/Radius/templates/Radpostauth/view.php:69
+msgid "Called Station ID"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:171
+#: ./plugins/Radius/templates/Accounts/monitoring.php:337
+#: ./plugins/Radius/templates/Radacct/view.php:158
+#: ./plugins/Radius/templates/Radpostauth/view.php:75
+msgid "Calling Station ID"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:174
+#: ./plugins/Radius/templates/Radacct/view.php:52
+msgid "Framed IP Address"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:177
+#: ./plugins/Radius/templates/Radacct/view.php:56
+msgid "Framed IPv6 Address"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:180
+#: ./plugins/Radius/templates/Radacct/view.php:60
+msgid "Framed IPv6 Prefix"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:183
+#: ./plugins/Radius/templates/Radacct/view.php:64
+msgid "Delegated IPv6 Prefix"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:187
+#: ./plugins/Radius/templates/Radacct/view.php:182
+msgid "Framed Interface ID"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:191
+#: ./plugins/Radius/templates/Radacct/view.php:48
+#: ./plugins/Radius/templates/cell/Accounts/display.php:37
+msgid "NAS IP Address"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:194
+#: ./plugins/Radius/templates/Radacct/view.php:122
+msgid "NAS Port ID"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:198
+#: ./plugins/Radius/templates/Radacct/view.php:128
+msgid "NAS Port Type"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:202
+#: ./plugins/Radius/templates/cell/Accounts/display.php:38
+msgid "Network Access Server"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:205
+#: ./plugins/Radius/templates/Radacct/view.php:78
+msgid "Start Time"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:209
+#: ./plugins/Radius/templates/Radacct/view.php:82
+msgid "Update Time"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:212
+#: ./plugins/Radius/templates/Radacct/view.php:86
+msgid "Update Interval"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:216
+#: ./plugins/Radius/templates/Radacct/view.php:90
+msgid "Stop Time"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:220
+#: ./plugins/Radius/templates/Radacct/view.php:164
+msgid "Termination Cause"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:224
+#: ./plugins/Radius/templates/Radacct/view.php:94
+msgid "Session Time"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:227
+#: ./plugins/Radius/templates/Radacct/view.php:68
+msgid "Uploaded"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:230
+#: ./plugins/Radius/templates/Radacct/view.php:73
+msgid "Downloaded"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:265
+#: ./plugins/Radius/templates/cell/Accounts/display.php:97
+msgid "Data from Watcher NMS could not be loaded."
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:266
+#: ./plugins/Radius/templates/cell/Accounts/display.php:98
+msgid "Loading..."
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:315
+msgid "Related RADIUS Post Authentications"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:322
+#: ./plugins/Radius/templates/Nas/view.php:45
+#: ./plugins/Radius/templates/Radcheck/view.php:60
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:57
+#: ./plugins/Radius/templates/Radgroupreply/view.php:57
+#: ./plugins/Radius/templates/Radpostauth/view.php:52
+#: ./plugins/Radius/templates/Radreply/view.php:60
+#: ./plugins/Radius/templates/Radusergroup/view.php:56
+msgid "Id"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:328
+#: ./plugins/Radius/templates/Radpostauth/view.php:57
+msgid "Pass"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:331
+#: ./plugins/Radius/templates/Radpostauth/view.php:63
+msgid "Reply"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/monitoring.php:340
+#: ./plugins/Radius/templates/Radpostauth/view.php:48
+msgid "Authentication Date"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/update_related_records_for_all_accounts.php:22
+#: ./plugins/Radius/templates/Accounts/view.php:56
+#: ./plugins/Radius/templates/Settings/index.php:13
+msgid "Update Related Records"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/update_related_records_for_all_accounts.php:25
+msgid "State"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/update_related_records_for_all_accounts.php:28
+msgid "All"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/update_related_records_for_all_accounts.php:30
+msgid "Inactive"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/update_related_records_for_all_accounts.php:34
+msgid "Update RADIUS Checks"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/update_related_records_for_all_accounts.php:39
+msgid "Update RADIUS Replies"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/update_related_records_for_all_accounts.php:44
+msgid "Update RADIUS User Groups"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/update_related_records_for_all_accounts.php:49
+msgid "Reconnect Modified RADIUS Accounts"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/update_related_records_for_all_accounts.php:58
+msgid "Are you sure you want to update related records for all accounts?"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/update_related_records_for_all_accounts.php:66
+#: ./plugins/Radius/templates/email/html/update_related_records_summary.php:21
+msgid "Change Log"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/view.php:51
+msgid "RADIUS Account Monitoring"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/view.php:59
+#: ./plugins/Radius/templates/cell/Accounts/display.php:150
+msgid "Are you sure you want to update related records?"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/view.php:120
+#: ./plugins/Radius/templates/Radcheck/index.php:9
+#: ./plugins/Radius/templates/Radcheck/view.php:30
+msgid "New RADIUS Check"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/view.php:124
+msgid "Related RADIUS Checks"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/view.php:129
+#: ./plugins/Radius/templates/Accounts/view.php:176
+#: ./plugins/Radius/templates/Radcheck/view.php:48
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:45
+#: ./plugins/Radius/templates/Radgroupreply/view.php:45
+#: ./plugins/Radius/templates/Radreply/view.php:48
+#: ./plugins/Radius/templates/Radusergroup/view.php:67
+#: ./plugins/Radius/templates/Radusergroup/view.php:111
+msgid "Attribute"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/view.php:130
+#: ./plugins/Radius/templates/Accounts/view.php:177
+#: ./plugins/Radius/templates/Radcheck/view.php:52
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:49
+#: ./plugins/Radius/templates/Radgroupreply/view.php:49
+#: ./plugins/Radius/templates/Radreply/view.php:52
+#: ./plugins/Radius/templates/Radusergroup/view.php:68
+#: ./plugins/Radius/templates/Radusergroup/view.php:112
+msgid "Op"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/view.php:131
+#: ./plugins/Radius/templates/Accounts/view.php:178
+#: ./plugins/Radius/templates/Radcheck/view.php:56
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:53
+#: ./plugins/Radius/templates/Radgroupreply/view.php:53
+#: ./plugins/Radius/templates/Radreply/view.php:56
+#: ./plugins/Radius/templates/Radusergroup/view.php:69
+#: ./plugins/Radius/templates/Radusergroup/view.php:113
+msgid "Value"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/view.php:167
+#: ./plugins/Radius/templates/Radreply/index.php:9
+#: ./plugins/Radius/templates/Radreply/view.php:30
+msgid "New RADIUS Reply"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/view.php:171
+msgid "Related RADIUS Replies"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/view.php:214
+#: ./plugins/Radius/templates/Radusergroup/index.php:9
+#: ./plugins/Radius/templates/Radusergroup/view.php:30
+msgid "New RADIUS User Group"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/view.php:218
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:62
+#: ./plugins/Radius/templates/Radgroupreply/view.php:62
+msgid "Related RADIUS User Groups"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/view.php:223
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:41
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:68
+#: ./plugins/Radius/templates/Radgroupreply/view.php:41
+#: ./plugins/Radius/templates/Radgroupreply/view.php:68
+#: ./plugins/Radius/templates/Radusergroup/view.php:48
+#: ./plugins/Radius/templates/Radusergroup/view.php:66
+#: ./plugins/Radius/templates/Radusergroup/view.php:110
+msgid "Groupname"
+msgstr ""
+
+#: ./plugins/Radius/templates/Accounts/view.php:224
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:69
+#: ./plugins/Radius/templates/Radgroupreply/view.php:69
+#: ./plugins/Radius/templates/Radusergroup/view.php:52
+msgid "Priority"
+msgstr ""
+
+#: ./plugins/Radius/templates/Nas/add.php:12
+#: ./plugins/Radius/templates/Nas/edit.php:20
+#: ./plugins/Radius/templates/Nas/view.php:25
+#: ./plugins/Radius/templates/Settings/index.php:82
+msgid "List RADIUS NAS"
+msgstr ""
+
+#: ./plugins/Radius/templates/Nas/add.php:22
+msgid "Add RADIUS NAS"
+msgstr ""
+
+#: ./plugins/Radius/templates/Nas/edit.php:12
+#: ./plugins/Radius/templates/Nas/view.php:17
+msgid "Delete RADIUS NAS"
+msgstr ""
+
+#: ./plugins/Radius/templates/Nas/edit.php:30
+#: ./plugins/Radius/templates/Nas/view.php:12
+msgid "Edit RADIUS NAS"
+msgstr ""
+
+#: ./plugins/Radius/templates/Nas/index.php:9
+#: ./plugins/Radius/templates/Nas/view.php:30
+msgid "New RADIUS NAS"
+msgstr ""
+
+#: ./plugins/Radius/templates/Nas/index.php:13
+#: ./plugins/Radius/templates/Nas/view.php:38
+msgid "RADIUS NAS"
+msgstr ""
+
+#: ./plugins/Radius/templates/Nas/view.php:41
+msgid "Ports"
+msgstr ""
+
+#: ./plugins/Radius/templates/Nas/view.php:50
+msgid "NAS Name"
+msgstr ""
+
+#: ./plugins/Radius/templates/Nas/view.php:56
+msgid "Short Name"
+msgstr ""
+
+#: ./plugins/Radius/templates/Nas/view.php:68
+msgid "Secret"
+msgstr ""
+
+#: ./plugins/Radius/templates/Nas/view.php:74
+msgid "Server"
+msgstr ""
+
+#: ./plugins/Radius/templates/Nas/view.php:80
+msgid "Community"
+msgstr ""
+
+#: ./plugins/Radius/templates/Nas/view.php:86
+msgid "Description"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radacct/add.php:13
+#: ./plugins/Radius/templates/Radacct/edit.php:21
+#: ./plugins/Radius/templates/Radacct/view.php:25
+#: ./plugins/Radius/templates/Settings/index.php:50
+msgid "List RADIUS Accountings"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radacct/add.php:23
+msgid "Add RADIUS Accounting"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radacct/edit.php:13
+#: ./plugins/Radius/templates/Radacct/view.php:17
+msgid "Delete RADIUS Accounting"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radacct/edit.php:31
+#: ./plugins/Radius/templates/Radacct/view.php:12
+msgid "Edit RADIUS Accounting"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radacct/index.php:9
+#: ./plugins/Radius/templates/Radacct/view.php:30
+msgid "New RADIUS Accounting"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radacct/index.php:13
+msgid "RADIUS Accountings"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radacct/view.php:38
+msgid "RADIUS Accounting"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radacct/view.php:99
+msgid "RADIUS Accounting ID"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radacct/view.php:104
+msgid "Session ID"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radacct/view.php:110
+msgid "Unique ID"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radacct/view.php:116
+msgid "Realm"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radacct/view.php:134
+msgid "Authenticated Via"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radacct/view.php:140
+msgid "Connection Info Start"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radacct/view.php:146
+msgid "Connection Info Stop"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radcheck/add.php:13
+#: ./plugins/Radius/templates/Radcheck/edit.php:21
+#: ./plugins/Radius/templates/Radcheck/view.php:25
+#: ./plugins/Radius/templates/Settings/index.php:29
+msgid "List RADIUS Checks"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radcheck/add.php:23
+msgid "Add RADIUS Check"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radcheck/edit.php:13
+#: ./plugins/Radius/templates/Radcheck/view.php:17
+msgid "Delete RADIUS Check"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radcheck/edit.php:31
+#: ./plugins/Radius/templates/Radcheck/view.php:12
+msgid "Edit RADIUS Check"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radcheck/view.php:38
+msgid "RADIUS Check"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radgroupcheck/add.php:12
+#: ./plugins/Radius/templates/Radgroupcheck/edit.php:20
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:25
+#: ./plugins/Radius/templates/Settings/index.php:66
+msgid "List RADIUS Group Checks"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radgroupcheck/add.php:22
+msgid "Add RADIUS Group Check"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radgroupcheck/edit.php:12
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:17
+msgid "Delete RADIUS Group Check"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radgroupcheck/edit.php:30
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:12
+msgid "Edit RADIUS Group Check"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radgroupcheck/index.php:9
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:30
+msgid "New RADIUS Group Check"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radgroupcheck/index.php:13
+msgid "RADIUS Group Checks"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radgroupcheck/view.php:38
+msgid "RADIUS Group Check"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radgroupreply/add.php:12
+#: ./plugins/Radius/templates/Radgroupreply/edit.php:20
+#: ./plugins/Radius/templates/Radgroupreply/view.php:25
+#: ./plugins/Radius/templates/Settings/index.php:71
+msgid "List RADIUS Group Replies"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radgroupreply/add.php:22
+msgid "Add RADIUS Group Reply"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radgroupreply/edit.php:12
+#: ./plugins/Radius/templates/Radgroupreply/view.php:17
+msgid "Delete RADIUS Group Reply"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radgroupreply/edit.php:30
+#: ./plugins/Radius/templates/Radgroupreply/view.php:12
+msgid "Edit RADIUS Group Reply"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radgroupreply/index.php:9
+#: ./plugins/Radius/templates/Radgroupreply/view.php:30
+msgid "New RADIUS Group Reply"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radgroupreply/index.php:13
+msgid "RADIUS Group Replies"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radgroupreply/view.php:38
+msgid "RADIUS Group Reply"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radpostauth/add.php:13
+#: ./plugins/Radius/templates/Radpostauth/edit.php:21
+#: ./plugins/Radius/templates/Radpostauth/view.php:25
+#: ./plugins/Radius/templates/Settings/index.php:55
+msgid "List RADIUS Post Authentications"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radpostauth/add.php:23
+msgid "Add RADIUS Post Authentication"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radpostauth/edit.php:13
+#: ./plugins/Radius/templates/Radpostauth/view.php:17
+msgid "Delete RADIUS Post Authentication"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radpostauth/edit.php:31
+#: ./plugins/Radius/templates/Radpostauth/view.php:12
+msgid "Edit RADIUS Post Authentication"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radpostauth/index.php:9
+#: ./plugins/Radius/templates/Radpostauth/view.php:30
+msgid "New RADIUS Post Authentication"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radpostauth/index.php:13
+msgid "RADIUS Post Authentications"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radpostauth/view.php:38
+msgid "RADIUS Post Authentication"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radreply/add.php:13
+#: ./plugins/Radius/templates/Radreply/edit.php:21
+#: ./plugins/Radius/templates/Radreply/view.php:25
+#: ./plugins/Radius/templates/Settings/index.php:34
+msgid "List RADIUS Replies"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radreply/add.php:23
+msgid "Add RADIUS Reply"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radreply/edit.php:13
+#: ./plugins/Radius/templates/Radreply/view.php:17
+msgid "Delete RADIUS Reply"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radreply/edit.php:31
+#: ./plugins/Radius/templates/Radreply/view.php:12
+msgid "Edit RADIUS Reply"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radreply/view.php:38
+msgid "RADIUS Reply"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radusergroup/add.php:14
+#: ./plugins/Radius/templates/Radusergroup/edit.php:22
+#: ./plugins/Radius/templates/Radusergroup/view.php:25
+#: ./plugins/Radius/templates/Settings/index.php:39
+msgid "List RADIUS User Groups"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radusergroup/add.php:24
+msgid "Add RADIUS User Group"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radusergroup/edit.php:14
+#: ./plugins/Radius/templates/Radusergroup/view.php:17
+msgid "Delete RADIUS User Group"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radusergroup/edit.php:32
+#: ./plugins/Radius/templates/Radusergroup/view.php:12
+msgid "Edit RADIUS User Group"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radusergroup/view.php:38
+msgid "RADIUS User Group"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radusergroup/view.php:61
+msgid "Related RADIUS Group Checks"
+msgstr ""
+
+#: ./plugins/Radius/templates/Radusergroup/view.php:105
+msgid "Related RADIUS Group Replies"
+msgstr ""
+
+#: ./plugins/Radius/templates/Settings/index.php:7
+msgid "RADIUS Settings"
+msgstr ""
+
+#: ./plugins/Radius/templates/Settings/index.php:10
+msgid "RADIUS Account Functions"
+msgstr ""
+
+#: ./plugins/Radius/templates/Settings/index.php:21
+msgid "RADIUS Account Related"
+msgstr ""
+
+#: ./plugins/Radius/templates/Settings/index.php:47
+msgid "RADIUS Monitoring Related"
+msgstr ""
+
+#: ./plugins/Radius/templates/Settings/index.php:63
+msgid "RADIUS Groups Related"
+msgstr ""
+
+#: ./plugins/Radius/templates/Settings/index.php:79
+msgid "RADIUS System Related"
+msgstr ""
+
+#: ./plugins/Radius/templates/cell/Accounts/display.php:20
+msgid "Data from the RADIUS database could not be loaded."
+msgstr ""
+
+#: ./plugins/Radius/templates/cell/Accounts/display.php:34
+#: ./plugins/Radius/templates/element/ContractChecks/radius_competing_addresses.php:31
+msgid "IP Addresses"
+msgstr ""
+
+#: ./plugins/Radius/templates/cell/Accounts/display.php:142
+msgid "Update"
+msgstr ""
+
+#: ./plugins/Radius/templates/cell/Accounts/display.php:154
+msgid "Disconnect"
+msgstr ""
+
+#: ./plugins/Radius/templates/element/Accounts/UpdateRelatedRecordsSummary.php:39
+#: ./plugins/Radius/templates/element/Accounts/UpdateRelatedRecordsSummary.php:41
+#: ./plugins/Radius/templates/element/Accounts/UpdateRelatedRecordsSummary.php:43
+msgid "Original"
+msgstr ""
+
+#: ./plugins/Radius/templates/element/Accounts/UpdateRelatedRecordsSummary.php:40
+#: ./plugins/Radius/templates/element/Accounts/UpdateRelatedRecordsSummary.php:42
+#: ./plugins/Radius/templates/element/Accounts/UpdateRelatedRecordsSummary.php:44
+msgid "Changed"
+msgstr ""
+
+#: ./plugins/Radius/templates/element/ContractChecks/radius_account_without_tariff.php:13
+msgid "Either the billing is missing, or the account should have been deactivated. Where a tariff starts later, the day is given."
+msgstr ""
+
+#: ./plugins/Radius/templates/element/ContractChecks/radius_account_without_tariff.php:29
+msgid "Contract State"
+msgstr ""
+
+#: ./plugins/Radius/templates/element/ContractChecks/radius_account_without_tariff.php:32
+msgid "Tariff From"
+msgstr ""
+
+#: ./plugins/Radius/templates/element/ContractChecks/radius_address_outside_contract.php:13
+msgid "The account keeps the address until its contract has one of its own or the account is deactivated."
+msgstr ""
+
+#: ./plugins/Radius/templates/element/ContractChecks/radius_address_outside_contract.php:30
+msgid "IP Address"
+msgstr ""
+
+#: ./plugins/Radius/templates/element/ContractChecks/radius_address_outside_contract.php:31
+msgid "Contract Holding It"
+msgstr ""
+
+#: ./plugins/Radius/templates/element/ContractChecks/radius_competing_addresses.php:13
+msgid "The router takes only one of the addresses, so the customer may be given another one than meant. Leave the contract only the address it should have, the account follows it."
+msgstr ""
+
+#: ./plugins/Radius/templates/element/ContractChecks/radius_group_mismatch.php:13
+msgid "Updating the related records of the account puts it in the group its tariff names."
+msgstr ""
+
+#: ./plugins/Radius/templates/element/ContractChecks/radius_group_mismatch.php:27
+msgid "Group of the Tariff"
+msgstr ""
+
+#: ./plugins/Radius/templates/element/common/paginator.php:13
+msgid "first"
+msgstr ""
+
+#: ./plugins/Radius/templates/element/common/paginator.php:14
+msgid "previous"
+msgstr ""
+
+#: ./plugins/Radius/templates/element/common/paginator.php:16
+msgid "next"
+msgstr ""
+
+#: ./plugins/Radius/templates/element/common/paginator.php:17
+msgid "last"
+msgstr ""
+
+#: ./plugins/Radius/templates/element/common/paginator.php:20
+msgid "Page {{page}} of {{pages}}, showing {{current}} record(s) out of {{count}} total"
+msgstr ""
+

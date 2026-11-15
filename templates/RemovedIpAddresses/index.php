@@ -1,0 +1,82 @@
+<?php
+/**
+ * @var \App\View\AppView $this
+ * @var iterable<\App\Model\Entity\RemovedIpAddress> $removedIpAddresses
+ */
+?>
+<?= $this->Form->create(null, ['type' => 'get', 'valueSources' => ['query', 'context']]) ?>
+<div class="row">
+    <div class="column">
+        <?= $this->Form->control('search', [
+            'label' => __('Search'),
+            'type' => 'search',
+            'onchange' => $this::SUBMIT_ON_CHANGE,
+        ]) ?>
+    </div>
+</div>
+<?= $this->Form->end() ?>
+
+<div class="removedIpAddresses index content">
+    <?= $this->AuthLink->link(
+        __('New Removed IP Address'),
+        ['action' => 'add'],
+        ['class' => 'button float-right win-link'],
+    ) ?>
+    <?= $this->heading(__('Removed IP Addresses')) ?>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th><?= $this->Paginator->sort('customer_id') ?></th>
+                    <th><?= $this->Paginator->sort('Customers.nid', __('Customer Number')) ?></th>
+                    <th><?= $this->Paginator->sort('contract_id') ?></th>
+                    <th><?= $this->Paginator->sort('ip_address', __('IP Address')) ?></th>
+                    <th><?= $this->Paginator->sort('type_of_use') ?></th>
+                    <th><?= $this->Paginator->sort('removed') ?></th>
+                    <th class="actions"><?= __('Actions') ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($removedIpAddresses as $removedIpAddress) : ?>
+                <tr style="<?= $removedIpAddress->style ?>">
+                    <td>
+                        <?= $removedIpAddress->customer !== null ? $this->Html->link(
+                            $removedIpAddress->customer->name ?? '(' . $removedIpAddress->customer->id . ')',
+                            ['controller' => 'Customers', 'action' => 'view', $removedIpAddress->customer->id],
+                        ) : '' ?>
+                    </td>
+                    <td><?= $removedIpAddress->customer !== null ? h($removedIpAddress->customer->number) : '' ?></td>
+                    <td>
+                        <?= $removedIpAddress->contract !== null ? $this->Html->link(
+                            $removedIpAddress->contract->number ?? '--',
+                            [
+                                'controller' => 'Contracts',
+                                'action' => 'view',
+                                $removedIpAddress->contract->id,
+                                'customer_id' => $removedIpAddress->contract->customer_id,
+                            ],
+                        ) : '' ?>
+                    </td>
+                    <td><?= h($removedIpAddress->ip_address) ?></td>
+                    <td><?= h($removedIpAddress->type_of_use->label()) ?></td>
+                    <td><?= h($removedIpAddress->removed) ?></td>
+                    <td class="actions">
+                        <?= $this->AuthLink->link(__('View'), ['action' => 'view', $removedIpAddress->id]) ?>
+                        <?= $this->AuthLink->link(
+                            __('Edit'),
+                            ['action' => 'edit', $removedIpAddress->id],
+                            ['class' => 'win-link'],
+                        ) ?>
+                        <?= $this->AuthLink->postLink(
+                            __('Delete'),
+                            ['action' => 'delete', $removedIpAddress->id],
+                            ['confirm' => __('Are you sure you want to delete # {0}?', $removedIpAddress->id)],
+                        ) ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?= $this->element('common/paginator') ?>
+</div>

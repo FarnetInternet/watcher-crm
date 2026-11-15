@@ -1,0 +1,72 @@
+<?php
+/**
+ * @var \App\View\AppView $this
+ * @var \App\Model\Entity\Contract $contract
+ * @var \Cake\Collection\CollectionInterface<string, string>|array<string> $contractStates
+ * @var \Cake\Collection\CollectionInterface<string, string>|array<string> $customers
+ * @var \Cake\Collection\CollectionInterface<string, string>|array<string> $serviceTypes
+ * @var \Cake\Collection\CollectionInterface<string, string>|array<string> $installationAddresses
+ * @var \Cake\Collection\CollectionInterface<string, string>|array<string> $accessPoints
+ * @var \Cake\Collection\CollectionInterface<string, string>|array<string> $commissions
+ */
+
+use Settings\Utility\Settings;
+
+?>
+<div class="row">
+    <aside class="column">
+        <div class="side-nav">
+            <h4 class="heading"><?= __('Actions') ?></h4>
+            <?= $this->AuthLink->link(__('List Contracts'), ['action' => 'index'], ['class' => 'side-nav-item']) ?>
+        </div>
+    </aside>
+    <div class="column column-90">
+        <div class="contracts form content">
+            <?= $this->Form->create($contract) ?>
+            <fieldset>
+                <?= $this->legend(__('Add Contract')) ?>
+                <div class="row">
+                    <div class="column">
+                        <datalist id="access-descriptions">
+                            <?php foreach (Settings::get('core.contracts.access_descriptions_list', []) as $item) : ?>
+                                <option value="<?= h($item) ?>">
+                            <?php endforeach; ?>
+                        </datalist>
+                        <?php
+                        if (!isset($customer_id)) {
+                            echo $this->Form->control('customer_id', ['options' => $customers]);
+                        }
+                        echo $this->Form->control('contract_state_id', ['options' => $contractStates, 'empty' => true]);
+                        echo $this->Form->control('service_type_id', ['options' => $serviceTypes, 'empty' => true]);
+                        echo $this->Form->control('number');
+                        echo $this->Form->control('installation_address_id', [
+                            'options' => $installationAddresses,
+                            'empty' => true,
+                        ]);
+                        echo $this->Form->control('commission_id', ['options' => $commissions, 'empty' => true]);
+                        echo $this->Form->control('vip');
+                        ?>
+                    </div>
+                    <div class="column">
+                        <?php
+                        echo $this->Form->control('access_point_id', ['options' => $accessPoints, 'empty' => true]);
+                        echo $this->Form->control('access_description', [
+                            'type' => 'text',
+                            'list' => 'access-descriptions',
+                        ]);
+                        echo $this->Form->control('activation_fee', ['empty' => true]);
+                        echo $this->Form->control('activation_fee_with_obligation', ['empty' => true]);
+                        echo $this->Form->control('minimum_connection_price', [
+                            'empty' => true,
+                            'help' => __('The monthly price for the connection may not be lower than this.'),
+                        ]);
+                        echo $this->Form->control('note');
+                        ?>
+                    </div>
+                </div>
+            </fieldset>
+            <?= $this->Form->button(__('Submit')) ?>
+            <?= $this->Form->end() ?>
+        </div>
+    </div>
+</div>

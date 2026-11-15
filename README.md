@@ -1,0 +1,243 @@
+# Watcher CRM
+
+[![PHPStan](https://img.shields.io/badge/PHPStan-level%208-brightgreen.svg?style=flat-square)](https://github.com/phpstan/phpstan)
+
+CRM for Internet Service Providers, built on [CakePHP](https://github.com/cakephp/cakephp).
+
+## Description
+
+- Customer Relationship Management system aimed at small and mid-size ISPs
+  (customer / contract / billing / IP address management).
+- Generates invoices in dBase format for the POHODA Stormware bookkeeping software.
+- Integrates with optional services for RADIUS accounting, RouterOS device
+  inventory, the [geo-addresses-postgis](https://github.com/Mapiiik/geo-addresses-postgis)
+  registry lookup API (CZ RUIAN / HR DGU), and a few SaaS providers
+  (Eurofaktura, SledovaniTV, Android SMS Gateway, …).
+
+## Requirements
+
+- PHP 8.2 or newer
+- PostgreSQL
+- Redis
+- PHP `imagick` extension, and ghostscript alongside it for PDFs (only for the
+  pictures of filed documents — without them a document is still filed and
+  handed over, it just has no thumbnail)
+- PECL `dbase` extension (only when using the POHODA invoice export)
+- [Watcher Agent](https://github.com/Mapiiik/Watcher-Agent) — required only for
+  host reachability checks (ping), RADIUS session disconnect and changes on
+  RouterOS devices (the address list debtors are blocked by, the access lists
+  of access points). It is a separate service (run it in Docker, even on the
+  same host; it supports the PROXY protocol), and it holds the account for the
+  routers. These actions no longer run locally, so the app container needs no
+  `ping` binary and no router passwords.
+- [geo-addresses-postgis](https://github.com/Mapiiik/geo-addresses-postgis) —
+  required only for address validation and registry lookups (CZ RUIAN / HR DGU).
+  It is a separate service exposing a REST API; point the app at it via
+  `ADDRESSES_API_URL` / `ADDRESSES_API_KEY`.
+
+The Docker Compose stack below provides PostgreSQL and Redis out of the box,
+so on a fresh host you only need Docker.
+
+## Installation
+
+Two install paths are supported. Docker Compose is recommended.
+
+### Option A — Docker Compose (recommended)
+
+```bash
+git clone https://github.com/Mapiiik/Watcher-CRM.git
+cd Watcher-CRM
+cp config/.env.example config/.env
+# edit config/.env — set APP_NAME and any integration URLs / API keys
+docker compose -f compose.production.yaml up -d
+```
+
+The production image runs `composer run-script migrations` and rebuilds the
+schema cache automatically on container start, so the app is reachable at
+`https://localhost` (with a certificate of Caddy's local CA) once the
+container is healthy. It runs on [our FrankenPHP](https://github.com/Mapiiik/frankenphp)
+(Debian), whose Caddyfile `docker/caddy/app.caddy` fills in. Set `SERVER_NAME` in the
+compose environment to a real domain and Caddy obtains a Let's Encrypt certificate itself.
+The base image also restricts paths to administrators' addresses (`ACCESS`) and limits
+sign-in attempts per address (`RATE_LIMIT`) when asked to, see its README.
+
+Behind an SNI proxy such as HAProxy, set `LISTENER_MODE=behind-proxy` and `PROXY_ALLOW` to the
+proxy's network. Only on an internal network, for a test before DNS points at the server or for
+good, set `LISTENER_MODE=internal`: Caddy issues the certificate from its own CA and `SERVER_NAME`
+can be the internal name or the server's IP address. Browsers warn until they trust its root
+certificate, `/data/caddy/pki/authorities/local/root.crt` in the container.
+
+### Option B — Bare-metal (host nginx + PHP-FPM, FrankenPHP, …)
+
+For hosts already running their own PHP webserver:
+
+```bash
+git clone https://github.com/Mapiiik/Watcher-CRM.git
+cd Watcher-CRM
+composer install --no-dev
+cp config/.env.example config/.env
+# edit config/.env — at minimum DATABASE_URL and CACHE_*_URL
+
+composer run-script migrations
+composer run-script schema-cache
+```
+
+Point your webserver's document root at the `webroot/` directory. Install the
+PECL `dbase` extension if you plan to use the POHODA invoice export in dBASE format.
+
+Later updates of such an installation are one script:
+
+```bash
+./update.sh
+```
+
+It refuses to run on a tree with local changes, then pulls, installs, migrates,
+relinks the plugin assets and clears the caches. Where opcache is configured not to
+check file timestamps, set `PHP_FPM_SERVICE` to the service name and the script
+reloads the pool at the end.
+
+### The first admin
+
+A new installation has no account to sign in with. Add an admin; the password is
+made up for it and shown once:
+
+```bash
+bin/cake access add_admin <username> <email>
+```
+
+With Docker Compose, run it in the container:
+`docker compose -f compose.production.yaml exec webserver bin/cake access add_admin <username> <email>`.
+
+### Upgrading from 4.x
+
+5.x begins with one migration that takes the schema over from the last 4.x
+release, so an installation has to go through that release first and migrate
+there. 5.x also keeps the record of the migrations in one table instead of the
+`phinxlog` tables of 4.x. Move it over once, then migrate:
+
+```bash
+bin/cake migrations upgrade --drop-tables
+./update.sh
+```
+
+Until both are done, migrating stops and says which of them is missing.
+
+## Configuration
+
+Runtime settings live in `config/.env` (or are passed in as environment
+variables — see the `environment:` blocks in the compose files for the keys
+read at boot). `config/.env.example` is the canonical list; common groups are:
+
+- **Database / cache:** `DATABASE_URL`, `CACHE_*_URL`
+- **Integrations:** `WATCHER_NMS_URL/_KEY`, `WATCHER_AGENT_URL/_KEY`,
+  `ADDRESSES_API_URL/_KEY`, `ANDROID_SMS_GATEWAY_URL`, …
+
+### Pictures of filed documents
+
+Thumbnails and previews are drawn by ImageMagick from files somebody uploaded,
+so it is worth telling it what it may open. The images already do — they carry
+`docker/imagemagick-policy.xml` and copy it over the one ImageMagick ships.
+
+A bare-metal install has nobody to do that for it, and what a distribution
+ships varies: the one on Ubuntu 24.04 leaves every coder open, while others
+refuse PDF outright and draw no preview of a scan at all. If you want the
+previews, take that file as a starting point and put it where your build reads
+it:
+
+```bash
+sudo cp docker/imagemagick-policy.xml /etc/ImageMagick-7/policy.xml   # or -6
+```
+
+It allows the formats a scan or a photograph arrives in, lets ghostscript draw
+the first page of a PDF, and refuses everything else. Read it before you use it:
+it is commented throughout, and a deployment that files a format we did not
+think of will have to add it.
+
+Two things are worth knowing if you edit it. ImageMagick 6 and 7 ask for the
+ghostscript delegate under different names, which is why it is granted twice.
+And leave the `time` limit out: on ImageMagick 6 it counts the processor time of
+the whole process rather than of one conversion, so anything long-lived — a
+nightly batch of previews, a worker answering all day — ends up unable to draw
+at all.
+
+### Customizing the compose stack
+
+If `compose.production.yaml` doesn't fit your environment, copy it to
+`compose.yaml` and customize there — `compose.yaml` is git-ignored, so
+`git pull` won't overwrite your changes.
+
+```bash
+cp compose.production.yaml compose.yaml
+# edit compose.yaml as needed
+docker compose up -d
+```
+
+Typical reasons to override: pointing services at infrastructure already
+running on the host (e.g. an existing PostgreSQL instance, external Redis,
+reverse proxy), removing bundled containers you don't need, or tweaking
+volumes / networks.
+
+### Backups
+
+A deployment keeps its state in two places: the database, and the data root
+(`DATA_ROOT`, the `app-data` volume by default) where the letterhead, the
+signature and the documents live. A dump of the database alone is therefore
+not a backup.
+
+```bash
+bin/cake backup /somewhere/outside   # a directory named after the moment
+bin/cake restore /somewhere/outside/2026-09-10-020000
+```
+
+The application image carries no PostgreSQL client, so under Docker the
+command prints what to run in the database container instead. See
+[docs/2026-backing-up-a-deployment.txt](docs/2026-backing-up-a-deployment.txt)
+for that, for the order the two halves have to be taken in, and for how to
+check that a backup is one.
+
+## Development
+
+`compose.development.yaml` targets local development, with FrankenPHP
+(HTTP/1.1, HTTP/2, HTTP/3). It bind-mounts the working tree into the container
+and places `vendor/`, `tmp/`, `logs/`, `node_modules/`, plus the PostgreSQL
+data directory and Redis data on tmpfs — fast iteration and disposable state, but everything in
+those paths is lost when the stack is torn down.
+
+```bash
+docker compose -f compose.development.yaml up
+```
+
+The Postgres and Redis ports are exposed to the host (`5432`, `6379`) so you
+can connect with local clients while the stack is running.
+
+Mail goes to Mailpit, http://localhost:8025. The development Watcher NMS and agent are reached
+through the ports they publish on the host, `https://host.docker.internal:<port>`, with
+`WATCHER_NMS_VERIFY_TLS=false` and `WATCHER_AGENT_VERIFY_TLS=false`, as their certificates are
+their own. What the compose file sets (`DATABASE_URL`, `EMAIL_TRANSPORT_*_URL`) stays out of
+`config/.env`: a variable set in both stops the bootstrap.
+
+### Libraries in `webroot/vendor`
+
+The pages load nothing from a CDN. Every library lies whole in `webroot/vendor/<library>`, of the
+application or of a plugin, with its licence and a `vendor.json` that says where it comes from: a
+version of an npm package, a family of Google Fonts, or an address.
+
+```bash
+bin/cake vendor_assets check                          # each folder against its source, and what is newer
+bin/cake vendor_assets update webroot/vendor/jquery   # the newest version, or name one after the folder
+```
+
+A new library starts as a folder with only its `vendor.json`, which `update` fills. Bootstrap,
+Font Awesome, Chart.js and flatpickr stay at the versions the pages of the queue and the audit log
+ask for, as `App\Event\LocalAssetsListener` serves them those instead of the CDN.
+
+## License
+
+Watcher CRM is licensed under the GNU Affero General Public License v3.0.
+Copyright (c) 2026 Martin Patočka.
+
+### What this means
+
+You are free to use, modify and run this software. If you modify it and make
+it available to others (including as a network service), you must also make
+your modifications available under the same license.

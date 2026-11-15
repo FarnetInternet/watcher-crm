@@ -1,0 +1,506 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Contracts\Proposal;
+
+use App\Contracts\MinimumConnectionPrice;
+use App\Model\Entity\ContractProposal;
+use App\Model\Enum\ContractDocumentType;
+use App\Model\Enum\DocumentVariant;
+use App\Service\ContractPrint\ContractDocuments;
+use Cake\ORM\Locator\LocatorAwareTrait;
+
+/**
+ * What applying a proposal would run into, said before anybody presses the button.
+ *
+ * A proposal is drawn up against how things stood, and then it waits - for the papers to go out, to
+ * come back signed, to be got round to. Meanwhile somebody may have changed a billing by hand,
+ * ended one, added one, or moved the version's dates. None of that stops applying the changes, because the
+ * operator may well know about it and want to go ahead anyway; it is said out loud instead.
+ */
+final class ChangePreview
+{
+    use LocatorAwareTrait;
+
+    /**
+     * The proposal has not been signed, so there is nothing to apply yet.
+     */
+    public const NOT_CONCLUDED = 'not_concluded';
+
+    /**
+     * A billing the proposal acts on is no longer on the contract.
+     */
+    public const BILLING_GONE = 'billing_gone';
+
+    /**
+     * A billing the proposal acts on has been changed since the snapshot was taken.
+     */
+    public const BILLING_MOVED = 'billing_moved';
+
+    /**
+     * A billing has appeared on the contract that the proposal knows nothing about.
+     */
+    public const BILLING_APPEARED = 'billing_appeared';
+
+    /**
+     * The version's dates are no longer what they were when the proposal was drawn up.
+     */
+    public const VERSION_MOVED = 'version_moved';
+
+    /**
+     * A billing the proposal ends begins after the day it would be ended on.
+     */
+    public const BILLING_NEVER_RAN = 'billing_never_ran';
+
+    /**
+     * The day it takes effect has been invoiced for already.
+     */
+    public const CLOSED_PERIOD = 'closed_period';
+
+    /**
+     * A line prices the connection below the contract's minimum and nobody allowed it.
+     */
+    public const BELOW_MINIMUM = 'below_minimum';
+
+    /**
+     * The signature is written down and the signed papers have not been filed.
+     */
+    public const NOTHING_SIGNED_ON_FILE = 'nothing_signed_on_file';
+
+    /**
+     * A piece of equipment the proposal takes back is no longer on the contract.
+     */
+    public const EQUIPMENT_GONE = 'equipment_gone';
+
+    /**
+     * A piece of equipment the proposal takes back has been taken back already.
+     */
+    public const EQUIPMENT_ALREADY_BACK = 'equipment_already_back';
+
+    /**
+     * Equipment has been lent on the contract since the snapshot while the proposal lends some too.
+     */
+    public const EQUIPMENT_APPEARED = 'equipment_appeared';
+
+    /**
+     * What stands in the way of applying the proposal, if anything.
+     *
+     * @param \App\Model\Entity\ContractProposal $proposal The proposal.
+     * @return array<int, array{what: string, said: string}> In the order they are worth reading.
+     */
+    public function of(ContractProposal $proposal): array
+    {
+        $found = [];
+
+        if (!$proposal->hasBeenConcluded()) {
+            $found[] = [
+                'what' => self::NOT_CONCLUDED,
+                'said' => __('This proposal has not been signed yet, so its changes cannot be'
+                    . ' applied.'),
+            ];
+        }
+
+        $found = array_merge($found, $this->whatIsNotOnFile($proposal));
+        $found = array_merge($found, $this->whatMovedInTheBillings($proposal));
+        $found = array_merge($found, $this->whatMovedInTheEquipment($proposal));
+        $found = array_merge($found, $this->whatMovedOnTheVersion($proposal));
+
+        $found = array_merge($found, $this->whatHasBeenInvoicedFor($proposal));
+
+        return array_merge($found, $this->whatFallsBelowTheMinimum($proposal));
+    }
+
+    /**
+     * Whether anything here would stop applying the changes rather than merely be worth knowing.
+     *
+     * A billing that has gone stops it, because the line that acts on it cannot be written and a
+     * signed proposal cannot be edited - which used to leave no way out at all. It stops being a
+     * full stop once an administrator has said the line may be passed over and written down.
+     *
+     * @param array<int, array{what: string, said: string}> $found What the preview found.
+     * @param bool $lines_may_be_left_out Whether a line whose billing has gone may be passed over.
+     * @return bool
+     */
+    public function anythingStopsIt(array $found, bool $lines_may_be_left_out = false): bool
+    {
+        $stopping = $lines_may_be_left_out
+            ? [self::NOT_CONCLUDED]
+            : [self::NOT_CONCLUDED, self::BILLING_GONE, self::EQUIPMENT_GONE];
+
+        foreach ($found as $one) {
+            if (in_array($one['what'], $stopping, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether a line of this proposal acts on a billing that is no longer there.
+     *
+     * Asked so that the way out is offered only where it is needed. Nobody is shown a box about
+     * leaving lines out of a proposal that has all its billings.
+     *
+     * @param array<int, array{what: string, said: string}> $found What the preview found.
+     * @return bool
+     */
+    public function anythingIsGone(array $found): bool
+    {
+        foreach ($found as $one) {
+            if ($one['what'] === self::BILLING_GONE || $one['what'] === self::EQUIPMENT_GONE) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether the signed papers ever arrived.
+     *
+     * Stops nothing on purpose - holding the records back for a scan would leave the service
+     * waiting on the scanner - but this is the moment somebody is looking.
+     *
+     * @param \App\Model\Entity\ContractProposal $proposal The proposal.
+     * @return array<int, array{what: string, said: string}>
+     */
+    private function whatIsNotOnFile(ContractProposal $proposal): array
+    {
+        // Nothing of ours is signed for a contract that keeps no versions, so nothing is missing.
+        if (!$proposal->hasBeenConcluded() || !$proposal->keepsVersions()) {
+            return [];
+        }
+
+        $filed = (new ContractDocuments())->filedAgainst([$proposal])[(string)$proposal->id] ?? [];
+
+        foreach ($filed as $document_type => $byVariant) {
+            $type = ContractDocumentType::tryFrom((string)$document_type);
+
+            // A notice or a certificate is the answer by itself, however it came back.
+            if ($type?->speaksForItself() ?? false) {
+                return [];
+            }
+
+            // Otherwise it is a signed copy of the agreement; a signed protocol does not stand in,
+            // unless the protocol is all the papers there are.
+            if ($type === null || !$proposal->purpose->isSignedBy($type)) {
+                continue;
+            }
+
+            foreach (array_keys($byVariant) as $variant) {
+                if (DocumentVariant::tryFrom((string)$variant)?->carriesTheCustomersSignature() ?? false) {
+                    return [];
+                }
+            }
+        }
+
+        return [[
+            'what' => self::NOTHING_SIGNED_ON_FILE,
+            'said' => __('The signature is recorded, but no signed documents have been uploaded'
+                . ' for this proposal.'),
+        ]];
+    }
+
+    /**
+     * What has happened to the billings since the snapshot was taken.
+     *
+     * @param \App\Model\Entity\ContractProposal $proposal The proposal.
+     * @return array<int, array{what: string, said: string}>
+     */
+    private function whatMovedInTheBillings(ContractProposal $proposal): array
+    {
+        $snapshot = $proposal->stateOfThings();
+        /** @var array<string, \App\Model\Entity\Billing> $live */
+        $live = $this->fetchTable('Billings')
+            ->find()
+            ->where(['Billings.contract_id' => $proposal->contract_id])
+            ->all()
+            ->indexBy('id')
+            ->toArray();
+
+        $found = [];
+
+        foreach ($proposal->proposedChanges()->billingsByBillingId() as $id => $line) {
+            /** @var \App\Model\Entity\Billing|null $one */
+            $one = $live[$id] ?? null;
+
+            if ($one === null) {
+                $found[] = [
+                    'what' => self::BILLING_GONE,
+                    'said' => __(
+                        'A billing this proposal changes is no longer on the contract.'
+                        . ' Take the snapshot again and look the proposal over.',
+                    ),
+                ];
+
+                continue;
+            }
+
+            if ($line->neverRunsAfterAll($proposal->effective_from, $one->billing_from)) {
+                $found[] = [
+                    'what' => self::BILLING_NEVER_RAN,
+                    'said' => __(
+                        'A billing this proposal ends begins on {0}, after the day it would be'
+                        . ' ended on, so it never runs at all. It will be removed from the'
+                        . ' contract rather than ended.',
+                        $one->billing_from,
+                    ),
+                ];
+            }
+
+            $moved = $snapshot->billingTermsThatMoved((string)$id, $one);
+
+            if ($moved !== []) {
+                $found[] = [
+                    'what' => self::BILLING_MOVED,
+                    'said' => __(
+                        'A billing changed by this proposal has been edited in the meantime:'
+                        . ' {0}. Applying the changes will overwrite that edit.',
+                        implode(', ', $moved),
+                    ),
+                ];
+            }
+        }
+
+        foreach ($snapshot->billingsAddedSince($live) as $_id) {
+            $found[] = [
+                'what' => self::BILLING_APPEARED,
+                'said' => __(
+                    'A billing this proposal does not cover has been added to the contract. It'
+                    . ' will be left unchanged.',
+                ),
+            ];
+        }
+
+        return $found;
+    }
+
+    /**
+     * What has happened to the equipment since the snapshot was taken.
+     *
+     * @param \App\Model\Entity\ContractProposal $proposal The proposal.
+     * @return array<int, array{what: string, said: string}>
+     */
+    private function whatMovedInTheEquipment(ContractProposal $proposal): array
+    {
+        $changes = $proposal->proposedChanges();
+
+        if ($changes->equipments === []) {
+            return [];
+        }
+
+        /** @var array<string, \App\Model\Entity\BorrowedEquipment> $live */
+        $live = $this->fetchTable('BorrowedEquipments')
+            ->find()
+            ->where(['BorrowedEquipments.contract_id' => $proposal->contract_id])
+            ->all()
+            ->indexBy('id')
+            ->toArray();
+
+        $found = [];
+
+        foreach (array_keys($changes->equipmentTakenBack()) as $id) {
+            $one = $live[$id] ?? null;
+
+            if ($one === null) {
+                $found[] = [
+                    'what' => self::EQUIPMENT_GONE,
+                    'said' => __('A borrowed equipment this proposal ends is no longer on the contract.'),
+                ];
+            } elseif ($one->borrowed_until !== null) {
+                $found[] = [
+                    'what' => self::EQUIPMENT_ALREADY_BACK,
+                    'said' => __(
+                        'A borrowed equipment this proposal ends was ended on {0} already, and is left'
+                        . ' as it is.',
+                        $one->borrowed_until,
+                    ),
+                ];
+            }
+        }
+
+        if ($changes->equipmentLent() === []) {
+            return $found;
+        }
+
+        $snapshot = $proposal->stateOfThings();
+
+        foreach ($live as $id => $one) {
+            if ($one->borrowed_until === null && !$snapshot->knowsBorrowedEquipment((string)$id)) {
+                $found[] = [
+                    'what' => self::EQUIPMENT_APPEARED,
+                    'said' => __(
+                        'A borrowed equipment has been added to the contract since this proposal was'
+                        . ' created. If it is the one the proposal adds, it would be recorded twice.',
+                    ),
+                ];
+
+                break;
+            }
+        }
+
+        return $found;
+    }
+
+    /**
+     * Whether the version still says what it said when the proposal was drawn up.
+     *
+     * @param \App\Model\Entity\ContractProposal $proposal The proposal.
+     * @return array<int, array{what: string, said: string}>
+     */
+    private function whatMovedOnTheVersion(ContractProposal $proposal): array
+    {
+        // Papers that bring their version into being name none, and nothing can have moved on a
+        // version that is not there yet.
+        if ($proposal->contract_version_id === null) {
+            return [];
+        }
+
+        /** @var \App\Model\Entity\ContractVersion|null $version */
+        $version = $this->fetchTable('ContractVersions')
+            ->find()
+            ->where(['ContractVersions.id' => $proposal->contract_version_id])
+            ->first();
+
+        if ($version === null) {
+            return [];
+        }
+
+        // Asked of the snapshot: how its copy of a day is held up against the record's is its
+        // business, and getting it wrong reported every proposal there is as having moved.
+        if ($proposal->stateOfThings()->versionTermsThatMoved($version) === []) {
+            return [];
+        }
+
+        return [[
+            'what' => self::VERSION_MOVED,
+            'said' => __(
+                'The contract version has been changed since this proposal was created.',
+            ),
+        ]];
+    }
+
+    /**
+     * Whether the day it takes effect has already been invoiced for.
+     *
+     * @param \App\Model\Entity\ContractProposal $proposal The proposal.
+     * @return array<int, array{what: string, said: string}>
+     */
+    private function whatHasBeenInvoicedFor(ContractProposal $proposal): array
+    {
+        /** @var \App\Model\Table\BillingsTable $billings */
+        $billings = $this->fetchTable('Billings');
+
+        if ($proposal->effective_from >= $billings->firstOpenPeriodStart()) {
+            return [];
+        }
+
+        return [[
+            'what' => self::CLOSED_PERIOD,
+            'said' => __(
+                'This proposal takes effect in a period that has already been invoiced. Only an'
+                . ' administrator can make changes in an invoiced period, and only after'
+                . ' allowing it explicitly.',
+            ),
+        ]];
+    }
+
+    /**
+     * Whether a line prices the connection below the contract's minimum.
+     *
+     * The line was checked when it was written, so this is the minimum having been raised since.
+     *
+     * @param \App\Model\Entity\ContractProposal $proposal The proposal.
+     * @return array<int, array{what: string, said: string}>
+     */
+    private function whatFallsBelowTheMinimum(ContractProposal $proposal): array
+    {
+        /** @var \App\Model\Table\BillingsTable $billings */
+        $billings = $this->fetchTable('Billings');
+        $minimum = $billings->minimumConnectionPriceOf($proposal->contract_id);
+
+        if ($minimum === null || MinimumConnectionPrice::linesBelow($proposal, $minimum) === []) {
+            return [];
+        }
+
+        return [[
+            'what' => self::BELOW_MINIMUM,
+            'said' => MinimumConnectionPrice::refusal($minimum) . ' ' . __(
+                'Only an administrator can apply it, and only after allowing it explicitly.',
+            ),
+        ]];
+    }
+
+    /**
+     * What applying the changes would leave the billings looking like, for the operator to read against
+     * what is there now.
+     *
+     * @param \App\Model\Entity\ContractProposal $proposal The proposal.
+     * @return array<\App\Model\Entity\Billing>
+     */
+    public function billingsAfterwards(ContractProposal $proposal): array
+    {
+        $snapshot = $proposal->stateOfThings();
+        $changes = $proposal->proposedChanges();
+
+        return (new ProposalProjection())->projectBillings(
+            $snapshot->hydrate()->billings,
+            $changes,
+            $proposal->effective_from,
+            $snapshot->servicesChosenBy($changes),
+        );
+    }
+
+    /**
+     * What applying the changes would take back and lend, each piece with the line that says so.
+     *
+     * @param \App\Model\Entity\ContractProposal $proposal The proposal.
+     * @return list<array{equipment: \App\Model\Entity\BorrowedEquipment, line: \App\Contracts\Proposal\ProposedEquipment}>
+     */
+    public function equipmentMoved(ContractProposal $proposal): array
+    {
+        $snapshot = $proposal->stateOfThings();
+        $changes = $proposal->proposedChanges();
+
+        if ($changes->equipments === []) {
+            return [];
+        }
+
+        $moved = [];
+
+        foreach (
+            (new ProposalProjection())->explainEquipment(
+                $snapshot->hydrate()->borrowed_equipments ?? [],
+                $changes,
+                $snapshot->equipmentLentBy($changes),
+            ) as $row
+        ) {
+            if ($row['line'] !== null) {
+                $moved[] = ['equipment' => $row['equipment'], 'line' => $row['line']];
+            }
+        }
+
+        return $moved;
+    }
+
+    /**
+     * The billings as they stand now.
+     *
+     * @param \App\Model\Entity\ContractProposal $proposal The proposal.
+     * @return array<\App\Model\Entity\Billing>
+     */
+    public function billingsNow(ContractProposal $proposal): array
+    {
+        /** @var array<\App\Model\Entity\Billing> $billings */
+        $billings = $this->fetchTable('Billings')
+            ->find()
+            ->contain(['Services'])
+            ->where(['Billings.contract_id' => $proposal->contract_id])
+            ->orderBy(['Billings.billing_from' => 'ASC'])
+            ->all()
+            ->toList();
+
+        return $billings;
+    }
+}

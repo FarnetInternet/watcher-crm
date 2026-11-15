@@ -1,0 +1,372 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Model\Entity;
+
+use App\Http\Answer;
+use App\NMS\ApiClient as NMSApiClient;
+use Cake\I18n\Date;
+use PhpCollective\DecimalObject\Decimal;
+use RuntimeException;
+use Tasks\Model\Entity\Trait\ColoredStyleTrait;
+
+/**
+ * Contract Entity
+ *
+ * @property string $id
+ * @property int $nid
+ * @property string $customer_id
+ * @property int|null $installation_address_id
+ * @property string|null $number
+ * @property string|null $subscriber_verification_code
+ * @property int $service_type_id
+ * @property string|null $note
+ * @property bool|null $vip
+ * @property int|null $installation_technician_id
+ * @property int|null $uninstallation_technician_id
+ * @property int|null $commission_id
+ * @property \Cake\I18n\Date|null $installation_date
+ * @property \Cake\I18n\Date|null $uninstallation_date
+ * @property \Cake\I18n\Date|null $termination_date
+ * @property string|null $access_description
+ * @property string|null $individual_terms
+ * @property \PhpCollective\DecimalObject\Decimal|null $activation_fee
+ * @property \PhpCollective\DecimalObject\Decimal|null $activation_fee_with_obligation
+ * @property \PhpCollective\DecimalObject\Decimal $activation_fee_sum
+ * @property \PhpCollective\DecimalObject\Decimal $activation_fee_with_obligation_sum
+ * @property \PhpCollective\DecimalObject\Decimal|null $minimum_connection_price
+ * @property string|null $access_point_id
+ * @property string $contract_state_id
+ * @property string $name
+ * @property string $style
+ * @property bool $active_services
+ * @property bool $billed
+ * @property bool $blocked
+ *
+ * Of the query rather than of the record, and only where
+ * {@see \App\Model\Table\ContractsTable::findStartingBetween()} or
+ * {@see \App\Model\Table\ContractsTable::findEndingBetween()} have put them there: the day
+ * the contract's life begins and the day it ends, as the chosen source reads them. Fetched
+ * any other way, a contract does not carry these.
+ * @property \Cake\I18n\Date|null $starts_on
+ * @property \Cake\I18n\Date|null $ends_on
+ *
+ * @property \App\Model\Entity\Customer $customer
+ * @property \App\Model\Entity\Address|null $installation_address
+ * @property \App\Model\Entity\Address $billing_address
+ * @property \App\Model\Entity\Address $delivery_address
+ * @property \App\Model\Entity\Address $permanent_address
+ * @property \App\Model\Entity\ServiceType $service_type
+ * @property \App\Model\Entity\Customer $installation_technician
+ * @property \App\Model\Entity\Customer $uninstallation_technician
+ * @property \App\Model\Entity\Commission $commission
+ * @property \App\Model\Entity\ContractState $contract_state
+ * @property \App\Model\Entity\Billing[] $billings
+ * @property \App\Model\Entity\BorrowedEquipment[] $borrowed_equipments
+ * @property \App\Model\Entity\ContractVersion[] $contract_versions
+ * @property \App\Model\Entity\IpAddress[] $ip_addresses
+ * @property \App\Model\Entity\RemovedIpAddress[] $removed_ip_addresses
+ * @property \App\Model\Entity\IpNetwork[] $ip_networks
+ * @property \App\Model\Entity\RemovedIpNetwork[] $removed_ip_networks
+ * @property \App\Model\Entity\SoldEquipment[] $sold_equipments
+ * @property \App\Model\Entity\Task[] $tasks
+ * @property \App\Http\Answer<\App\NMS\Dto\AccessPoint|null> $access_point
+ *
+ * Of the query rather than of the record, and only where
+ * {@see \App\Contracts\Unsigned\UnsignedPaperwork::withServiceDeadlines()} has put them there: the
+ * days a service running on no contract version is written to about and cut off for, the day we
+ * began to charge for it, and the day the last version it had ran out. Fetched any other way, a
+ * contract does not carry them.
+ * @property \Cake\I18n\Date|null $notify_due
+ * @property \Cake\I18n\Date|null $block_due
+ * @property \Cake\I18n\Date|null $charged_since
+ * @property \Cake\I18n\Date|null $covered_until
+ */
+class Contract extends AppEntity
+{
+    use ColoredStyleTrait;
+
+    /**
+     * Fields that can be mass assigned using newEntity() or patchEntity().
+     *
+     * Note that when '*' is set to true, this allows all unspecified fields to
+     * be mass assigned. For security purposes, it is advised to set '*' to false
+     * (or remove it), and explicitly make individual fields accessible as needed.
+     *
+     * @var array<string, bool>
+     */
+    protected array $_accessible = [
+        'created' => true,
+        'created_by' => true,
+        'modified' => true,
+        'modified_by' => true,
+        'customer_id' => true,
+        'installation_address_id' => true,
+        'number' => true,
+        'subscriber_verification_code' => true,
+        'service_type_id' => true,
+        'note' => true,
+        'vip' => true,
+        'installation_technician_id' => true,
+        'uninstallation_technician_id' => true,
+        'commission_id' => true,
+        'installation_date' => true,
+        'uninstallation_date' => true,
+        'termination_date' => true,
+        'access_description' => true,
+        'individual_terms' => true,
+        'activation_fee' => true,
+        'activation_fee_with_obligation' => true,
+        'minimum_connection_price' => true,
+        'access_point_id' => true,
+        'contract_state_id' => true,
+        'creator' => true,
+        'modifier' => true,
+        'customer' => true,
+        'installation_address' => true,
+        'service_type' => true,
+        'installation_technician' => true,
+        'uninstallation_technician' => true,
+        'commission' => true,
+        'contract_state' => true,
+        'billings' => true,
+        'borrowed_equipments' => true,
+        'contract_versions' => true,
+        'ip_addresses' => true,
+        'removed_ip_addresses' => true,
+        'ip_networks' => true,
+        'removed_ip_networks' => true,
+        'sold_equipments' => true,
+        'tasks' => true,
+    ];
+
+    /**
+     * getter for activation_fee (local or from service_type)
+     *
+     * @return \PhpCollective\DecimalObject\Decimal
+     */
+    protected function _getActivationFeeSum(): Decimal
+    {
+        return $this->activation_fee ?? $this->service_type->activation_fee ?? Decimal::create(0, 2);
+    }
+
+    /**
+     * getter for activation_fee_with_obligation (local or from service_type)
+     *
+     * @return \PhpCollective\DecimalObject\Decimal
+     */
+    protected function _getActivationFeeWithObligationSum(): Decimal
+    {
+        return $this->activation_fee_with_obligation
+            ?? $this->service_type->activation_fee_with_obligation
+            ?? Decimal::create(0, 2);
+    }
+
+    /**
+     * getter for billing address from Customer object
+     *
+     * @return \App\Model\Entity\Address|null
+     */
+    protected function _getBillingAddress(): ?Address
+    {
+        return $this->customer->billing_address;
+    }
+
+    /**
+     * getter for delivery address from Customer object
+     *
+     * @return \App\Model\Entity\Address|null
+     */
+    protected function _getDeliveryAddress(): ?Address
+    {
+        return $this->customer->delivery_address;
+    }
+
+    /**
+     * getter for permanent address from Customer object
+     *
+     * @return \App\Model\Entity\Address|null
+     */
+    protected function _getPermanentAddress(): ?Address
+    {
+        return $this->customer->permanent_address;
+    }
+
+    /**
+     * getter for name in format "number - service_type->name - installation_address->address"
+     *
+     * @return string
+     */
+    protected function _getName(): string
+    {
+        return implode(' - ', array_filter([
+            $this->number,
+            $this->service_type?->name,
+            $this->installation_address?->address,
+        ]));
+    }
+
+    /**
+     * The contract written out in one line: what it is and where it is, and its number after it.
+     *
+     * The counterpart of {@see \App\Model\Entity\Customer::getName()}. Where neither the service
+     * nor the address has been loaded there is nothing to say but the number.
+     *
+     * @return string
+     */
+    public function getName(): string
+    {
+        $said = implode(' - ', array_filter([
+            $this->service_type?->name,
+            $this->installation_address?->address,
+        ]));
+
+        if ($said === '') {
+            return (string)$this->number;
+        }
+
+        return __('{0} ({1})', $said, $this->number);
+    }
+
+    /**
+     * getter for acess point (try to load via ApiClient)
+     *
+     * @return \App\Http\Answer<\App\NMS\Dto\AccessPoint|null>
+     */
+    protected function _getAccessPoint(): Answer
+    {
+        if ($this->access_point_id === null) {
+            return Answer::notAsked();
+        }
+
+        return NMSApiClient::getAccessPoint($this->access_point_id);
+    }
+
+    /**
+     * getter for style
+     *
+     * @return string
+     */
+    protected function _getStyle(): string
+    {
+        return $this->backgroundStyle($this->contract_state->color ?? null);
+    }
+
+    /**
+     * getter for active_services
+     *
+     * In a query the same decision is
+     * {@see \App\Model\Table\ContractsTable::findWithActiveServices()}.
+     *
+     * @return bool
+     * @throws \RuntimeException When contract state data not available.
+     */
+    protected function _getActiveServices(): bool
+    {
+        if (isset($this->contract_state)) {
+            return $this->contract_state->active_services;
+        }
+
+        throw new RuntimeException(__('Contract state data not available.'));
+    }
+
+    /**
+     * getter for billed
+     *
+     * @return bool
+     * @throws \RuntimeException When contract state data not available.
+     */
+    protected function _getBilled(): bool
+    {
+        if (isset($this->contract_state)) {
+            return $this->contract_state->billed;
+        }
+
+        throw new RuntimeException(__('Contract state data not available.'));
+    }
+
+    /**
+     * getter for blocked
+     *
+     * @return bool
+     * @throws \RuntimeException When contract state data not available.
+     */
+    protected function _getBlocked(): bool
+    {
+        if (isset($this->contract_state)) {
+            return $this->contract_state->blocked;
+        }
+
+        throw new RuntimeException(__('Contract state data not available.'));
+    }
+
+    /**
+     * getter for option separate_invoice (use option from service type)
+     *
+     * @return bool
+     * @throws \RuntimeException When service type data not available.
+     */
+    public function isSeparateInvoice(): bool
+    {
+        if ($this->has('service_type')) {
+            return $this->service_type->separate_invoice;
+        }
+
+        throw new RuntimeException(__('Service type data not available.'));
+    }
+
+    /**
+     * getter for option invoice_with_items (use option from service type)
+     *
+     * @return bool
+     * @throws \RuntimeException When service type data not available.
+     */
+    public function isInvoiceWithItems(): bool
+    {
+        if ($this->has('service_type')) {
+            return $this->service_type->invoice_with_items;
+        }
+
+        throw new RuntimeException(__('Service type data not available.'));
+    }
+
+    /**
+     * getter for option invoice_text (use option from service type)
+     *
+     * @return string|null
+     * @throws \RuntimeException When service type data not available.
+     */
+    public function getInvoiceText(): ?string
+    {
+        if ($this->has('service_type')) {
+            return $this->service_type->invoice_text;
+        }
+
+        throw new RuntimeException(__('Service type data not available.'));
+    }
+
+    /**
+     * getter for the latest obligation_until found in the contract versions
+     *
+     * @return \Cake\I18n\Date|null Null when no contract version has an obligation set.
+     * @throws \RuntimeException When contract versions data not available.
+     */
+    public function getMaxObligationUntil(): ?Date
+    {
+        if (!$this->has('contract_versions')) {
+            throw new RuntimeException(__('Contract versions data not available.'));
+        }
+
+        $maxObligationUntil = null;
+        foreach ($this->contract_versions as $contractVersion) {
+            if (!isset($contractVersion->obligation_until)) {
+                continue;
+            }
+            if ($maxObligationUntil === null || $contractVersion->obligation_until > $maxObligationUntil) {
+                $maxObligationUntil = $contractVersion->obligation_until;
+            }
+        }
+
+        return $maxObligationUntil;
+    }
+}

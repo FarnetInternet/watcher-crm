@@ -1,0 +1,62 @@
+:root {
+    /* The following are official CakePHP colors */
+    --color-cakephp-red: #d02f37;
+    --color-cakephp-gray: #cececf;
+    --color-cakephp-blue: #2f85ae;
+    --color-cakephp-lightblue: #34bdd7;
+
+    /* These are additional colors */
+    --color-lightgray: #606c76;
+    --color-white: #ffffff;
+
+    --color-main: #ffffff;
+    --color-main-bg: #12181d;
+    --color-links: #66d0ff;
+    --color-links-active: #a8f3fa;
+    --color-links-active-bg: transparent;
+    --color-nav-links: #dddddd;
+    --color-nav-links-active: var(--color-links-active);
+    --color-nav-links-active-bg: transparent;
+    --color-headings: #dddddd;
+    --color-content-bg: #000000;
+    --color-table-bg: #171f26;
+    --color-card-bg: #0e1216;
+    --color-table-borders: #aaaaaa;
+    --color-table-headings-bg: #283a4a;
+
+    /* A step lighter than the tables, so it stands off both them and the page behind them. */
+    --color-code-bg: #242c34;
+
+    --color-message-success-bg: #13261b;
+    --color-message-success-text: #08b453;
+    --color-message-success-border: #318454;
+
+    --color-message-warning-bg: #242200;
+    --color-message-warning-text: #dcc116;
+    --color-message-warning-border: #7f6f00;
+
+    --color-message-error-bg: #291e1e;
+    --color-message-error-text: #ff2727;
+    --color-message-error-border: #d84242;
+
+    --color-message-info-bg: #1c2228;
+    --color-message-info-text: #569ce1;
+    --color-message-info-border: #457296;
+}
+
+table {
+    box-shadow:
+        0 3px 6px rgba(0, 0, 0, 0.35),
+        0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.content {
+    /* elevated dark UI */
+    box-shadow:
+        0 7px 14px rgba(0, 0, 0, 0.45),
+        0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+nav.top-nav {
+    box-shadow:
+        0 7px 14px rgba(0, 0, 0, 0.2),
+        0 0 0 1px rgba(255, 255, 255, 0.2);
+}

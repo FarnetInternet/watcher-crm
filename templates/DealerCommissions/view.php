@@ -1,0 +1,74 @@
+<?php
+/**
+ * @var \App\View\AppView $this
+ * @var \App\Model\Entity\DealerCommission $dealerCommission
+ */
+?>
+<div class="row">
+    <aside class="column">
+        <div class="side-nav">
+            <h4 class="heading"><?= __('Actions') ?></h4>
+            <?= $this->AuthLink->link(
+                __('Edit Dealer Commission'),
+                ['action' => 'edit', $dealerCommission->id],
+                ['class' => 'side-nav-item'],
+            ) ?>
+            <?= $this->AuthLink->postLink(
+                __('Delete Dealer Commission'),
+                ['action' => 'delete', $dealerCommission->id],
+                [
+                    'confirm' => __('Are you sure you want to delete # {0}?', $dealerCommission->id),
+                    'class' => 'side-nav-item',
+                ],
+            ) ?>
+            <?= $this->AuthLink->link(
+                __('List Dealer Commissions'),
+                ['action' => 'index'],
+                ['class' => 'side-nav-item'],
+            ) ?>
+            <?= $this->AuthLink->link(
+                __('New Dealer Commission'),
+                ['action' => 'add'],
+                ['class' => 'side-nav-item'],
+            ) ?>
+        </div>
+    </aside>
+    <div class="column column-90">
+        <div class="dealerCommissions view content">
+            <?= $this->record(__('Dealer Commission'), (string)$dealerCommission->id) ?>
+            <div class="row">
+                <div class="column">
+                    <table>
+                        <tr>
+                            <th><?= __('Dealer') ?></th>
+                            <td><?= $dealerCommission->dealer !== null ? $this->Html->link(
+                                $dealerCommission->dealer->name ?? '(' . $dealerCommission->dealer->id . ')',
+                                ['controller' => 'Customers', 'action' => 'view', $dealerCommission->dealer->id],
+                            ) : '' ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Commission') ?></th>
+                            <td><?= $dealerCommission->commission !== null ? $this->Html->link(
+                                $dealerCommission->commission->name ?? '(' . $dealerCommission->commission->id . ')',
+                                ['controller' => 'Commissions', 'action' => 'view', $dealerCommission->commission->id],
+                            ) : '' ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Fixed') ?></th>
+                            <td><?= $dealerCommission->fixed === null ?
+                                '' : $this->Number->format($dealerCommission->fixed); ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Percentage') ?></th>
+                            <td><?= $dealerCommission->percentage === null ?
+                                '' : $this->Number->format($dealerCommission->percentage); ?></td>
+                        </tr>
+                    </table>
+                </div>
+                <div class="column">
+                    <?= $this->element('common/audit', ['entity' => $dealerCommission]) ?>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

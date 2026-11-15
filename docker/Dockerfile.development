@@ -1,0 +1,101 @@
+# syntax=docker/dockerfile:1
+
+# The base of the production image (github.com/Mapiiik/frankenphp)
+FROM ghcr.io/mapiiik/frankenphp:php8.4
+
+ARG buildno
+ARG gitcommithash
+
+ARG APPLICATION_USER=application
+
+RUN echo "Build number: $buildno"
+RUN echo "Based on commit: $gitcommithash"
+
+ENV DEBUG="true"
+ENV SERVER_ROOT="/app/webroot"
+
+############################
+# PHP
+############################
+# the extensions of the production image
+RUN install-php-extensions \
+    mbstring \
+    intl \
+    pdo \
+    pdo_pgsql \
+    simplexml \
+    gd \
+    imagick \
+    redis \
+    bcmath \
+    dbase \
+    opcache
+
+# add additional PHP extensions here:
+RUN install-php-extensions \
+    pcov
+
+# ImageMagick is handed files uploaded from outside, and what it ships with is the open policy -
+# which says of itself that it is for a container behind a firewall. Ours names the formats a scan
+# or a photograph arrives in and refuses the rest.
+COPY docker/imagemagick-policy.xml /etc/ImageMagick-7/policy.xml
+COPY --chmod=755 docker/gs /usr/local/bin/gs
+
+# Coverage is measured when it is asked for rather than always. pcov costs something on every
+# request it is enabled for, and this container mostly serves pages instead of measuring them:
+#   php -d pcov.enabled=1 vendor/bin/phpunit --coverage-text
+RUN echo "pcov.enabled = 0" > $PHP_INI_DIR/conf.d/pcov.ini
+
+# git and unzip for composer
+RUN set -x \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends git unzip \
+ && rm -rf /var/lib/apt/lists/*
+
+# Development, with room for the test suite
+RUN cp $PHP_INI_DIR/php.ini-development $PHP_INI_DIR/php.ini \
+ && echo "memory_limit = 2048M" > $PHP_INI_DIR/conf.d/99-memory.ini
+
+# Uploads: a signed contract comes back as a handful of scanned pages, and a phone makes them
+# large. The POST limit is the higher of the two because it carries the rest of the form as well.
+# How many, rather than how large, is its own limit - and the one that says nothing when
+# it bites: PHP takes the first `max_file_uploads` of them and drops the rest before the
+# application is running. Twenty is the default, and a round of photographs is more.
+RUN echo "upload_max_filesize = 250M" > $PHP_INI_DIR/conf.d/zz-uploads.ini \
+ && echo "post_max_size = 256M" >> $PHP_INI_DIR/conf.d/zz-uploads.ini \
+ && echo "max_file_uploads = 200" >> $PHP_INI_DIR/conf.d/zz-uploads.ini
+
+COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
+
+############################
+# Caddy configuration
+############################
+# The Caddy configuration of the production image, with its headers and threads, so that the
+# pages are tried the way they are served. A change in docker/caddy/app.caddy needs
+# `docker compose build`.
+COPY docker/caddy/app.caddy /etc/frankenphp/app.caddy
+
+############################
+# Start
+############################
+RUN cat <<'EOF' > /usr/local/bin/docker-entrypoint-custom
+#!/bin/sh
+set -e
+
+# The working tree is mounted, vendor is a tmpfs: installed on every start, with the dev packages
+composer install -d /app
+composer run-script migrations -d /app -- --no-lock
+composer run-script plugin-assets -d /app
+composer run-script schema-cache -d /app
+composer run-script scheduler-sync -d /app || echo 'The schedule was not brought up to date' >&2
+
+exec docker-php-entrypoint "$@"
+EOF
+
+RUN chmod +x /usr/local/bin/docker-entrypoint-custom
+
+ENTRYPOINT ["docker-entrypoint-custom"]
+CMD ["--config", "/etc/frankenphp/Caddyfile", "--adapter", "caddyfile"]
+
+# The user comes with the base image
+USER ${APPLICATION_USER}

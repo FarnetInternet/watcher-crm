@@ -1,0 +1,170 @@
+<?php
+use Cake\Routing\Router;
+
+/**
+ * @var \App\View\AppView $this
+ * @var \Cake\ORM\ResultSet<int, \Radius\Model\Entity\Account>|null $accounts Null where the database did not answer.
+ * @var bool $show_contracts
+ */
+
+// the card is on pages open to more people than the account itself is
+$show_passwords = $this->AuthLink->isAuthorized([
+    'plugin' => 'Radius',
+    'controller' => 'Accounts',
+    'action' => 'view',
+]);
+?>
+<?php if ($accounts === null) : ?>
+    <?= $this->Html->tag('span', '⚠', [
+        'class' => 'warning-text',
+        'title' => __d('radius', 'Data from the RADIUS database could not be loaded.'),
+    ]) ?>
+<?php elseif (!$accounts->isEmpty()) : ?>
+<div class="table-responsive">
+    <table>
+        <tr>
+            <?php if ($show_contracts) : ?>
+            <th><?= __d('radius', 'Contract') ?></th>
+            <?php endif; ?>
+            <th><?= __d('radius', 'Username') ?></th>
+            <?php if ($show_passwords) : ?>
+            <th><?= __d('radius', 'Password') ?></th>
+            <?php endif; ?>
+            <th><?= __d('radius', 'Active') ?></th>
+            <th><?= __d('radius', 'IP Addresses') ?></th>
+            <th><?= __d('radius', 'RADIUS User Groups') ?></th>
+            <th><?= __d('radius', 'RADIUS Replies') ?></th>
+            <th><?= __d('radius', 'NAS IP Address') ?></th>
+            <th><?= __d('radius', 'Network Access Server') ?></th>
+            <th class="actions"><?= __d('radius', 'Actions') ?></th>
+        </tr>
+        <?php foreach ($accounts as $account) : ?>
+            <?php
+            /** @var \Radius\Model\Entity\Account $account */
+            ?>
+        <tr style="<?= $account->style ?>">
+            <?php if ($show_contracts) : ?>
+            <td><?= $account->contract !== null ?
+                $this->Html->link(
+                    $account->contract->number ?? '--',
+                    [
+                        'plugin' => null,
+                        'controller' => 'Contracts',
+                        'action' => 'view',
+                        $account->contract->id,
+                        'customer_id' => $account->contract->customer_id,
+                    ],
+                ) : '' ?></td>
+            <?php endif; ?>
+            <td><?= h($account->username) ?></td>
+            <?php if ($show_passwords) : ?>
+            <td><?= h($account->password) ?></td>
+            <?php endif; ?>
+            <td><?= $account->active ? __d('radius', 'Yes') : __d('radius', 'No'); ?></td>
+            <td><?php
+            foreach ($account->radreply as $radreply) {
+                if (in_array($radreply->attribute, ['Framed-IP-Address', 'Framed-IPv6-Address'])) {
+                    echo h($radreply->value) . '<br>';
+                }
+            }
+            ?></td>
+            <td><?php
+            foreach ($account->radusergroup as $radusergroup) {
+                echo h($radusergroup->groupname) . '<br>';
+            }
+            ?></td>
+            <td><?php
+            foreach ($account->radreply as $radreply) {
+                echo h($radreply->attribute)
+                    . ' ' . h($radreply->op)
+                    . ' ' . h($radreply->value)
+                    . '<br>';
+            }
+            ?></td>
+            <td><?= h($account->radacct[0]->nasipaddress ?? '') ?></td>
+            <td>
+                <?php if (isset($account->radacct[0]->nasipaddress)) : ?>
+                <div
+                    class="lazy-load"
+                    data-url="<?= Router::url([
+                        'prefix' => 'Api',
+                        'plugin' => null,
+                        'controller' => 'NetworkManagementSystemBridge',
+                        'action' => 'accessPoints',
+                        'ip_address' => $account->radacct[0]->nasipaddress,
+                        '_ext' => 'ajax',
+                    ]) ?>"
+                    data-error="<?= h(__d('radius', 'Data from Watcher NMS could not be loaded.')) ?>"
+                    data-trigger="load"><?= __d('radius', 'Loading...') ?></div>
+                <?php endif; ?>
+            </td>
+            <td class="actions">
+                <?= $this->AuthLink->link(
+                    __d('radius', 'View'),
+                    [
+                        'plugin' => 'Radius',
+                        'controller' => 'Accounts',
+                        'action' => 'view',
+                        $account->id,
+                    ],
+                ) ?>
+                <?= $this->AuthLink->link(
+                    __d('radius', 'Edit'),
+                    [
+                        'plugin' => 'Radius',
+                        'controller' => 'Accounts',
+                        'action' => 'edit',
+                        $account->id,
+                    ],
+                    ['class' => 'win-link'],
+                ) ?>
+                <?= $this->AuthLink->postLink(
+                    __d('radius', 'Delete'),
+                    [
+                        'plugin' => 'Radius',
+                        'controller' => 'Accounts',
+                        'action' => 'delete',
+                        $account->id,
+                    ],
+                    ['confirm' => __d('radius', 'Are you sure you want to delete # {0}?', $account->username)],
+                ) ?>
+                <br>
+                <?= $this->AuthLink->link(
+                    __d('radius', 'Monitoring'),
+                    [
+                        'plugin' => 'Radius',
+                        'controller' => 'Accounts',
+                        'action' => 'monitoring',
+                        $account->id,
+                    ],
+                ) ?>
+                <?= $this->AuthLink->postLink(
+                    __d('radius', 'Update'),
+                    [
+                        'plugin' => 'Radius',
+                        'controller' => 'Accounts',
+                        'action' => 'updateRelatedRecords',
+                        $account->id,
+                    ],
+                    [
+                        'confirm' => __d('radius', 'Are you sure you want to update related records?'),
+                    ],
+                ) ?>
+                <?= $this->AuthLink->postLink(
+                    __d('radius', 'Disconnect'),
+                    [
+                        'plugin' => 'Radius',
+                        'controller' => 'Accounts',
+                        'action' => 'disconnectRequest',
+                        $account->id,
+                    ],
+                    [
+                        'confirm' => __d('radius', 'Are you sure you want to disconnect {0}?', $account->username),
+                    ],
+                ) ?>
+            </td>
+        </tr>
+        <?php endforeach; ?>
+    </table>
+</div>
+<?php endif; ?>

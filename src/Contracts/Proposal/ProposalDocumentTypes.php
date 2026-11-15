@@ -1,0 +1,276 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Contracts\Proposal;
+
+use App\Model\Entity\ContractProposal;
+use App\Model\Enum\ContractDocumentType;
+use App\Model\Enum\ProposalPurpose;
+
+/**
+ * Which documents a given proposal may be printed as.
+ *
+ * Worked out from what the proposal holds rather than kept on it. Were it kept, a document type
+ * added later could not be printed from anything already on file - the history would be frozen into
+ * whatever the list was on the day. This way a new type gets its rule and works backwards as well.
+ *
+ * The rules are written as what is nonsense rather than as what was meant. They keep out a
+ * replacement that replaces nothing, a termination on papers that are not an ending and an amendment
+ * to a contract nobody concluded; everything else stays open, because only the operator knows
+ * whether the paper in hand is a fresh contract or a copy of the one already signed.
+ *
+ * Two of them read the purpose. That is not the same as keeping the list: the purpose is a field on
+ * the proposal like any other, and it is the only one that tells an end date meant as a fixed term
+ * from an end date meant as an ending.
+ */
+final class ProposalDocumentTypes
+{
+    /**
+     * The papers that are drawn up when somebody wants one rather than as a matter of course.
+     *
+     * @var array<\App\Model\Enum\ContractDocumentType>
+     */
+    private const WHEN_SOMEBODY_WANTS_ONE = [
+        ContractDocumentType::HandoverInstallation,
+        ContractDocumentType::HandoverUninstallation,
+    ];
+
+    /**
+     * The documents this proposal may be printed as.
+     *
+     * @param \App\Model\Entity\ContractProposal $proposal The proposal.
+     * @param bool $has_equipment Whether the contract is one that has equipment at all.
+     * @param bool $version_concluded Whether the version the proposal belongs to has been concluded.
+     * @return array<\App\Model\Enum\ContractDocumentType>
+     */
+    public function for(
+        ContractProposal $proposal,
+        bool $has_equipment,
+        bool $version_concluded,
+    ): array {
+        $replaces = $proposal->terminatesAnotherVersion();
+        $purpose = $proposal->purpose;
+        $ends = $purpose === ProposalPurpose::Termination;
+
+        // Where the contract keeps no versions nothing of ours is signed, so only what the other
+        // side writes may be filed - a notice the customer sent to the provider, say - and since
+        // none of it is ever owed, nothing is missing either.
+        $ours = $proposal->keepsVersions();
+
+        return array_values(array_filter(
+            $this->byPurpose($proposal, $has_equipment, $version_concluded, $ends, $replaces),
+            fn(ContractDocumentType $type): bool => $ours || !$type->canBeGenerated(),
+        ));
+    }
+
+    /**
+     * Every document the proposal may have, before asking whether the contract keeps any of ours.
+     *
+     * @param \App\Model\Entity\ContractProposal $proposal The proposal.
+     * @param bool $has_equipment Whether the contract is one that has equipment at all.
+     * @param bool $version_concluded Whether the version the proposal belongs to has been concluded.
+     * @param bool $ends Whether the proposal ends the contract.
+     * @param bool $replaces Whether it ends an earlier version of the contract.
+     * @return array<\App\Model\Enum\ContractDocumentType>
+     */
+    private function byPurpose(
+        ContractProposal $proposal,
+        bool $has_equipment,
+        bool $version_concluded,
+        bool $ends,
+        bool $replaces,
+    ): array {
+        $purpose = $proposal->purpose;
+        // A box swapped for another is one paper: the exchange protocol stands in for the two. An
+        // exchange of borrowed equipments has that paper and no other of ours.
+        $exchanges = $has_equipment && (
+            !$purpose->needsAVersion()
+            || ($replaces && $proposal->proposedChanges()->exchangesEquipment())
+        );
+
+        return array_values(array_filter(
+            ContractDocumentType::cases(),
+            fn(ContractDocumentType $type): bool => match ($type) {
+                ContractDocumentType::ContractNew => $purpose === ProposalPurpose::NewContract
+                    && !$replaces,
+                ContractDocumentType::ContractNewX => $purpose === ProposalPurpose::NewContract
+                    && $replaces,
+                ContractDocumentType::ContractAmendment => $purpose === ProposalPurpose::ServiceChange
+                    && $version_concluded,
+                ContractDocumentType::ContractTermination => $ends,
+                // The summary says what is on offer before anybody is bound by it, and an ending
+                // offers nothing. Nor does an exchange, which leaves the contract as it is.
+                ContractDocumentType::ContractSummary => !$ends && $purpose->needsAVersion(),
+                // The installation protocol hangs off the version, but nothing is installed on the
+                // way out and an amendment hands nothing over. The uninstallation one wants a
+                // version to end and a number to name, so it has nothing to go on unless the
+                // proposal ends something. A box swapped for another is the exchange protocol's.
+                ContractDocumentType::HandoverInstallation => $has_equipment && !$ends
+                    && $purpose !== ProposalPurpose::ServiceChange && !$exchanges,
+                ContractDocumentType::HandoverUninstallation => $has_equipment && ($ends || $replaces)
+                    && !$exchanges,
+                ContractDocumentType::HandoverExchange => $exchanges,
+                // What comes from the other side of an ending: the customer's own letter, or the
+                // certificate where there is nobody left to write one. Both belong to an ending
+                // and to nothing else, and neither is ever owed - an ending has one of them, and
+                // which one is not ours to say beforehand.
+                ContractDocumentType::TerminationNotice,
+                ContractDocumentType::DeathCertificate => $ends,
+                // Whatever else was handed over with the papers - a power of attorney, the owner
+                // of the building agreeing to the cabling. It belongs to no purpose in
+                // particular, so it is offered under all of them.
+                ContractDocumentType::Other => true,
+            },
+        ));
+    }
+
+    /**
+     * The documents this proposal may be printed as, and whether each of them has to exist.
+     *
+     * Both answers at once, because a page that lists what is missing wants them together and
+     * working them out twice would be two chances to disagree.
+     *
+     * @param \App\Model\Entity\ContractProposal $proposal The proposal.
+     * @param array<\App\Model\Enum\ContractDocumentType> $on_file What is already on file against it.
+     * @return array<string, bool> The document type, and whether it is required.
+     */
+    public function expectedOf(ContractProposal $proposal, array $on_file = []): array
+    {
+        $snapshot = $proposal->stateOfThings();
+        $has_equipment = (bool)($snapshot->part('contract')['service_type']['have_equipments'] ?? false);
+        $version_concluded = ($snapshot->part('version')['conclusion_date'] ?? null) !== null;
+
+        $expected = [];
+
+        foreach ($this->for($proposal, $has_equipment, $version_concluded) as $type) {
+            if (!$type->canBeGenerated()) {
+                // Waiting for a paper somebody else writes is not the same as owing one, and an
+                // ending never has both of them - so saying either is missing would be wrong
+                // whichever way it went.
+                continue;
+            }
+
+            $expected[$type->value] = $this->isOwed($type, $proposal, $on_file);
+        }
+
+        return $expected;
+    }
+
+    /**
+     * Whether a paper the proposal may have has to exist.
+     *
+     * A handover protocol is owed where equipment changes hands. Proposals drawn up before that was
+     * so keep the rules they were drawn up under, when a protocol was drawn only if somebody wanted
+     * one. Everything else here is the paper the papers are about.
+     *
+     * @param \App\Model\Enum\ContractDocumentType $type The paper.
+     * @param \App\Model\Entity\ContractProposal $proposal The proposal.
+     * @param array<\App\Model\Enum\ContractDocumentType> $on_file What is already on file against it.
+     * @return bool
+     */
+    private function isOwed(ContractDocumentType $type, ContractProposal $proposal, array $on_file): bool
+    {
+        if ($this->answeredByTheOtherSide($type, $on_file)) {
+            return false;
+        }
+
+        if (!in_array($type, self::WHEN_SOMEBODY_WANTS_ONE, true)) {
+            return true;
+        }
+
+        $snapshot = $proposal->stateOfThings();
+
+        if (!$snapshot->owesHandoverProtocols()) {
+            return false;
+        }
+
+        $changes = $proposal->proposedChanges();
+        $lends = $changes->equipmentLent() !== [];
+        $takesBack = $changes->equipmentTakenBack() !== [];
+
+        // A contract replacing an earlier one owes the protocol of what it hands over or takes
+        // back, and nothing where it moves nothing: the customer keeps what they have. Anything
+        // else owes it wherever equipment is lent once it has been put into effect - a new
+        // contract hands all of it over, and an ending of the contract takes all of it back.
+        $installs = $type === ContractDocumentType::HandoverInstallation;
+
+        if ($proposal->terminatesAnotherVersion()) {
+            return $installs ? $lends && !$takesBack : $takesBack && !$lends;
+        }
+
+        return $installs
+            ? $snapshot->borrowedEquipments() !== [] || $lends
+            : $proposal->endsTheContract() && $snapshot->borrowedEquipments() !== [];
+    }
+
+    /**
+     * Whether the agreement is not owed because the other side's paper already ends the contract.
+     *
+     * The customer's notice or a death certificate is the reason the contract ends, so an agreement
+     * on top of it may be drawn but is not missing.
+     *
+     * @param \App\Model\Enum\ContractDocumentType $type The paper being asked about.
+     * @param array<\App\Model\Enum\ContractDocumentType> $on_file What is on file.
+     * @return bool
+     */
+    private function answeredByTheOtherSide(ContractDocumentType $type, array $on_file): bool
+    {
+        if ($type !== ContractDocumentType::ContractTermination) {
+            return false;
+        }
+
+        foreach ($on_file as $filed) {
+            if ($filed->speaksForItself()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether the given document may be printed from the given proposal.
+     *
+     * @param \App\Model\Enum\ContractDocumentType $type Which document.
+     * @param \App\Model\Entity\ContractProposal $proposal The proposal.
+     * @param bool $has_equipment Whether the contract is one that has equipment at all.
+     * @param bool $version_concluded Whether the version the proposal belongs to has been concluded.
+     * @return bool
+     */
+    public function allows(
+        ContractDocumentType $type,
+        ContractProposal $proposal,
+        bool $has_equipment,
+        bool $version_concluded,
+    ): bool {
+        return $type->canBeGenerated()
+            && in_array($type, $this->for($proposal, $has_equipment, $version_concluded), true);
+    }
+
+    /**
+     * The same documents as a list to choose from, read out of the proposal itself.
+     *
+     * Two pages offer them - the printing form and the papers on a proposal - and neither has any
+     * business knowing where in the snapshot the two answers are kept.
+     *
+     * @param \App\Model\Entity\ContractProposal $proposal The proposal.
+     * @return array<string, string> The document type and how it reads.
+     */
+    public function options(ContractProposal $proposal): array
+    {
+        $snapshot = $proposal->stateOfThings();
+
+        $offered = $this->for(
+            $proposal,
+            (bool)($snapshot->part('contract')['service_type']['have_equipments'] ?? false),
+            ($snapshot->part('version')['conclusion_date'] ?? null) !== null,
+        );
+
+        $documents = [];
+        foreach ($offered as $document) {
+            $documents[$document->value] = $document->label();
+        }
+
+        return $documents;
+    }
+}

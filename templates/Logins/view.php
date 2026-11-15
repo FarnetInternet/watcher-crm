@@ -1,0 +1,80 @@
+<?php
+/**
+ * @var \App\View\AppView $this
+ * @var \App\Model\Entity\Login $login
+ */
+?>
+<div class="row">
+    <aside class="column">
+        <div class="side-nav">
+            <h4 class="heading"><?= __('Actions') ?></h4>
+            <?= $this->AuthLink->link(
+                __('Edit Login'),
+                ['action' => 'edit', $login->id],
+                ['class' => 'side-nav-item'],
+            ) ?>
+            <?= $this->AuthLink->postLink(
+                __('Delete Login'),
+                ['action' => 'delete', $login->id],
+                ['confirm' => __('Are you sure you want to delete # {0}?', $login->id), 'class' => 'side-nav-item'],
+            ) ?>
+            <?= $this->AuthLink->link(__('List Logins'), ['action' => 'index'], ['class' => 'side-nav-item']) ?>
+            <?= $this->AuthLink->link(__('New Login'), ['action' => 'add'], ['class' => 'side-nav-item']) ?>
+        </div>
+    </aside>
+    <div class="column column-90">
+        <div class="logins view content">
+            <?= $this->record(__('Login'), (string)$login->login) ?>
+            <div class="row">
+                <div class="column">
+                    <table>
+                        <tr>
+                            <th><?= __('Customer') ?></th>
+                            <td><?= $login->customer !== null ? $this->Html->link(
+                                $login->customer->name ?? '(' . $login->customer->id . ')',
+                                ['controller' => 'Customers', 'action' => 'view', $login->customer->id],
+                            ) : '' ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Customer Number') ?></th>
+                            <td><?= $login->customer !== null ? h($login->customer->number) : '' ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Login') ?></th>
+                            <td><?= h($login->login) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Rights') ?></th>
+                            <td><?= h($login->rights->label()) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Locked') ?></th>
+                            <td><?= $login->locked ? __('Yes') : __('No'); ?></td>
+                        </tr>
+                    </table>
+                    <table>
+                        <tr>
+                            <th><?= __('Last Granted') ?></th>
+                            <td><?= h($login->last_granted) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Last Granted IP Address') ?></th>
+                            <td><?= h($login->last_granted_ip) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Last Denied') ?></th>
+                            <td><?= h($login->last_denied) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Last Denied IP Address') ?></th>
+                            <td><?= h($login->last_denied_ip) ?></td>
+                        </tr>
+                    </table>
+                </div>
+                <div class="column">
+                    <?= $this->element('common/audit', ['entity' => $login]) ?>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

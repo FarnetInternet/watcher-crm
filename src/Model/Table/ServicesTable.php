@@ -1,0 +1,131 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Model\Table;
+
+use App\Model\Enum\ServiceCriticalityLevel;
+use Cake\Database\Type\EnumType;
+use Cake\ORM\RulesChecker;
+use Cake\Validation\Validator;
+use Override;
+
+/**
+ * Services Model
+ *
+ * @property \App\Model\Table\ServiceTypesTable&\Cake\ORM\Association\BelongsTo $ServiceTypes
+ * @property \App\Model\Table\ConnectionProfilesTable&\Cake\ORM\Association\BelongsTo $ConnectionProfiles
+ * @property \App\Model\Table\BillingsTable&\Cake\ORM\Association\HasMany $Billings
+ * @property \App\Model\Table\ServiceOverridesTable&\Cake\ORM\Association\HasMany $ServiceOverrides
+ * @method \App\Model\Entity\Service newEmptyEntity()
+ * @method \App\Model\Entity\Service newEntity(array $data, array $options = [])
+ * @method \App\Model\Entity\Service[] newEntities(array $data, array $options = [])
+ * @method \App\Model\Entity\Service get(mixed $primaryKey, array|string $finder = 'all', null|\Psr\SimpleCache\CacheInterface|string $cache = null, null|\Closure|string $cacheKey = null, mixed ...$args)
+ * @method \App\Model\Entity\Service findOrCreate($search, callable|array|null $callback = null, $options = [])
+ * @method \App\Model\Entity\Service patchEntity(\Cake\Datasource\EntityInterface $entity, array $data, array $options = [])
+ * @method \App\Model\Entity\Service[] patchEntities(iterable $entities, array $data, array $options = [])
+ * @method \App\Model\Entity\Service|false save(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method \App\Model\Entity\Service saveOrFail(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method iterable<\App\Model\Entity\Service>|false saveMany(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\Service> saveManyOrFail(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\Service>|false deleteMany(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\Service> deleteManyOrFail(iterable $entities, $options = [])
+ * @mixin \Cake\ORM\Behavior\TimestampBehavior
+ */
+class ServicesTable extends AppTable
+{
+    /**
+     * Initialize method
+     *
+     * @param array<string, mixed> $config The configuration for the Table.
+     * @return void
+     */
+    #[Override]
+    public function initialize(array $config): void
+    {
+        parent::initialize($config);
+
+        $this->setTable('services');
+        $this->setDisplayField('name');
+        $this->setPrimaryKey('id');
+
+        $this->getSchema()->setColumnType(
+            'criticality_level',
+            EnumType::from(ServiceCriticalityLevel::class),
+        );
+
+        $this->addBehavior('Timestamp');
+        $this->addBehavior('Footprint');
+        $this->addBehavior('StringModifications');
+
+        $this->belongsTo('ServiceTypes', [
+            'foreignKey' => 'service_type_id',
+        ]);
+        $this->belongsTo('ConnectionProfiles', [
+            'foreignKey' => 'connection_profile_id',
+        ]);
+        $this->hasMany('Billings', [
+            'foreignKey' => 'service_id',
+        ]);
+        $this->hasMany('ServiceOverrides', [
+            'foreignKey' => 'service_id',
+        ]);
+    }
+
+    /**
+     * Default validation rules.
+     *
+     * @param \Cake\Validation\Validator $validator Validator instance.
+     * @return \Cake\Validation\Validator
+     */
+    #[Override]
+    public function validationDefault(Validator $validator): Validator
+    {
+        $validator
+            ->uuid('id')
+            ->allowEmptyString('id', null, 'create');
+
+        $validator
+            ->scalar('name')
+            ->allowEmptyString('name');
+
+        $validator
+            ->decimal('price')
+            ->allowEmptyString('price');
+
+        $validator
+            ->scalar('accounting_product_code')
+            ->allowEmptyString('accounting_product_code');
+
+        $validator
+            ->boolean('currently_offered')
+            ->notEmptyString('currently_offered');
+
+        $validator
+            ->requirePresence('criticality_level', 'create')
+            ->notEmptyString('criticality_level');
+
+        return $validator;
+    }
+
+    /**
+     * Returns a rules checker object that will be used for validating
+     * application integrity.
+     *
+     * @param \Cake\ORM\RulesChecker $rules The rules object to be modified.
+     * @return \Cake\ORM\RulesChecker
+     */
+    #[Override]
+    public function buildRules(RulesChecker $rules): RulesChecker
+    {
+        $rules->add($rules->existsIn(['service_type_id'], 'ServiceTypes'), ['errorField' => 'service_type_id']);
+        $rules->add(
+            $rules->existsIn(['connection_profile_id'], 'ConnectionProfiles'),
+            ['errorField' => 'connection_profile_id'],
+        );
+
+        $rules->addDelete($rules->isNotLinkedTo('Billings'));
+        $rules->addDelete($rules->isNotLinkedTo('ServiceOverrides'));
+
+        return $rules;
+    }
+}

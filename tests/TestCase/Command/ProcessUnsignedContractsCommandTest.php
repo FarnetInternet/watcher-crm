@@ -1,0 +1,677 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Test\TestCase\Command;
+
+use App\Command\ProcessUnsignedContractsCommand;
+use App\Model\Enum\CustomerMessageDeliveryStatus;
+use App\Model\Enum\CustomerMessageType;
+use App\Model\Enum\UnsignedDeadlineAnchor;
+use App\Model\Table\ContractVersionsTable;
+use App\Model\Table\CustomerMessagesTable;
+use App\Model\Table\EmailsTable;
+use App\Model\Table\PhonesTable;
+use Cake\Cache\Cache;
+use Cake\Chronos\Chronos;
+use Cake\Console\TestSuite\ConsoleIntegrationTestTrait;
+use Cake\I18n\Date;
+use Cake\ORM\Locator\LocatorAwareTrait;
+use Cake\TestSuite\TestCase;
+use Override;
+use PHPUnit\Framework\Attributes\UsesClass;
+use Settings\Utility\Settings;
+
+/**
+ * App\Command\ProcessUnsignedContractsCommand Test Case
+ *
+ * A service is running on paperwork nobody signed, and after a while somebody has to say so
+ * to the customer. What these cases pin down is which day that happens on and who hears
+ * about it - the two things a wrong answer costs somebody a letter they should not have had,
+ * or a letter they should have had and did not.
+ */
+#[UsesClass(ProcessUnsignedContractsCommand::class)]
+class ProcessUnsignedContractsCommandTest extends TestCase
+{
+    use ConsoleIntegrationTestTrait;
+    use LocatorAwareTrait;
+
+    /**
+     * The fixture contract. It went in on 2022-11-28, so only the version's own wait is ever
+     * in question here.
+     */
+    private const CONTRACT_ID = '7f76dc3f-a11b-4109-958b-4b0382545a66';
+
+    private const CUSTOMER_ID = '403bab0e-52cd-4a8e-83f8-43c2457d0481';
+
+    /**
+     * The day the run happens, and the day a version has to take effect on for its wait to
+     * run out exactly then: ten days later.
+     */
+    private const TODAY = '2026-06-01';
+
+    private const DUE_TODAY = '2026-05-22';
+
+    /**
+     * And the day it has to take effect on for the disconnection wait to run out today:
+     * twenty days later.
+     */
+    private const BLOCK_DUE_TODAY = '2026-05-12';
+
+    /**
+     * A service to charge for, so that a contract can be running on something.
+     */
+    private const SERVICE_ID = 'eaacfeb3-1430-43ce-842e-497c5c95d953';
+
+    /**
+     * Fixtures
+     *
+     * @var array<string>
+     */
+    protected array $fixtures = [
+        'app.Users',
+        'app.AccountingProfiles',
+        'app.Customers',
+        'app.Countries',
+        'app.Addresses',
+        'app.Commissions',
+        'app.ContractStates',
+        'app.ServiceTypes',
+        'app.Contracts',
+        'app.ContractVersions',
+        'app.ConnectionProfiles',
+        'app.Services',
+        'app.Billings',
+        'app.Emails',
+        'app.Phones',
+        'app.CustomerMessages',
+        'plugin.Settings.Settings',
+    ];
+
+    private ContractVersionsTable $ContractVersions;
+
+    private CustomerMessagesTable $CustomerMessages;
+
+    /**
+     * What the clock was stopped at before this class moved it.
+     */
+    private ?Chronos $clock = null;
+
+    /**
+     * @return void
+     */
+    #[Override]
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->ContractVersions = $this->getTableLocator()
+            ->get('ContractVersions', ['className' => ContractVersionsTable::class]);
+        $this->CustomerMessages = $this->getTableLocator()
+            ->get('CustomerMessages', ['className' => CustomerMessagesTable::class]);
+
+        $this->ContractVersions->deleteAll(['1 = 1']);
+        $this->CustomerMessages->deleteAll(['1 = 1']);
+        $this->getTableLocator()->get('Emails', ['className' => EmailsTable::class])->deleteAll(['1 = 1']);
+        $this->getTableLocator()->get('Phones', ['className' => PhonesTable::class])->deleteAll(['1 = 1']);
+
+        Cache::clear('default');
+
+        // Held so that tearDown can put back what the suite was holding. Asking the clock what
+        // time it is while it is stopped answers with the time it is stopped at, so a tearDown
+        // that sets it to "now" leaves this class's day standing over everything that follows.
+        $this->clock = Chronos::getTestNow();
+        Chronos::setTestNow(new Chronos(self::TODAY . ' 09:00:00'));
+
+        // Said rather than inherited, so a case answers for itself whatever the settings file
+        // says today and whatever ran before it.
+        Settings::set('core.contracts.paperwork.consider_from', '2020-01-01');
+        Settings::set(UnsignedDeadlineAnchor::SETTINGS_PATH, UnsignedDeadlineAnchor::Installation->value);
+        Settings::set('core.contracts.paperwork.unsigned.notifications.after_anchor_days', 5);
+        Settings::set('core.contracts.paperwork.unsigned.notifications.after_start_days', 10);
+        Settings::set('core.contracts.paperwork.unsigned.notifications.days', [0]);
+        Settings::set('core.contracts.paperwork.unsigned.notifications.daily_after', false);
+        Settings::set('core.contracts.paperwork.unsigned.notifications.channels.email.enabled', true);
+        Settings::set('core.contracts.paperwork.unsigned.notifications.channels.sms.enabled', true);
+        Settings::set('core.contracts.paperwork.unsigned.notifications.types.notify.enabled', true);
+        Settings::set('core.contracts.paperwork.unsigned.notifications.types.block.enabled', true);
+        Settings::set('core.contracts.paperwork.unsigned.blocking.enabled', true);
+        Settings::set('core.contracts.paperwork.unsigned.blocking.after_anchor_days', 10);
+        Settings::set('core.contracts.paperwork.unsigned.blocking.after_start_days', 20);
+        Settings::set('core.contracts.paperwork.unsigned.notifications.enabled', true);
+
+        // Every case below is about a version that came back unsigned. The other kind - a service
+        // running on no version at all - is switched off here and switched on by the two cases that
+        // are about it, so that the fixture's billings do not quietly add a second contract to
+        // every letter.
+        Settings::set('core.contracts.paperwork.unsigned.thresholds.without_version', false);
+    }
+
+    /**
+     * @return void
+     */
+    #[Override]
+    protected function tearDown(): void
+    {
+        Chronos::setTestNow($this->clock);
+        Cache::clear('default');
+
+        parent::tearDown();
+    }
+
+    /**
+     * The case the proposals made ordinary: the billings are in so that the line runs the day it is
+     * installed, the papers wait on a proposal, and there is no version at all. The letter says
+     * since when the service has been provided, because there is no version to date instead.
+     *
+     * @return void
+     * @link \App\Command\ProcessUnsignedContractsCommand::execute()
+     */
+    public function testItWritesAboutAServiceThatHasNoVersionAtAll(): void
+    {
+        Settings::set('core.contracts.paperwork.unsigned.thresholds.without_version', true);
+        $this->emailFor(self::CUSTOMER_ID);
+        $this->chargedSince(self::DUE_TODAY);
+
+        $this->exec('process_unsigned_contracts');
+
+        $this->assertExitSuccess();
+        // The fixture's other contract has been charged for since 2022 with no version either, so
+        // it is cut off by now and hears so in a letter of its own.
+        $this->assertSame(2, $this->CustomerMessages->find()->count());
+        /** @var \App\Model\Entity\CustomerMessage $message */
+        $message = $this->CustomerMessages->find()
+            ->where(['CustomerMessages.body NOT LIKE' => '%omezena%'])
+            ->firstOrFail();
+        // Written the way the letter writes a day, not the way the fixture spells it.
+        $this->assertStringContainsString(
+            sprintf('%s %s', __('provided since'), new Date(self::DUE_TODAY)),
+            (string)$message->body,
+        );
+    }
+
+    /**
+     * Switched off, that kind goes unwatched and nobody hears about it - which is the way out for an
+     * installation that keeps its papers some other way, or for the first night after this arrived.
+     *
+     * @return void
+     * @link \App\Command\ProcessUnsignedContractsCommand::execute()
+     */
+    public function testAServiceWithNoVersionCanBeLeftOutAltogether(): void
+    {
+        $this->emailFor(self::CUSTOMER_ID);
+        $this->chargedSince(self::DUE_TODAY);
+
+        $this->exec('process_unsigned_contracts');
+
+        $this->assertExitSuccess();
+        $this->assertSame(0, $this->CustomerMessages->find()->count());
+    }
+
+    /**
+     * The options a cron line names the command by. Renaming one of these quietly turns a
+     * scheduled reminder into nothing at all.
+     *
+     * @return void
+     */
+    public function testTheCommandIsNamedAndTakesItsOptions(): void
+    {
+        $this->assertSame('process_unsigned_contracts', ProcessUnsignedContractsCommand::defaultName());
+
+        $this->exec('process_unsigned_contracts --help');
+
+        $this->assertExitSuccess();
+        $this->assertOutputContains('--skip_emails');
+        $this->assertOutputContains('--skip_sms');
+    }
+
+    /**
+     * The switch is the whole safety of this. Off, nothing reaches anybody however overdue.
+     *
+     * @return void
+     * @link \App\Command\ProcessUnsignedContractsCommand::execute()
+     */
+    public function testSwitchedOffItWritesToNobody(): void
+    {
+        Settings::set('core.contracts.paperwork.unsigned.notifications.enabled', false);
+        $this->emailFor(self::CUSTOMER_ID);
+        $this->agreed(self::DUE_TODAY);
+
+        $this->exec('process_unsigned_contracts');
+
+        $this->assertExitSuccess();
+        $this->assertSame(0, $this->CustomerMessages->find()->count());
+    }
+
+    /**
+     * @return void
+     * @link \App\Command\ProcessUnsignedContractsCommand::generateEmail()
+     */
+    public function testAVersionDueTodayPutsALetterInTheOutbox(): void
+    {
+        $this->emailFor(self::CUSTOMER_ID);
+        $this->agreed(self::DUE_TODAY);
+
+        $this->exec('process_unsigned_contracts');
+
+        $this->assertExitSuccess();
+
+        /** @var \App\Model\Entity\CustomerMessage $message */
+        $message = $this->CustomerMessages->find()->firstOrFail();
+
+        $this->assertSame(CustomerMessageType::EmailContracts, $message->type);
+        $this->assertSame(['paperwork@example.com'], $message->recipients);
+        $this->assertStringContainsString('in effect since', (string)$message->body);
+    }
+
+    /**
+     * The message is written, not sent. What puts it on the wire is process_emails, so that
+     * a transport that is down loses nothing.
+     *
+     * @return void
+     * @link \App\Command\ProcessUnsignedContractsCommand::generate()
+     */
+    public function testTheLetterIsLeftForTheSenderToDeliver(): void
+    {
+        $this->emailFor(self::CUSTOMER_ID);
+        $this->agreed(self::DUE_TODAY);
+
+        $this->exec('process_unsigned_contracts');
+
+        /** @var \App\Model\Entity\CustomerMessage $message */
+        $message = $this->CustomerMessages->find()->firstOrFail();
+
+        $this->assertSame(CustomerMessageDeliveryStatus::Pending, $message->delivery_status);
+        $this->assertNull($message->processed);
+    }
+
+    /**
+     * A day either side of the one the wait runs out on is silence. This is the whole of the
+     * repeat-suppression: without it one reminder would go out again every day after.
+     *
+     * @return void
+     * @link \App\Contracts\Unsigned\UnsignedPaperwork::findBecomingDueOn()
+     */
+    public function testADayEitherSideOfTheWaitIsSilent(): void
+    {
+        $this->emailFor(self::CUSTOMER_ID);
+        $this->agreed('2026-05-21');
+
+        $this->exec('process_unsigned_contracts');
+
+        $this->assertSame(0, $this->CustomerMessages->find()->count(), 'Its wait ran out yesterday.');
+
+        $this->ContractVersions->deleteAll(['1 = 1']);
+        $this->agreed('2026-05-23');
+
+        $this->exec('process_unsigned_contracts');
+
+        $this->assertSame(0, $this->CustomerMessages->find()->count(), 'And this one runs out tomorrow.');
+    }
+
+    /**
+     * Switched on, the days that are named stop being the end of it.
+     *
+     * @return void
+     * @link \App\Contracts\Unsigned\UnsignedPaperwork::findDueBefore()
+     */
+    public function testDailyAfterKeepsAskingOnceTheNamedDaysAreUsedUp(): void
+    {
+        $this->emailFor(self::CUSTOMER_ID);
+        // the asking wait ran out a week ago and the disconnection one has not come yet, so
+        // no named day of either falls on today
+        $this->agreed('2026-05-15');
+
+        $this->exec('process_unsigned_contracts');
+
+        $this->assertSame(0, $this->CustomerMessages->find()->count());
+
+        Settings::set('core.contracts.paperwork.unsigned.notifications.daily_after', true);
+
+        $this->exec('process_unsigned_contracts');
+
+        $this->assertSame(1, $this->CustomerMessages->find()->count());
+    }
+
+    /**
+     * One customer holding three unsigned versions is one letter listing three, not three
+     * letters landing at once.
+     *
+     * @return void
+     * @link \App\Command\ProcessUnsignedContractsCommand::dueToday()
+     */
+    public function testAllOfACustomersVersionsGoInOneLetter(): void
+    {
+        $this->emailFor(self::CUSTOMER_ID);
+        $this->agreed(self::DUE_TODAY);
+        $this->agreed(self::DUE_TODAY);
+
+        $this->exec('process_unsigned_contracts');
+
+        $this->assertSame(1, $this->CustomerMessages->find()->count());
+    }
+
+    /**
+     * SMS is the fallback, not the second copy: a letter says more than a hundred and sixty
+     * characters can, so it only goes where there is no address to write to.
+     *
+     * @return void
+     * @link \App\Command\ProcessUnsignedContractsCommand::writeToCustomer()
+     */
+    public function testWithNoAddressItSendsAnSms(): void
+    {
+        $this->phoneFor(self::CUSTOMER_ID);
+        $this->agreed(self::DUE_TODAY);
+
+        $this->exec('process_unsigned_contracts');
+
+        /** @var \App\Model\Entity\CustomerMessage $message */
+        $message = $this->CustomerMessages->find()->firstOrFail();
+
+        $this->assertSame(CustomerMessageType::Sms, $message->type);
+        $this->assertSame(['+420605123456'], $message->recipients);
+    }
+
+    /**
+     * @return void
+     * @link \App\Command\ProcessUnsignedContractsCommand::writeToCustomer()
+     */
+    public function testWithAnAddressTheSmsIsNotSentAsWell(): void
+    {
+        $this->emailFor(self::CUSTOMER_ID);
+        $this->phoneFor(self::CUSTOMER_ID);
+        $this->agreed(self::DUE_TODAY);
+
+        $this->exec('process_unsigned_contracts');
+
+        $this->assertSame(1, $this->CustomerMessages->find()->count());
+
+        /** @var \App\Model\Entity\CustomerMessage $message */
+        $message = $this->CustomerMessages->find()->firstOrFail();
+
+        $this->assertSame(CustomerMessageType::EmailContracts, $message->type);
+    }
+
+    /**
+     * Nobody to write to is said out loud rather than passed over. It is a finding about the
+     * customer's file, not a quiet success.
+     *
+     * @return void
+     * @link \App\Command\ProcessUnsignedContractsCommand::writeToCustomer()
+     */
+    public function testACustomerWithNoContactIsReported(): void
+    {
+        $this->agreed(self::DUE_TODAY);
+
+        $this->exec('process_unsigned_contracts');
+
+        $this->assertExitSuccess();
+        $this->assertSame(0, $this->CustomerMessages->find()->count());
+        $this->assertErrorContains('nobody to tell');
+    }
+
+    /**
+     * The command records nothing on the version. That column is the office's record that
+     * the papers went out, and a reminder writing to it would push its own deadline forward
+     * under the sending anchor - chasing for ever and arriving at nothing.
+     *
+     * @return void
+     * @link \App\Command\ProcessUnsignedContractsCommand::execute()
+     */
+    public function testItDoesNotStampTheSendingRecord(): void
+    {
+        $this->emailFor(self::CUSTOMER_ID);
+        $this->agreed(self::DUE_TODAY);
+
+        $this->exec('process_unsigned_contracts');
+
+        /** @var \App\Model\Entity\ContractVersion $version */
+        $version = $this->ContractVersions->find()
+            ->contain(['ContractProposals'])
+            ->firstOrFail();
+
+        $this->assertNull($version->sent_date);
+    }
+
+    /**
+     * @return void
+     * @link \App\Command\ProcessUnsignedContractsCommand::writeToCustomer()
+     */
+    public function testSkippingBothChannelsWritesNothing(): void
+    {
+        $this->emailFor(self::CUSTOMER_ID);
+        $this->agreed(self::DUE_TODAY);
+
+        $this->exec('process_unsigned_contracts --skip_emails --skip_sms');
+
+        $this->assertExitSuccess();
+        $this->assertSame(0, $this->CustomerMessages->find()->count());
+    }
+
+    /**
+     * Reaching the disconnection deadline is a different letter, in sterner words.
+     *
+     * @return void
+     * @link \App\Command\ProcessUnsignedContractsCommand::dueToday()
+     */
+    public function testReachingTheDisconnectionDeadlineSendsTheSternerLetter(): void
+    {
+        $this->emailFor(self::CUSTOMER_ID);
+        $this->agreed(self::BLOCK_DUE_TODAY);
+
+        $this->exec('process_unsigned_contracts');
+
+        /** @var \App\Model\Entity\CustomerMessage $message */
+        $message = $this->CustomerMessages->find()->firstOrFail();
+
+        $this->assertStringContainsString('omezena', (string)$message->body);
+        $this->assertStringNotContainsString('Prosíme Vás o její podepsání', (string)$message->body);
+    }
+
+    /**
+     * Once the service is cut off, the warning goes every day it stays so, whatever the
+     * reminder days say - the way the debtors hear it while they are blocked.
+     *
+     * @return void
+     * @link \App\Command\ProcessUnsignedContractsCommand::blockedOn()
+     */
+    public function testTheWarningGoesEveryDayTheServiceIsCutOff(): void
+    {
+        $this->emailFor(self::CUSTOMER_ID);
+        // its disconnection day was a week ago, no reminder day falls on today
+        $this->agreed('2026-05-05');
+
+        $this->exec('process_unsigned_contracts');
+
+        $this->assertSame(1, $this->CustomerMessages->find()->count());
+
+        /** @var \App\Model\Entity\CustomerMessage $message */
+        $message = $this->CustomerMessages->find()->firstOrFail();
+
+        $this->assertStringContainsString('omezena', (string)$message->body);
+    }
+
+    /**
+     * Once the service is cut off, it is not asked for the paper any more, not even by the
+     * daily asking, and not even where the warning is switched off.
+     *
+     * @return void
+     * @link \App\Command\ProcessUnsignedContractsCommand::dueToday()
+     */
+    public function testOnceCutOffTheAskingStops(): void
+    {
+        Settings::set('core.contracts.paperwork.unsigned.notifications.daily_after', true);
+        $this->emailFor(self::CUSTOMER_ID);
+        $this->agreed('2026-05-05');
+
+        $this->exec('process_unsigned_contracts');
+
+        /** @var \App\Model\Entity\CustomerMessage $message */
+        $message = $this->CustomerMessages->find()->firstOrFail();
+
+        $this->assertStringNotContainsString('Prosíme Vás o její podepsání', (string)$message->body);
+
+        $this->CustomerMessages->deleteAll(['1 = 1']);
+        Settings::set('core.contracts.paperwork.unsigned.notifications.types.block.enabled', false);
+
+        $this->exec('process_unsigned_contracts');
+
+        $this->assertSame(0, $this->CustomerMessages->find()->count());
+    }
+
+    /**
+     * Where the blocking is off nothing is cut off and no warning promises it. The asking goes
+     * on by its days instead.
+     *
+     * @return void
+     * @link \App\Command\ProcessUnsignedContractsCommand::blockedOn()
+     */
+    public function testWithTheBlockingOffNoWarningGoes(): void
+    {
+        Settings::set('core.contracts.paperwork.unsigned.blocking.enabled', false);
+        $this->emailFor(self::CUSTOMER_ID);
+        $this->agreed(self::BLOCK_DUE_TODAY);
+
+        $this->exec('process_unsigned_contracts');
+
+        $this->assertSame(0, $this->CustomerMessages->find()->count());
+
+        Settings::set('core.contracts.paperwork.unsigned.notifications.daily_after', true);
+
+        $this->exec('process_unsigned_contracts');
+
+        /** @var \App\Model\Entity\CustomerMessage $message */
+        $message = $this->CustomerMessages->find()->firstOrFail();
+
+        $this->assertStringContainsString('Prosíme Vás o její podepsání', (string)$message->body);
+    }
+
+    /**
+     * Switched off, the warning does not go out even though the service is cut off, for an
+     * installation that tells its customers some other way.
+     *
+     * @return void
+     * @link \App\Command\ProcessUnsignedContractsCommand::isTypeEnabled()
+     */
+    public function testTheWarningCanBeSwitchedOffOnItsOwn(): void
+    {
+        Settings::set('core.contracts.paperwork.unsigned.notifications.types.block.enabled', false);
+        $this->emailFor(self::CUSTOMER_ID);
+        $this->agreed(self::BLOCK_DUE_TODAY);
+
+        $this->exec('process_unsigned_contracts');
+
+        $this->assertSame(0, $this->CustomerMessages->find()->count());
+    }
+
+    /**
+     * And the asking can be switched off while the warning stays on.
+     *
+     * @return void
+     * @link \App\Command\ProcessUnsignedContractsCommand::isTypeEnabled()
+     */
+    public function testTheAskingCanBeSwitchedOffOnItsOwn(): void
+    {
+        Settings::set('core.contracts.paperwork.unsigned.notifications.types.notify.enabled', false);
+        $this->emailFor(self::CUSTOMER_ID);
+        $this->agreed(self::DUE_TODAY);
+
+        $this->exec('process_unsigned_contracts');
+
+        $this->assertSame(0, $this->CustomerMessages->find()->count());
+    }
+
+    /**
+     * Where both waits fall on the same day, only the sterner letter goes. Asking for the
+     * paper and saying the service is about to go off contradict each other, and the second
+     * is the one that is still true.
+     *
+     * @return void
+     * @link \App\Command\ProcessUnsignedContractsCommand::dueToday()
+     */
+    public function testWhereBothDaysFallTogetherOnlyTheWarningGoes(): void
+    {
+        // both waits set to the same length, so one version reaches both today
+        Settings::set('core.contracts.paperwork.unsigned.blocking.after_start_days', 10);
+        $this->emailFor(self::CUSTOMER_ID);
+        $this->agreed(self::DUE_TODAY);
+
+        $this->exec('process_unsigned_contracts');
+
+        $this->assertSame(1, $this->CustomerMessages->find()->count());
+
+        /** @var \App\Model\Entity\CustomerMessage $message */
+        $message = $this->CustomerMessages->find()->firstOrFail();
+
+        $this->assertStringContainsString('omezena', (string)$message->body);
+    }
+
+    /**
+     * Put a version of the fixture contract on file, with nothing signed behind it.
+     *
+     * @param string $valid_from The day the version takes effect.
+     * @return void
+     */
+    private function agreed(string $valid_from): void
+    {
+        $this->ContractVersions->saveOrFail($this->ContractVersions->newEntity([
+            'contract_id' => self::CONTRACT_ID,
+            'valid_from' => $valid_from,
+            'conclusion_date' => null,
+            'number_of_amendments' => 0,
+            'obligations_settled' => false,
+        ]));
+    }
+
+    /**
+     * Charge the contract for something from the given day on, and nothing before it.
+     *
+     * @param string $from The day the charging begins.
+     * @return void
+     */
+    private function chargedSince(string $from): void
+    {
+        $billings = $this->getTableLocator()->get('Billings');
+        $billings->deleteAll(['contract_id' => self::CONTRACT_ID]);
+
+        $billings->saveOrFail(
+            $billings->newEntity([
+                'customer_id' => self::CUSTOMER_ID,
+                'contract_id' => self::CONTRACT_ID,
+                'service_id' => self::SERVICE_ID,
+                'billing_from' => $from,
+                'billing_until' => null,
+                'quantity' => 1,
+                'separate_invoice' => false,
+            ]),
+            ['checkRules' => false],
+        );
+    }
+
+    /**
+     * @param string $customer_id Who to give an address to.
+     * @return void
+     */
+    private function emailFor(string $customer_id): void
+    {
+        $emails = $this->getTableLocator()->get('Emails', ['className' => EmailsTable::class]);
+
+        $emails->saveOrFail($emails->newEntity([
+            'customer_id' => $customer_id,
+            'email' => 'paperwork@example.com',
+        ]));
+    }
+
+    /**
+     * @param string $customer_id Who to give a number to.
+     * @return void
+     */
+    private function phoneFor(string $customer_id): void
+    {
+        $phones = $this->getTableLocator()->get('Phones', ['className' => PhonesTable::class]);
+
+        $phones->saveOrFail($phones->newEntity([
+            'customer_id' => $customer_id,
+            'phone' => '+420605123456',
+        ]));
+    }
+}

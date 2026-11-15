@@ -1,0 +1,97 @@
+<?php
+declare(strict_types=1);
+
+namespace Radius\Model\Table;
+
+use App\Model\Table\AppTable;
+use Cake\Validation\Validator;
+use Override;
+
+/**
+ * Radgroupcheck Model
+ *
+ * @method \Radius\Model\Entity\Radgroupcheck newEmptyEntity()
+ * @method \Radius\Model\Entity\Radgroupcheck newEntity(array $data, array $options = [])
+ * @method \Radius\Model\Entity\Radgroupcheck[] newEntities(array $data, array $options = [])
+ * @method \Radius\Model\Entity\Radgroupcheck get(mixed $primaryKey, array|string $finder = 'all', null|\Psr\SimpleCache\CacheInterface|string $cache = null, null|\Closure|string $cacheKey = null, mixed ...$args)
+ * @method \Radius\Model\Entity\Radgroupcheck findOrCreate($search, callable|array|null $callback = null, $options = [])
+ * @method \Radius\Model\Entity\Radgroupcheck patchEntity(\Cake\Datasource\EntityInterface $entity, array $data, array $options = [])
+ * @method \Radius\Model\Entity\Radgroupcheck[] patchEntities(iterable $entities, array $data, array $options = [])
+ * @method \Radius\Model\Entity\Radgroupcheck|false save(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method \Radius\Model\Entity\Radgroupcheck saveOrFail(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method iterable<\Radius\Model\Entity\Radgroupcheck>|false saveMany(iterable $entities, $options = [])
+ * @method iterable<\Radius\Model\Entity\Radgroupcheck> saveManyOrFail(iterable $entities, $options = [])
+ * @method iterable<\Radius\Model\Entity\Radgroupcheck>|false deleteMany(iterable $entities, $options = [])
+ * @method iterable<\Radius\Model\Entity\Radgroupcheck> deleteManyOrFail(iterable $entities, $options = [])
+ */
+class RadgroupcheckTable extends AppTable
+{
+    /**
+     * Initialize method
+     *
+     * @param array<string, mixed> $config The configuration for the Table.
+     * @return void
+     */
+    #[Override]
+    public function initialize(array $config): void
+    {
+        parent::initialize($config);
+
+        $this->setTable('radgroupcheck');
+        $this->setDisplayField('id');
+        $this->setPrimaryKey('id');
+
+        $this->addBehavior('Timestamp');
+        $this->addBehavior('Footprint');
+        $this->addBehavior('StringModifications');
+
+        $this->hasMany('Radius.Radusergroup', [
+            'foreignKey' => 'groupname',
+            'bindingKey' => 'groupname',
+        ]);
+    }
+
+    /**
+     * Default validation rules.
+     *
+     * @param \Cake\Validation\Validator $validator Validator instance.
+     * @return \Cake\Validation\Validator
+     */
+    #[Override]
+    public function validationDefault(Validator $validator): Validator
+    {
+        $validator
+            ->integer('id')
+            ->allowEmptyString('id', null, 'create');
+
+        $validator
+            ->scalar('groupname')
+            ->notEmptyString('groupname');
+
+        $validator
+            ->scalar('attribute')
+            ->notEmptyString('attribute');
+
+        $validator
+            ->scalar('op')
+            ->maxLength('op', 2)
+            ->notEmptyString('op');
+
+        $validator
+            ->scalar('value')
+            ->notEmptyString('value');
+
+        return $validator;
+    }
+
+    /**
+     * Returns the database connection name to use by default.
+     *
+     * @return string
+     */
+    #[Override]
+    public static function defaultConnectionName(): string
+    {
+        return 'radius';
+    }
+}

@@ -1,0 +1,102 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Model\Table;
+
+use Cake\ORM\RulesChecker;
+use Cake\Validation\Validator;
+use Override;
+
+/**
+ * EquipmentTypes Model
+ *
+ * @property \App\Model\Table\BorrowedEquipmentsTable&\Cake\ORM\Association\HasMany $BorrowedEquipments
+ * @property \App\Model\Table\SoldEquipmentsTable&\Cake\ORM\Association\HasMany $SoldEquipments
+ * @method \App\Model\Entity\EquipmentType newEmptyEntity()
+ * @method \App\Model\Entity\EquipmentType newEntity(array $data, array $options = [])
+ * @method \App\Model\Entity\EquipmentType[] newEntities(array $data, array $options = [])
+ * @method \App\Model\Entity\EquipmentType get(mixed $primaryKey, array|string $finder = 'all', null|\Psr\SimpleCache\CacheInterface|string $cache = null, null|\Closure|string $cacheKey = null, mixed ...$args)
+ * @method \App\Model\Entity\EquipmentType findOrCreate($search, callable|array|null $callback = null, $options = [])
+ * @method \App\Model\Entity\EquipmentType patchEntity(\Cake\Datasource\EntityInterface $entity, array $data, array $options = [])
+ * @method \App\Model\Entity\EquipmentType[] patchEntities(iterable $entities, array $data, array $options = [])
+ * @method \App\Model\Entity\EquipmentType|false save(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method \App\Model\Entity\EquipmentType saveOrFail(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method iterable<\App\Model\Entity\EquipmentType>|false saveMany(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\EquipmentType> saveManyOrFail(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\EquipmentType>|false deleteMany(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\EquipmentType> deleteManyOrFail(iterable $entities, $options = [])
+ */
+class EquipmentTypesTable extends AppTable
+{
+    /**
+     * Initialize method
+     *
+     * @param array<string, mixed> $config The configuration for the Table.
+     * @return void
+     */
+    #[Override]
+    public function initialize(array $config): void
+    {
+        parent::initialize($config);
+
+        $this->setTable('equipment_types');
+        $this->setDisplayField('name');
+        $this->setPrimaryKey('id');
+
+        $this->addBehavior('Timestamp');
+        $this->addBehavior('Footprint');
+        $this->addBehavior('StringModifications');
+
+        $this->hasMany('BorrowedEquipments', [
+            'foreignKey' => 'equipment_type_id',
+        ]);
+        $this->hasMany('SoldEquipments', [
+            'foreignKey' => 'equipment_type_id',
+        ]);
+    }
+
+    /**
+     * Default validation rules.
+     *
+     * @param \Cake\Validation\Validator $validator Validator instance.
+     * @return \Cake\Validation\Validator
+     */
+    #[Override]
+    public function validationDefault(Validator $validator): Validator
+    {
+        $validator
+            ->uuid('id')
+            ->allowEmptyString('id', null, 'create');
+
+        $validator
+            ->scalar('name')
+            ->requirePresence('name', 'create')
+            ->notEmptyString('name');
+
+        $validator
+            ->decimal('price')
+            ->allowEmptyString('price');
+
+        $validator
+            ->decimal('price_with_obligation')
+            ->allowEmptyString('price_with_obligation');
+
+        return $validator;
+    }
+
+    /**
+     * Returns a rules checker object that will be used for validating
+     * application integrity.
+     *
+     * @param \Cake\ORM\RulesChecker $rules The rules object to be modified.
+     * @return \Cake\ORM\RulesChecker
+     */
+    #[Override]
+    public function buildRules(RulesChecker $rules): RulesChecker
+    {
+        $rules->addDelete($rules->isNotLinkedTo('BorrowedEquipments'));
+        $rules->addDelete($rules->isNotLinkedTo('SoldEquipments'));
+
+        return $rules;
+    }
+}

@@ -1,0 +1,108 @@
+# Access
+
+How people sign in to the Watcher applications: the accounts, the pages around them and what
+decides who may open which page. Every application carrying this plugin holds a byte-identical
+copy, so that signing in works and is secured the same way everywhere.
+
+CakeDC/Auth lends it the second factor, the permissions of `config/permissions.php` and the services
+of other identity providers. The rest is this plugin's own: the middleware, the addresses, the pages,
+the accounts and the mail.
+
+## What the application supplies
+
+| Plugin | Application |
+|---|---|
+| `Access\Controller\UsersController` | `App\Controller\UsersController extends` it |
+| `Access\Model\Table\UsersTable` | `App\Model\Table\UsersTable extends` it |
+| `Access\Model\Entity\User` | `App\Model\Entity\User extends` it and lists the roles |
+| `AuthLinkHelper` | `App\View\AppView` loads it as `AuthLink`: links shown only where they may be opened |
+
+The application's classes carry the same short names in its own namespace, and its configuration
+and permissions name them `Users`. The pages are the plugin's. An application overrides in
+`templates/plugin/Access/` only what it shows otherwise, its own fields of an account through the
+element `account_fields`.
+
+The plugin reads `config/users.php` on its own, and adds the authentication and the authorization
+middleware after the application's. What differs between installations comes from the environment,
+not from this plugin.
+
+## A forgotten password
+
+The sign-in page offers a link for a new password, sent to the e-mail of the account a username or
+an e-mail names. The answer is the same whether such an account exists or not. The link works for
+an hour and once, and only its hash is kept. An account gets a new link five minutes after the last
+at the soonest, and asking counts against the address like a failed sign-in.
+
+## Other identity providers
+
+Signing in with Google is offered where `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`
+are set. An identity there signs in only the account its owner linked it to in the profile: it
+never makes an account, nor changes one, not even one with the same e-mail. An identity nobody
+linked is logged as `social account not linked`, with its reference. The second factor is asked for
+after it as after a password.
+
+Signing in through any OpenID Connect provider, such as Authentik or Keycloak, is offered where
+`OIDC_ISSUER`, `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET` are set; its button says "Single Sign-On"
+unless `OIDC_LABEL` names the provider. The addresses are read from the discovery document of the
+issuer, and the redirect URIs to register are `/auth/oidc` and `/callback-link-social/oidc`. It is
+the authorization code flow with PKCE (S256), a state and a nonce, and the ID token is taken only
+once its signature (by the keys the provider publishes), issuer, audience, time and nonce hold. Its
+`sub` is what an account is linked to, the same way as with Google: nothing is made or changed by
+signing in.
+
+Where the methods the ID token names (`amr`) include a second factor, such as `mfa`, the account is
+not asked for its own one-time code; where they do not, the rules of the application decide as
+after a password, which is logged as `no second factor at provider`. The methods go into the log of
+the sign-in. Signing out of an account signed in through the provider ends its session with the
+application there too (`end_session_endpoint` with `id_token_hint`), and comes back to the sign-in
+page. An account may have no password and sign in only through the provider; whoever gets the
+password wrong is told, the same for every account, that an account without one signs in with the
+button.
+
+## The first account
+
+`bin/cake access add_admin <username> <email>` adds an admin, with a password made up for it and
+shown once. No account comes with the schema, so a new installation has no other way in.
+
+## Settings, log and cache
+
+The rules for passwords and for failed sign-ins are the settings block `access.security`.
+
+Signing in, failures and refusals are written to the log scope `auth`. Unless the application
+configures a log of that name, they go to syslog with the facility `auth`, under the name
+`watcher-` followed by `APP_NAME`. Passwords, codes and tokens are never written.
+
+Watcher CRM and NMS configure it in `config/app.php`, as their other logs: `logs/auth.log`, or
+`LOG_AUTH_URL`. A container has no syslog to write to, so there it is
+`console:///?stream=php://stdout`, and the log driver of Docker takes the lines on.
+
+Two-step verification asks for a verification code from an authenticator application where
+`access.security` requires it of the account, or where its owner turned it on of their own accord.
+The codes are TOTP of RFC 6238, made here; the QR code is drawn by `tecnickcom/tc-lib-barcode`, so
+the secret goes to no other service. A code is accepted once. Ten recovery codes stand in for the
+phone, each once. The pages name the method "Authenticator Application (TOTP)", so another method
+can stand beside it under the same heading.
+
+Whoever sets the codes up chooses their hash function, SHA-1, SHA-256 or SHA-512, from a list that
+offers first the one `access.security.two_step_verification_algorithm` names, SHA-1 unless it says
+otherwise. An account keeps the one it was set up with. SHA-1 is the one every app understands. Microsoft Authenticator reads the others from the QR code
+and makes SHA-1 codes all the same, which shows when setting it up refuses the first code.
+
+The secret of the codes is kept encrypted with AES-256-GCM, under a key derived from
+`SECURITY_SALT`, so a copy of the database does not give it away. A new salt makes the secrets
+unreadable: each account then sets its app up again the next time it signs in, which is logged as
+`one-time password unreadable`. It is never let in without a code.
+
+API clients sign in with a key sent as a Bearer token. A key in the address is not read, as it
+would end up in the logs. A client asking for data (JSON or XML) that may not have it gets 401 or
+403 rather than the sign-in page. Only the SHA-256 of a key is kept, so an admin makes a new
+one on the user's page and sees it once. Passwords, one-time secrets and keys are written to the
+audit log as `****`.
+
+An account may have no password: a superuser turns signing in with one off on the account's page,
+for a client that signs in only with its key or for somebody who signs in only through an identity
+provider. No link to set a password is sent to it, and setting a password turns it on again. The
+list of accounts, the profile and the account's page say whether it is on.
+
+Failed sign-ins are counted in the cache `login_throttle`. Where an installation runs on more
+than one server, the cache has to be shared by all of them, such as one Redis database.

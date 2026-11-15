@@ -1,0 +1,548 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Test\TestCase\NMS;
+
+use App\Model\Enum\OutageCertainty;
+use App\NMS\ApiClient;
+use App\NMS\Dto\AccessPoint;
+use Cake\Cache\Cache;
+use Cake\Core\Configure;
+use Cake\Http\Client\Response;
+use Cake\Http\TestSuite\HttpClientTrait;
+use Cake\I18n\DateTime;
+use Cake\TestSuite\LogTestTrait;
+use Cake\TestSuite\TestCase;
+use Override;
+use PHPUnit\Framework\Attributes\CoversClass;
+use Psr\Http\Message\RequestInterface;
+
+/**
+ * App\NMS\ApiClient Test Case
+ *
+ * What is asked about here is mostly what happens when Watcher NMS does not answer. Reading a good
+ * answer is one test; the rest are the ways it can go wrong, because those are the ones that used
+ * to pass for an empty list - and an operator shown an empty list has no way of telling that
+ * anything went wrong at all.
+ */
+#[CoversClass(ApiClient::class)]
+class ApiClientTest extends TestCase
+{
+    use HttpClientTrait;
+    use LogTestTrait;
+
+    /**
+     * How many questions have actually gone out.
+     */
+    private int $asked = 0;
+
+    /**
+     * setUp method
+     *
+     * @return void
+     */
+    #[Override]
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Configure::write('Nms.url', 'https://nms.example.com');
+        Configure::write('Nms.key', 'secret');
+
+        // Answers outlive a test otherwise, and the next one would be answered by the one before.
+        Cache::clear('api_client');
+
+        $this->setupLog(['error', 'warning']);
+
+        $this->asked = 0;
+    }
+
+    /**
+     * tearDown method
+     *
+     * @return void
+     */
+    #[Override]
+    protected function tearDown(): void
+    {
+        Cache::clear('api_client');
+
+        parent::tearDown();
+    }
+
+    /**
+     * The ordinary answer is read into things rather than handed over as it arrived, so whoever
+     * draws it asks the point what it is called instead of guessing at a key.
+     *
+     * @return void
+     * @link \App\NMS\ApiClient::getAccessPoints()
+     */
+    public function testTheAnswerIsReadIntoAccessPoints(): void
+    {
+        $this->mock('/api/access-points.json', $this->jsonResponse([
+            'accessPoints' => [[
+                'id' => '1',
+                'name' => 'Hilltop',
+                'archived' => null,
+                'gps_y' => '50.77',
+                'gps_x' => '15.16',
+            ]],
+        ]));
+
+        $answer = ApiClient::getAccessPoints();
+
+        $this->assertTrue($answer->ok());
+
+        $accessPoint = $answer->data->first();
+        $this->assertInstanceOf(AccessPoint::class, $accessPoint);
+        $this->assertSame('Hilltop', $accessPoint->name);
+        $this->assertFalse($accessPoint->isArchived());
+        // the other application names the axes the way a map does, not the way a coordinate is
+        $this->assertSame(50.77, $accessPoint->latitude);
+        $this->assertSame(15.16, $accessPoint->longitude);
+    }
+
+    /**
+     * An entry with no number of its own is passed over: nothing could be linked back to it.
+     *
+     * @return void
+     * @link \App\NMS\ApiClient::getAccessPoints()
+     */
+    public function testAnEntryWithoutANumberIsPassedOver(): void
+    {
+        $this->mock('/api/access-points.json', $this->jsonResponse([
+            'accessPoints' => [['name' => 'Nameless'], ['id' => '1', 'name' => 'Hilltop']],
+        ]));
+
+        $this->assertSame(1, ApiClient::getAccessPoints()->orFail()->count());
+    }
+
+    /**
+     * The list to pick from leaves out what has been put out of use when it is asked to.
+     *
+     * @return void
+     * @link \App\NMS\ApiClient::getAccessPointsList()
+     */
+    public function testTheListToPickFromCanLeaveOutWhatIsArchived(): void
+    {
+        $this->mock('/api/access-points.json', $this->jsonResponse([
+            'accessPoints' => [
+                ['id' => '2', 'name' => 'Valley', 'archived' => '2026-01-01'],
+                ['id' => '1', 'name' => 'Hilltop', 'archived' => null],
+            ],
+        ]));
+
+        $this->assertSame(['1' => 'Hilltop'], ApiClient::getAccessPointsList(onlyActive: true)->data);
+    }
+
+    /**
+     * An answer is kept, so a page showing many rows asks once.
+     *
+     * @return void
+     * @link \App\NMS\ApiClient::getAccessPointsList()
+     */
+    public function testAnAnswerIsKept(): void
+    {
+        $this->mock('/api/access-points.json', $this->jsonResponse([
+            'accessPoints' => [['id' => '1', 'name' => 'Hilltop', 'archived' => null]],
+        ]));
+
+        $first = ApiClient::getAccessPointsList();
+        $again = ApiClient::getAccessPointsList();
+
+        $this->assertSame(['1' => 'Hilltop'], $first->data);
+        $this->assertSame(['1' => 'Hilltop'], $again->data);
+        $this->assertSame(1, $this->asked);
+    }
+
+    /**
+     * A failure is not kept, so Watcher NMS coming back up is noticed at the next question rather
+     * than whenever the cache happens to run out.
+     *
+     * This is the whole point of the exercise: what is written down is what Watcher NMS answered,
+     * never what was left over after it did not.
+     *
+     * @return void
+     * @link \App\NMS\ApiClient::getAccessPointsList()
+     */
+    public function testAFailureIsNotKept(): void
+    {
+        $this->mock('/api/access-points.json', $this->newClientResponse(500));
+
+        $this->assertTrue(ApiClient::getAccessPointsList()->unanswered());
+        $this->assertTrue(ApiClient::getAccessPointsList()->unanswered());
+        $this->assertSame(2, $this->asked);
+    }
+
+    /**
+     * Something going wrong at the other end is unanswered rather than empty, and says why.
+     *
+     * @return void
+     * @link \App\NMS\ApiClient::getAccessPoints()
+     */
+    public function testSomethingGoingWrongAtTheOtherEndIsUnanswered(): void
+    {
+        $this->mock('/api/access-points.json', $this->newClientResponse(500));
+
+        $answer = ApiClient::getAccessPoints();
+
+        $this->assertTrue($answer->unanswered());
+        $this->assertNull($answer->data);
+        $this->assertLogMessageContains(
+            'error',
+            'Watcher NMS answered 500 (https://nms.example.com/api/access-points.json)',
+        );
+    }
+
+    /**
+     * An answer without the key it was asked for is an answer to a different question - a login
+     * form, an error page, a changed API - and is not read as data.
+     *
+     * @return void
+     * @link \App\NMS\ApiClient::getAccessPoints()
+     */
+    public function testAnAnswerWithoutWhatWasAskedForIsUnanswered(): void
+    {
+        $this->mock('/api/access-points.json', $this->jsonResponse(['error' => 'Invalid API key']));
+
+        $this->assertTrue(ApiClient::getAccessPoints()->unanswered());
+        $this->assertLogMessageContains('warning', 'answered something unexpected');
+        $this->assertLogMessageContains('warning', 'no `accessPoints` in it');
+    }
+
+    /**
+     * An answer that is not JSON at all is unanswered.
+     *
+     * @return void
+     * @link \App\NMS\ApiClient::getAccessPoints()
+     */
+    public function testAnAnswerThatIsNotJsonIsUnanswered(): void
+    {
+        $this->mock(
+            '/api/access-points.json',
+            $this->newClientResponse(200, ['Content-Type: text/html'], '<html>Gateway timeout</html>'),
+        );
+
+        $this->assertTrue(ApiClient::getAccessPoints()->unanswered());
+    }
+
+    /**
+     * Watcher NMS not answering at all is unanswered rather than a broken page.
+     *
+     * The mock stands in for the transport: a question nothing answers throws, which is what a
+     * refused connection or a name that does not resolve does.
+     *
+     * @return void
+     * @link \App\NMS\ApiClient::getAccessPoints()
+     */
+    public function testAnUnreachableNmsIsUnanswered(): void
+    {
+        $this->mock('/api/somewhere-else.json', $this->jsonResponse([]));
+
+        $this->assertTrue(ApiClient::getAccessPoints()->unanswered());
+        $this->assertSame(0, $this->asked);
+        $this->assertLogMessageContains(
+            'error',
+            'Watcher NMS is unreachable (https://nms.example.com/api/access-points.json)',
+        );
+    }
+
+    /**
+     * A reading kept from a Watcher NMS this installation no longer has is not handed over.
+     *
+     * The cache used to be read before the question of whether there was anybody to ask. An
+     * address taken out of the configuration therefore left the old readings answering in its
+     * place, and handing one over says a thing is known to be there, or known not to be, where
+     * the truth is that there is nobody left to ask - a rule reading it that way refused records
+     * naming places that were perfectly real.
+     *
+     * @return void
+     * @link \App\NMS\ApiClient::getAccessPoints()
+     */
+    public function testAReadingFromAnAddressSinceRemovedIsNotHandedOver(): void
+    {
+        $this->mock('/api/access-points.json', $this->jsonResponse([
+            'accessPoints' => [['id' => '1', 'name' => 'Hilltop', 'archived' => null]],
+        ]));
+
+        // asked and kept while there was somebody to ask
+        $this->assertTrue(ApiClient::getAccessPoints()->ok());
+
+        Configure::write('Nms.url', '');
+
+        $this->assertFalse(ApiClient::getAccessPoints()->asked, 'The kept reading is not an answer.');
+        $this->assertFalse(ApiClient::getAccessPointsList()->asked);
+        $this->assertSame(1, $this->asked, 'And nothing new was asked either.');
+    }
+
+    /**
+     * An installation with no Watcher NMS asks nothing and says nothing - not having been asked is
+     * a state of its own, and a page there must not be covered in remarks about a system it was
+     * never given.
+     *
+     * @return void
+     * @link \App\NMS\ApiClient::getAccessPoints()
+     */
+    public function testNothingIsAskedWithoutAnAddress(): void
+    {
+        Configure::write('Nms.url', '');
+
+        $this->mock('/api/access-points.json', $this->jsonResponse(['accessPoints' => []]));
+
+        $answer = ApiClient::getAccessPoints();
+
+        $this->assertFalse($answer->asked);
+        $this->assertFalse($answer->unanswered());
+        $this->assertSame(0, $this->asked);
+        $this->assertLogAbsent('error');
+        $this->assertLogAbsent('warning');
+    }
+
+    /**
+     * An address without a key is no more configured than no address at all.
+     *
+     * @return void
+     * @link \App\NMS\ApiClient::getAccessPoints()
+     */
+    public function testNothingIsAskedWithoutAKey(): void
+    {
+        Configure::write('Nms.key', '');
+
+        $this->mock('/api/access-points.json', $this->jsonResponse(['accessPoints' => []]));
+
+        $this->assertFalse(ApiClient::getAccessPoints()->asked);
+        $this->assertSame(0, $this->asked);
+    }
+
+    /**
+     * The certificate is checked unless the installation says otherwise, which only a development
+     * Watcher NMS with a certificate of its own has any business doing.
+     *
+     * @return void
+     * @link \App\NMS\ApiClient::getAccessPoints()
+     */
+    public function testTheCertificateIsCheckedUnlessTurnedOff(): void
+    {
+        $checked = [];
+        $this->mockClientGet(
+            'https://nms.example.com/api/access-points.json?',
+            $this->jsonResponse(['accessPoints' => []]),
+            ['match' => function (RequestInterface $request, array $options) use (&$checked): bool {
+                $checked[] = [
+                    $options['ssl_verify_peer'],
+                    $options['ssl_verify_peer_name'],
+                    $options['ssl_verify_host'],
+                ];
+
+                return true;
+            }],
+        );
+
+        Configure::write('Nms.verifyTls', true);
+        ApiClient::getAccessPoints();
+
+        Cache::clear('api_client');
+        Configure::write('Nms.verifyTls', false);
+        ApiClient::getAccessPoints();
+
+        $this->assertSame([[true, true, true], [false, false, false]], $checked);
+    }
+
+    /**
+     * A search carries its conditions alongside the key, and the point a device serves from comes
+     * back read into a point of its own.
+     *
+     * @return void
+     * @link \App\NMS\ApiClient::getRouterosDevicesForIp()
+     */
+    public function testASearchAsksWithItsConditionsAndNamesThePointItFound(): void
+    {
+        $this->mock(
+            '/api/routeros-devices/search.json',
+            $this->jsonResponse(['routerosDevices' => [[
+                'id' => '7',
+                'system_description' => 'RB5009',
+                'access_point' => ['id' => '1', 'name' => 'Hilltop'],
+            ]]]),
+            ['some_ip_address' => '10.0.0.1'],
+        );
+
+        $device = ApiClient::getRouterosDevicesForIp('10.0.0.1')->orFail()->first();
+
+        $this->assertSame('RB5009', $device?->systemDescription);
+        $this->assertSame('Hilltop', $device->accessPoint?->name);
+    }
+
+    /**
+     * A planned outage comes over with its mast, its grounds and what it stands to take out.
+     *
+     * The count is the one field this application cannot check or work out for itself - which
+     * masts feed which is not written down here - so it is read exactly as it arrives.
+     *
+     * @return void
+     * @link \App\NMS\ApiClient::getPowerOutages()
+     */
+    public function testTheAnswerIsReadIntoPowerOutages(): void
+    {
+        $this->mock('/api/power-outages.json', $this->jsonResponse(['powerOutages' => [[
+            'access_point_id' => '9c4f6b1e-2f0a-4d3c-9a71-6b0d5f8e2a14',
+            'access_point_name' => 'Hilltop',
+            'connections' => 209,
+            'begins_at' => '2026-09-16T08:00:00+02:00',
+            'ends_at' => '2026-09-16T13:00:00+02:00',
+            'certainty' => 'probable',
+            'matched_by' => 'address',
+            'match_note' => 'Main Street 12 (87 m)',
+            'summary' => 'Hilltop, Main Street',
+            'announcement_url' => 'https://cdn.example.com/1.pdf',
+        ]]]));
+
+        $outage = ApiClient::getPowerOutages()->orFail()->first();
+
+        $this->assertSame('Hilltop', $outage?->accessPointName);
+        $this->assertSame(209, $outage->connections);
+        $this->assertSame('Main Street 12 (87 m)', $outage->matchNote);
+        $this->assertSame(OutageCertainty::Probable, $outage->certainty);
+        $this->assertFalse($outage->isCertain(), 'A match made on an address is a guess.');
+
+        // Read into a date, so a page draws it the way it draws every other date rather than
+        // printing the wire format at somebody.
+        $this->assertInstanceOf(DateTime::class, $outage->beginsAt);
+        $this->assertSame('2026-09-16 08:00:00', $outage->beginsAt->format('Y-m-d H:i:s'));
+        $this->assertInstanceOf(DateTime::class, $outage->endsAt);
+    }
+
+    /**
+     * A moment spelled in a way this application cannot read is nothing, not an exception.
+     *
+     * @return void
+     * @link \App\NMS\ApiClient::getPowerOutages()
+     */
+    public function testAMomentNobodyCanReadIsNotAMoment(): void
+    {
+        $this->mock('/api/power-outages.json', $this->jsonResponse(['powerOutages' => [[
+            'access_point_id' => '9c4f6b1e-2f0a-4d3c-9a71-6b0d5f8e2a14',
+            'access_point_name' => 'Hilltop',
+            'begins_at' => 'sometime next week',
+        ]]]));
+
+        $outage = ApiClient::getPowerOutages()->orFail()->first();
+
+        $this->assertSame('Hilltop', $outage?->accessPointName);
+        $this->assertNull($outage->beginsAt);
+    }
+
+    /**
+     * A word for the certainty that this application has never heard of reads as nothing.
+     *
+     * The other application is deployed on its own schedule. A third kind of match appearing
+     * there must not pass for a certainty here, nor stop the card from drawing at all.
+     *
+     * @return void
+     * @link \App\NMS\ApiClient::getPowerOutages()
+     */
+    public function testACertaintyNobodyKnowsIsNotACertainty(): void
+    {
+        $this->mock('/api/power-outages.json', $this->jsonResponse(['powerOutages' => [[
+            'access_point_id' => '9c4f6b1e-2f0a-4d3c-9a71-6b0d5f8e2a14',
+            'access_point_name' => 'Hilltop',
+            'certainty' => 'possibly-maybe',
+        ]]]));
+
+        $outage = ApiClient::getPowerOutages()->orFail()->first();
+
+        $this->assertSame('Hilltop', $outage?->accessPointName);
+        $this->assertNull($outage->certainty);
+        $this->assertFalse($outage->isCertain());
+    }
+
+    /**
+     * An outage naming no mast is passed over: there is nothing here to tie it to.
+     *
+     * @return void
+     * @link \App\NMS\ApiClient::getPowerOutages()
+     */
+    public function testAnOutageWithoutAMastIsPassedOver(): void
+    {
+        $this->mock('/api/power-outages.json', $this->jsonResponse(['powerOutages' => [
+            ['access_point_name' => 'Nowhere', 'connections' => 9],
+            ['access_point_id' => '9c4f6b1e-2f0a-4d3c-9a71-6b0d5f8e2a14'],
+        ]]));
+
+        $outages = ApiClient::getPowerOutages()->orFail();
+
+        $this->assertCount(1, $outages->toList());
+    }
+
+    /**
+     * A count that is missing or nonsense draws as none rather than stopping the reading.
+     *
+     * The other application is deployed on its own schedule, so a field it has not got yet is not
+     * a reason to show nothing at all.
+     *
+     * @return void
+     * @link \App\NMS\ApiClient::getPowerOutages()
+     */
+    public function testAnOutageWithoutACountIsStillAnOutage(): void
+    {
+        $this->mock('/api/power-outages.json', $this->jsonResponse(['powerOutages' => [[
+            'access_point_id' => '9c4f6b1e-2f0a-4d3c-9a71-6b0d5f8e2a14',
+            'access_point_name' => 'Hilltop',
+            'connections' => 'lots',
+        ]]]));
+
+        $outage = ApiClient::getPowerOutages()->orFail()->first();
+
+        $this->assertSame('Hilltop', $outage?->accessPointName);
+        $this->assertSame(0, $outage->connections);
+    }
+
+    /**
+     * An answer to a different question is not read as no outages.
+     *
+     * @return void
+     * @link \App\NMS\ApiClient::getPowerOutages()
+     */
+    public function testOutagesAnsweredWithSomethingElseAreUnanswered(): void
+    {
+        $this->mock('/api/power-outages.json', $this->jsonResponse(['something' => 'else']));
+
+        $answer = ApiClient::getPowerOutages();
+
+        $this->assertFalse($answer->ok());
+        $this->assertTrue($answer->unanswered());
+    }
+
+    /**
+     * Answers one question, counting the ones that actually go out.
+     *
+     * @param string $path What is being asked about.
+     * @param \Cake\Http\Client\Response $response What Watcher NMS answers.
+     * @param array<string, mixed> $query Anything asked for beyond the key.
+     * @return void
+     */
+    private function mock(string $path, Response $response, array $query = []): void
+    {
+        $url = 'https://nms.example.com' . $path . '?'
+            . ($query === [] ? '' : '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986));
+
+        $this->mockClientGet($url, $response, [
+            'match' => function (RequestInterface $request): bool {
+                $this->asked++;
+                // the key goes in the header, out of the address and the logs that keep it
+                $this->assertSame('Bearer secret', $request->getHeaderLine('Authorization'));
+
+                return true;
+            },
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $body What Watcher NMS answers with.
+     * @return \Cake\Http\Client\Response
+     */
+    private function jsonResponse(array $body): Response
+    {
+        return $this->newClientResponse(200, ['Content-Type: application/json'], (string)json_encode($body));
+    }
+}

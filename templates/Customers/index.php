@@ -1,0 +1,153 @@
+<?php
+/**
+ * @var \App\View\AppView $this
+ * @var iterable<\App\Model\Entity\Customer> $customers
+ * @var \Cake\Collection\CollectionInterface<string, string>|array<string> $labels
+ * @var \Cake\Collection\CollectionInterface<string, string>|array<string> $serviceTypes
+ * @var \Cake\Collection\CollectionInterface<string, string>|array<string> $contractStates
+ * @var bool $allow_advanced_search
+ * @var \Cake\Form\Form $filterForm
+ */
+?>
+<?= $this->Form->create($filterForm, ['type' => 'get', 'valueSources' => ['query', 'context']]) ?>
+<div class="row">
+    <div class="column">
+        <?= $this->Form->control('search', [
+            'label' => __('Search'),
+            'type' => 'search',
+            'onchange' => $this::SUBMIT_ON_CHANGE,
+        ]) ?>
+        <?= $allow_advanced_search ? $this->Form->control('advanced_search', [
+            'label' => __('Advanced Search'),
+            'type' => 'checkbox',
+            'onchange' => $this::SUBMIT_ON_CHANGE,
+        ]) : '' ?>
+    </div>
+    <?php if ($allow_advanced_search) : ?>
+    <div class="column">
+        <?= $this->Form->control('contract_state_id', [
+            'empty' => true,
+            'onchange' => $this::SUBMIT_ON_CHANGE,
+        ]) ?>
+    </div>
+    <div class="column">
+        <?= $this->Form->control('service_type_id', [
+            'empty' => true,
+            'onchange' => $this::SUBMIT_ON_CHANGE,
+        ]) ?>
+    </div>
+    <div class="column">
+        <?= $this->Form->control('label_ids', [
+            'label' => __('Require Labels'),
+            'options' => $labels,
+            'multiple' => 'multiple',
+            'style' => 'height: 100px;',
+            'onchange' => $this::SUBMIT_ON_CHANGE,
+        ]) ?>
+    </div>
+    <div class="column">
+        <?= $this->Form->control('not_label_ids', [
+            'label' => __('Exclude Labels'),
+            'options' => $labels,
+            'multiple' => 'multiple',
+            'style' => 'height: 100px;',
+            'onchange' => $this::SUBMIT_ON_CHANGE,
+        ]) ?>
+    </div>
+    <?php endif; ?>
+</div>
+<?= $this->Form->end() ?>
+
+<div class="customers index content">
+    <?= $this->AuthLink->link(__('New Customer'), ['action' => 'add'], ['class' => 'button float-right']) ?>
+    <?= $this->heading(__('Customers')) ?>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th><?= $this->Paginator->sort('nid', __('Number')) ?></th>
+                    <th><?= $this->Paginator->sort('company') ?></th>
+                    <th><?= $this->Paginator->sort('title') ?></th>
+                    <th><?= $this->Paginator->sort('first_name') ?></th>
+                    <th><?= $this->Paginator->sort('last_name') ?></th>
+                    <th><?= $this->Paginator->sort('suffix') ?></th>
+                    <th><?= __('Contracts') ?></th>
+                    <th><?= __('IP Addresses') ?></th>
+                    <th><?= __('Customer Labels') ?></th>
+                    <th><?= $this->Paginator->sort('accounting_profile_id') ?></th>
+                    <th><?= $this->Paginator->sort('dealer') ?></th>
+                    <th class="actions"><?= __('Actions') ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($customers as $customer) : ?>
+                <tr>
+                    <td><?= h($customer->number) ?></td>
+                    <td><?= h($customer->company) ?></td>
+                    <td><?= h($customer->title) ?></td>
+                    <td><?= h($customer->first_name) ?></td>
+                    <td><?= h($customer->last_name) ?></td>
+                    <td><?= h($customer->suffix) ?></td>
+                    <td>
+                        <?php foreach ($customer->contracts as $contract) : ?>
+                        <span style="<?= $contract->style ?>">
+                            <?= $this->Html->link(
+                                $contract->number ?? '--',
+                                [
+                                    'controller' => 'Contracts',
+                                    'action' => 'view',
+                                    $contract->id,
+                                    'customer_id' => $customer->id,
+                                ],
+                            ) ?>
+                            <?= $contract->contract_state !== null ?
+                                '(' . h($contract->contract_state->name) . ')' : '' ?>
+                        </span><br>
+                        <?php endforeach; ?>
+                    </td>
+                    <td>
+                        <?php foreach ($customer->ip_addresses as $ipAddress) : ?>
+                        <span><?= h($ipAddress->ip_address) ?></span><br>
+                        <?php endforeach; ?>
+                        <?php foreach ($customer->ip_networks as $ip_network) : ?>
+                        <span><?= h($ip_network->ip_network) ?></span><br>
+                        <?php endforeach; ?>
+                    </td>
+                    <td>
+                        <?php foreach ($customer->customer_labels as $customer_label) : ?>
+                        <span>
+                            <?= $this->Html->link(
+                                $customer_label->label->name ?? '(' . $customer_label->label->id . ')',
+                                ['controller' => 'CustomerLabels', 'action' => 'view', $customer_label->id],
+                                [
+                                    'class' => 'win-link',
+                                    'title' => h($customer_label->label->caption) . PHP_EOL
+                                        . h($customer_label->created) . PHP_EOL
+                                        . h($customer_label->note),
+                                    'style' => $customer_label->label->style,
+                                ],
+                            ) ?>
+                        </span><br>
+                        <?php endforeach; ?>
+                    </td>
+                    <td><?= $customer->accounting_profile !== null ?
+                        h($customer->accounting_profile->name) : '' ?></td>
+                    <td><?= h($customer->dealer->label()) ?></td>
+                    <td class="actions">
+                        <?= $this->AuthLink->link(
+                            __('View'),
+                            ['action' => 'view', $customer->id],
+                        ) ?>
+                        <?= $this->AuthLink->link(
+                            __('Edit'),
+                            ['action' => 'edit', $customer->id],
+                            ['class' => 'win-link'],
+                        ) ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?= $this->element('common/paginator') ?>
+</div>

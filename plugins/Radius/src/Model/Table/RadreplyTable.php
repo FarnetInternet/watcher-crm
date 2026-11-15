@@ -1,0 +1,115 @@
+<?php
+declare(strict_types=1);
+
+namespace Radius\Model\Table;
+
+use App\Model\Table\AppTable;
+use Cake\ORM\RulesChecker;
+use Cake\Validation\Validator;
+use Override;
+
+/**
+ * Radreply Model
+ *
+ * @property \Radius\Model\Table\AccountsTable&\Cake\ORM\Association\BelongsTo $Accounts
+ * @method \Radius\Model\Entity\Radreply newEmptyEntity()
+ * @method \Radius\Model\Entity\Radreply newEntity(array $data, array $options = [])
+ * @method \Radius\Model\Entity\Radreply[] newEntities(array $data, array $options = [])
+ * @method \Radius\Model\Entity\Radreply get(mixed $primaryKey, array|string $finder = 'all', null|\Psr\SimpleCache\CacheInterface|string $cache = null, null|\Closure|string $cacheKey = null, mixed ...$args)
+ * @method \Radius\Model\Entity\Radreply findOrCreate($search, callable|array|null $callback = null, $options = [])
+ * @method \Radius\Model\Entity\Radreply findOrNewEntity($search)
+ * @method \Radius\Model\Entity\Radreply patchEntity(\Cake\Datasource\EntityInterface $entity, array $data, array $options = [])
+ * @method \Radius\Model\Entity\Radreply[] patchEntities(iterable $entities, array $data, array $options = [])
+ * @method \Radius\Model\Entity\Radreply|false save(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method \Radius\Model\Entity\Radreply saveOrFail(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method iterable<\Radius\Model\Entity\Radreply>|false saveMany(iterable $entities, $options = [])
+ * @method iterable<\Radius\Model\Entity\Radreply> saveManyOrFail(iterable $entities, $options = [])
+ * @method iterable<\Radius\Model\Entity\Radreply>|false deleteMany(iterable $entities, $options = [])
+ * @method iterable<\Radius\Model\Entity\Radreply> deleteManyOrFail(iterable $entities, $options = [])
+ */
+class RadreplyTable extends AppTable
+{
+    /**
+     * Initialize method
+     *
+     * @param array<string, mixed> $config The configuration for the Table.
+     * @return void
+     */
+    #[Override]
+    public function initialize(array $config): void
+    {
+        parent::initialize($config);
+
+        $this->setTable('radreply');
+        $this->setDisplayField('id');
+        $this->setPrimaryKey('id');
+
+        $this->addBehavior('Timestamp');
+        $this->addBehavior('Footprint');
+        $this->addBehavior('StringModifications');
+
+        $this->belongsTo('Radius.Accounts', [
+            'foreignKey' => 'username',
+            'bindingKey' => 'username',
+        ]);
+    }
+
+    /**
+     * Default validation rules.
+     *
+     * @param \Cake\Validation\Validator $validator Validator instance.
+     * @return \Cake\Validation\Validator
+     */
+    #[Override]
+    public function validationDefault(Validator $validator): Validator
+    {
+        $validator
+            ->integer('id')
+            ->allowEmptyString('id', null, 'create');
+
+        $validator
+            ->scalar('username')
+            ->notEmptyString('username');
+
+        $validator
+            ->scalar('attribute')
+            ->notEmptyString('attribute');
+
+        $validator
+            ->scalar('op')
+            ->maxLength('op', 2)
+            ->notEmptyString('op');
+
+        $validator
+            ->scalar('value')
+            ->notEmptyString('value');
+
+        return $validator;
+    }
+
+    /**
+     * Returns a rules checker object that will be used for validating
+     * application integrity.
+     *
+     * @param \Cake\ORM\RulesChecker $rules The rules object to be modified.
+     * @return \Cake\ORM\RulesChecker
+     */
+    #[Override]
+    public function buildRules(RulesChecker $rules): RulesChecker
+    {
+        //$rules->add($rules->isUnique(['username']), ['errorField' => 'username']);
+
+        return $rules;
+    }
+
+    /**
+     * Returns the database connection name to use by default.
+     *
+     * @return string
+     */
+    #[Override]
+    public static function defaultConnectionName(): string
+    {
+        return 'radius';
+    }
+}

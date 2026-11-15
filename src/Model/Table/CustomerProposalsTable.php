@@ -1,0 +1,415 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Model\Table;
+
+use App\Model\Audit\AuditTrail;
+use App\Model\Entity\CustomerProposal;
+use App\Model\Enum\CustomerProposalPurpose;
+use App\Model\Enum\DocumentsDeliveryType;
+use App\Service\CustomerPrint\CustomerDocuments;
+use Cake\Database\Type\EnumType;
+use Cake\I18n\DateTime;
+use Cake\ORM\Query\SelectQuery;
+use Cake\ORM\RulesChecker;
+use Cake\ORM\TableRegistry;
+use Cake\Validation\Validator;
+use Override;
+
+/**
+ * CustomerProposals Model
+ *
+ * @property \App\Model\Table\CustomersTable&\Cake\ORM\Association\BelongsTo $Customers
+ * @property \App\Model\Table\ContractProposalsTable&\Cake\ORM\Association\HasMany $ContractProposals
+ * @method \App\Model\Entity\CustomerProposal newEmptyEntity()
+ * @method \App\Model\Entity\CustomerProposal newEntity(array $data, array $options = [])
+ * @method array<\App\Model\Entity\CustomerProposal> newEntities(array $data, array $options = [])
+ * @method \App\Model\Entity\CustomerProposal get(mixed $primaryKey, array|string $finder = 'all', \Psr\SimpleCache\CacheInterface|string|null $cache = null, \Closure|string|null $cacheKey = null, mixed ...$args)
+ * @method \App\Model\Entity\CustomerProposal findOrCreate($search, ?callable $callback = null, array $options = [])
+ * @method \App\Model\Entity\CustomerProposal patchEntity(\Cake\Datasource\EntityInterface $entity, array $data, array $options = [])
+ * @method array<\App\Model\Entity\CustomerProposal> patchEntities(iterable $entities, array $options = [])
+ * @method \App\Model\Entity\CustomerProposal|false save(\Cake\Datasource\EntityInterface $entity, array $options = [])
+ * @method \App\Model\Entity\CustomerProposal saveOrFail(\Cake\Datasource\EntityInterface $entity, array $options = [])
+ * @method iterable<\App\Model\Entity\CustomerProposal>|\Cake\Datasource\ResultSetInterface<\App\Model\Entity\CustomerProposal>|false saveMany(iterable $entities, array $options = [])
+ * @method iterable<\App\Model\Entity\CustomerProposal>|\Cake\Datasource\ResultSetInterface<\App\Model\Entity\CustomerProposal> saveManyOrFail(iterable $entities, array $options = [])
+ * @method iterable<\App\Model\Entity\CustomerProposal>|\Cake\Datasource\ResultSetInterface<\App\Model\Entity\CustomerProposal>|false deleteMany(iterable $entities, array $options = [])
+ * @method iterable<\App\Model\Entity\CustomerProposal>|\Cake\Datasource\ResultSetInterface<\App\Model\Entity\CustomerProposal> deleteManyOrFail(iterable $entities, array $options = [])
+ * @mixin \Cake\ORM\Behavior\TimestampBehavior
+ */
+class CustomerProposalsTable extends AppTable
+{
+    /**
+     * Initialize method
+     *
+     * @param array<string, mixed> $config The configuration for the Table.
+     * @return void
+     */
+    #[Override]
+    public function initialize(array $config): void
+    {
+        parent::initialize($config);
+
+        $this->setTable('customer_proposals');
+        $this->setDisplayField('id');
+        $this->setPrimaryKey('id');
+
+        $this->getSchema()->setColumnType(
+            'purpose',
+            EnumType::from(CustomerProposalPurpose::class),
+        );
+        $this->getSchema()->setColumnType(
+            'delivery_type',
+            EnumType::from(DocumentsDeliveryType::class),
+        );
+
+        $this->addBehavior('Timestamp');
+        $this->addBehavior('Footprint');
+        $this->addBehavior('StringModifications');
+
+        $this->belongsTo('Customers', [
+            'foreignKey' => 'customer_id',
+            'joinType' => 'INNER',
+        ]);
+        // The papers of the customer's contracts that go out in this envelope. They are never
+        // taken with it: the envelope is where their sending and their signature are kept, so
+        // letting it go while they are in it would leave them saying nothing about either - which
+        // is why a rule stops it happening at all.
+        $this->hasMany('ContractProposals', [
+            'foreignKey' => 'customer_proposal_id',
+            'dependent' => false,
+        ]);
+    }
+
+    /**
+     * Proposals nobody has settled yet, one way or the other.
+     *
+     * @param \Cake\ORM\Query\SelectQuery<\App\Model\Entity\CustomerProposal> $query Base query.
+     * @return \Cake\ORM\Query\SelectQuery<\App\Model\Entity\CustomerProposal>
+     */
+    public function findOpen(SelectQuery $query): SelectQuery
+    {
+        return $query->where([
+            $this->aliasField('conclusion_date') . ' IS' => null,
+            $this->aliasField('revoked') . ' IS' => null,
+        ]);
+    }
+
+    /**
+     * Gives up on the proposal, and on everything still standing in it.
+     *
+     * Written into the papers rather than read back from here afterwards. Nothing joins a proposal
+     * that has been given up on, so the one word written across them cannot come apart the way a
+     * copied date would - and the papers go on answering for themselves wherever they are read
+     * without their envelope. That one moment is also how {@see restoreTheProposal()} knows them.
+     *
+     * What was already applied keeps what it says: an envelope does not undo what has reached
+     * the live records. So does anything given up on earlier, which has its own day and its own
+     * name against it.
+     *
+     * @param \App\Model\Entity\CustomerProposal $proposal The proposal.
+     * @param string|null $by Who is giving up on it.
+     * @return bool Whether it was written.
+     */
+    public function giveUpOnTheProposal(CustomerProposal $proposal, ?string $by): bool
+    {
+        $proposal->revoked = DateTime::now();
+        $proposal->revoked_by = $by;
+
+        $trail = new AuditTrail();
+
+        $given = (bool)$this->getConnection()->transactional(function () use ($proposal, $trail): bool {
+            if (!$this->save($proposal, ['checkRules' => false] + $trail->options())) {
+                return false;
+            }
+
+            $standing = $this->ContractProposals->find()->where([
+                'ContractProposals.customer_proposal_id' => $proposal->id,
+                'ContractProposals.revoked IS' => null,
+                'ContractProposals.applied IS' => null,
+            ]);
+
+            foreach ($standing as $papers) {
+                $papers->revoked = $proposal->revoked;
+                $papers->revoked_by = $proposal->revoked_by;
+
+                if (!$this->ContractProposals->save($papers, ['checkRules' => false] + $trail->options())) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+
+        if ($given) {
+            $trail->flush($this, $proposal);
+        }
+
+        return $given;
+    }
+
+    /**
+     * Takes a revocation back, with the papers that were revoked together with the proposal.
+     *
+     * Those are the ones carrying its very moment. Papers given up on by themselves have a day of
+     * their own and stay as they are.
+     *
+     * @param \App\Model\Entity\CustomerProposal $proposal The proposal.
+     * @return bool Whether it was written.
+     */
+    public function restoreTheProposal(CustomerProposal $proposal): bool
+    {
+        $revoked = $proposal->revoked;
+
+        if ($revoked === null) {
+            return false;
+        }
+
+        $proposal->revoked = null;
+        $proposal->revoked_by = null;
+
+        $trail = new AuditTrail();
+
+        $restored = (bool)$this->getConnection()->transactional(
+            function () use ($proposal, $revoked, $trail): bool {
+                if (!$this->save($proposal, ['checkRules' => false] + $trail->options())) {
+                    return false;
+                }
+
+                $given = $this->ContractProposals->find()->where([
+                    'ContractProposals.customer_proposal_id' => $proposal->id,
+                    'ContractProposals.revoked IS NOT' => null,
+                ]);
+
+                foreach ($given as $papers) {
+                    if ($papers->revoked === null || !$papers->revoked->equals($revoked)) {
+                        continue;
+                    }
+
+                    $papers->revoked = null;
+                    $papers->revoked_by = null;
+
+                    if (!$this->ContractProposals->save($papers, ['checkRules' => false] + $trail->options())) {
+                        return false;
+                    }
+                }
+
+                return true;
+            },
+        );
+
+        if ($restored) {
+            $trail->flush($this, $proposal);
+        }
+
+        return $restored;
+    }
+
+    /**
+     * The contracts of this proposal that have another proposal waiting on them as well.
+     *
+     * @param \App\Model\Entity\CustomerProposal $proposal The proposal.
+     * @return list<string> The numbers of the contracts.
+     */
+    public function contractsWaitingOnAnotherProposal(CustomerProposal $proposal): array
+    {
+        $its = $this->ContractProposals->find('open')
+            ->select(['ContractProposals.contract_id'])
+            ->where(['ContractProposals.customer_proposal_id' => $proposal->id]);
+
+        $others = $this->ContractProposals->find('open')
+            ->contain(['Contracts'])
+            ->where([
+                'ContractProposals.contract_id IN' => $its,
+                'ContractProposals.customer_proposal_id !=' => $proposal->id,
+            ])
+            ->all();
+
+        $numbers = [];
+
+        /** @var \App\Model\Entity\ContractProposal $other */
+        foreach ($others as $other) {
+            $numbers[(string)$other->contract_id] = (string)($other->contract->number ?? '');
+        }
+
+        return array_values($numbers);
+    }
+
+    /**
+     * Whether the proposal may still be changed.
+     *
+     * Sending is what locks it, the same as it does for a contract's proposal: what stood behind a
+     * paper that has left the building is not rewritten afterwards. A correction is a new proposal,
+     * and the old one is revoked.
+     *
+     * @param \App\Model\Entity\CustomerProposal $proposal The proposal being asked about.
+     * @return bool
+     */
+    public function mayBeEdited(CustomerProposal $proposal): bool
+    {
+        return $proposal->isOpen() && !$proposal->hasBeenSent();
+    }
+
+    /**
+     * Whether the proposal may be removed.
+     *
+     * What went out to a customer is what happened, and what came back signed is theirs; neither
+     * is ours to remove. A proposal that never went anywhere is somebody's mistake rather than
+     * history, so that one may go.
+     *
+     * @param \App\Model\Entity\CustomerProposal $proposal The proposal being asked about.
+     * @return bool
+     */
+    public function mayBeDeleted(CustomerProposal $proposal): bool
+    {
+        return !$proposal->hasBeenSent()
+            && !$proposal->hasBeenConcluded()
+            && !$this->anythingHangsOn($proposal);
+    }
+
+    /**
+     * Whether anything would be left behind by letting the proposal go.
+     *
+     * Two things may: the papers of a contract, which keep their sending and their signature here
+     * and would have nowhere to keep them; and a document, which is the record of something that
+     * happened and would be left pointing at nothing, holding on to its file for ever.
+     *
+     * @param \App\Model\Entity\CustomerProposal $proposal The proposal being asked about.
+     * @return bool
+     */
+    private function anythingHangsOn(CustomerProposal $proposal): bool
+    {
+        if ($this->ContractProposals->exists(['ContractProposals.customer_proposal_id' => $proposal->id])) {
+            return true;
+        }
+
+        return TableRegistry::getTableLocator()->get('Files.FileLinks')->exists([
+            'FileLinks.model' => CustomerDocuments::MODEL,
+            'FileLinks.foreign_key' => $proposal->id,
+        ]);
+    }
+
+    /**
+     * The step of recording that the papers went out, which is the recording of a day.
+     *
+     * @param \Cake\Validation\Validator $validator Validator instance.
+     * @return \Cake\Validation\Validator
+     */
+    public function validationSent(Validator $validator): Validator
+    {
+        return $this->validationDefault($validator)
+            ->notEmptyDate('sent_date', __('Enter the day the proposal went out.'));
+    }
+
+    /**
+     * The step of recording the signature, which is the recording of a day.
+     *
+     * @param \Cake\Validation\Validator $validator Validator instance.
+     * @return \Cake\Validation\Validator
+     */
+    public function validationSigned(Validator $validator): Validator
+    {
+        return $this->validationDefault($validator)
+            ->notEmptyDate('conclusion_date', __('Enter the day the customer signed.'));
+    }
+
+    /**
+     * Default validation rules.
+     *
+     * @param \Cake\Validation\Validator $validator Validator instance.
+     * @return \Cake\Validation\Validator
+     */
+    #[Override]
+    public function validationDefault(Validator $validator): Validator
+    {
+        $validator
+            ->uuid('customer_id')
+            ->requirePresence('customer_id', 'create')
+            ->notEmptyString('customer_id');
+
+        // Empty says the proposal carries no paper of the customer's own and is only the envelope
+        // its contracts' papers went out in.
+        $validator
+            ->allowEmptyString('purpose');
+
+        $validator
+            ->date('effective_from')
+            ->requirePresence('effective_from', 'create')
+            ->notEmptyDate('effective_from');
+
+        $validator
+            ->date('sent_date')
+            ->allowEmptyDate('sent_date');
+
+        $validator
+            ->allowEmptyString('delivery_type');
+
+        $validator
+            ->date('conclusion_date')
+            ->allowEmptyDate('conclusion_date');
+
+        $validator
+            ->dateTime('revoked')
+            ->allowEmptyDateTime('revoked');
+
+        $validator
+            ->scalar('note')
+            ->allowEmptyString('note');
+
+        return $validator;
+    }
+
+    /**
+     * Returns a rules checker object that will be used for validating application integrity.
+     *
+     * @param \Cake\ORM\RulesChecker $rules The rules object to be modified.
+     * @return \Cake\ORM\RulesChecker
+     */
+    #[Override]
+    public function buildRules(RulesChecker $rules): RulesChecker
+    {
+        $rules->add($rules->existsIn(['customer_id'], 'Customers'), ['errorField' => 'customer_id']);
+
+        // The day and the way belong together: a record saying papers went out without saying how
+        // is half an answer, and the listing beside it would print half a line.
+        $rules->add(
+            fn(CustomerProposal $proposal): bool => $proposal->sent_date === null
+                || $proposal->delivery_type !== null,
+            'sendingSaysHow',
+            [
+                'errorField' => 'delivery_type',
+                'message' => __('Please say how the proposal was sent.'),
+            ],
+        );
+
+        // The other side of the rule the contract proposals keep: a customer proposal that already
+        // holds some cannot turn into one that is only handed over.
+        $rules->add(
+            fn(CustomerProposal $proposal): bool => $proposal->isNew()
+                || !$proposal->isDirty('purpose')
+                || ($proposal->purpose?->comesBackSigned() ?? true)
+                || !$this->ContractProposals->exists([
+                    'ContractProposals.customer_proposal_id' => $proposal->id,
+                    'ContractProposals.revoked IS' => null,
+                ]),
+            'purposeFitsItsContractProposals',
+            [
+                'errorField' => 'purpose',
+                'message' => __('This customer proposal holds contract proposals, which have to be signed.'),
+            ],
+        );
+
+        $rules->addDelete(
+            fn(CustomerProposal $proposal): bool => $this->mayBeDeleted($proposal),
+            'nothingIsLeftBehind',
+            [
+                'errorField' => 'id',
+                'message' => __(
+                    'This customer proposal has been sent or holds contract proposals, so it'
+                    . ' cannot be deleted. Revoke it instead.',
+                ),
+            ],
+        );
+
+        return $rules;
+    }
+}

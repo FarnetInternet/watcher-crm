@@ -1,0 +1,173 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Test\TestCase\Contracts\Check;
+
+use App\Check\CheckScope;
+use App\Contracts\Check\UnappliedContractProposalCheck;
+use App\Model\Table\ContractProposalsTable;
+use App\Test\Traits\TableTestTrait;
+use Cake\I18n\Date;
+use Cake\I18n\DateTime;
+use Cake\TestSuite\TestCase;
+use PHPUnit\Framework\Attributes\CoversClass;
+
+/**
+ * App\Contracts\Check\UnappliedContractProposalCheck Test Case
+ */
+#[CoversClass(UnappliedContractProposalCheck::class)]
+class UnappliedContractProposalCheckTest extends TestCase
+{
+    use TableTestTrait;
+
+    /**
+     * The proposal the fixture carries: open, unsent, changing nothing.
+     */
+    private const PROPOSAL_ID = 'c9a1f2b3-4d5e-4f60-8a71-9b2c3d4e5f60';
+
+    /**
+     * Fixtures
+     *
+     * @var array<string>
+     */
+    protected array $fixtures = [
+        'app.Users',
+        'app.AccountingProfiles',
+        'app.Customers',
+        'app.Countries',
+        'app.Addresses',
+        'app.Commissions',
+        'app.ContractStates',
+        'app.ServiceTypes',
+        'app.Contracts',
+        'app.ContractVersions',
+        'app.ConnectionProfiles',
+        'app.Services',
+        'app.Billings',
+        'app.CustomerProposals',
+        'app.ContractProposals',
+        'plugin.Settings.Settings',
+    ];
+
+    /**
+     * The proposal, with what the test wants it to say.
+     *
+     * @param array<string, mixed> $says What it says.
+     * @return void
+     */
+    private function proposalSays(array $says): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $proposal = $proposals->get(self::PROPOSAL_ID);
+
+        // The sending and the signature are the envelope's, so anything said about them is said
+        // there - the papers keep the day they take effect and whether they were given up on.
+        $envelopes = $this->getTableLocator()->get('CustomerProposals');
+        $ofTheProposal = array_intersect_key(
+            $says,
+            array_flip(['sent_date', 'delivery_type', 'conclusion_date']),
+        );
+
+        if ($ofTheProposal !== []) {
+            $envelopes->saveOrFail(
+                $envelopes->patchEntity($envelopes->get($proposal->customer_proposal_id), $ofTheProposal),
+                ['checkRules' => false],
+            );
+        }
+
+        $ofThePapers = array_diff_key($says, $ofTheProposal);
+
+        if ($ofThePapers !== []) {
+            $proposals->saveOrFail(
+                $proposals->patchEntity($proposal, $ofThePapers),
+                ['checkRules' => false],
+            );
+        }
+    }
+
+    /**
+     * What the check finds.
+     *
+     * @param bool $ignore_inactive Whether to count only proposals whose day has come or is near.
+     * @return array<string>
+     */
+    private function found(bool $ignore_inactive = true): array
+    {
+        /** @var \App\Model\Table\ContractProposalsTable $proposals */
+        $proposals = $this->getTableLocator()->get(ContractProposalsTable::class);
+
+        return (new UnappliedContractProposalCheck($proposals, new CheckScope($ignore_inactive)))
+            ->find()
+            ->all()
+            ->extract('id')
+            ->toList();
+    }
+
+    /**
+     * A proposal the customer has signed and nobody has acted on is what this is about: the service
+     * runs and is invoiced on the old terms until somebody applies it.
+     *
+     * @return void
+     */
+    public function testASignedProposalNobodyHasActedOnIsFound(): void
+    {
+        $this->proposalSays([
+            'conclusion_date' => Date::now()->subDays(3),
+            'effective_from' => Date::now(),
+        ]);
+
+        $this->assertContains(self::PROPOSAL_ID, $this->found());
+    }
+
+    /**
+     * One nobody has signed is not: there is nothing to apply, and the unsigned paperwork is
+     * chased elsewhere.
+     *
+     * @return void
+     */
+    public function testAnUnsignedProposalIsNotFound(): void
+    {
+        $this->proposalSays([
+            'conclusion_date' => null,
+            'effective_from' => Date::now(),
+        ]);
+
+        $this->assertNotContains(self::PROPOSAL_ID, $this->found());
+    }
+
+    /**
+     * Nor one that has already been applied or given up on.
+     *
+     * @return void
+     */
+    public function testASettledProposalIsNotFound(): void
+    {
+        $this->proposalSays([
+            'conclusion_date' => Date::now()->subDays(3),
+            'effective_from' => Date::now(),
+            'applied' => DateTime::now(),
+        ]);
+        $this->assertNotContains(self::PROPOSAL_ID, $this->found());
+
+        $this->proposalSays(['applied' => null, 'revoked' => DateTime::now()]);
+        $this->assertNotContains(self::PROPOSAL_ID, $this->found());
+    }
+
+    /**
+     * A proposal whose day has not come yet is left alone by default - there is nothing to do about
+     * it until it does - but the wider reading shows it, which is what putting the file straight
+     * needs.
+     *
+     * @return void
+     */
+    public function testOneWhoseDayHasNotComeIsLeftAloneUnlessAskedFor(): void
+    {
+        $this->proposalSays([
+            'conclusion_date' => Date::now(),
+            'effective_from' => Date::now()->addMonths(6),
+        ]);
+
+        $this->assertNotContains(self::PROPOSAL_ID, $this->found());
+        $this->assertContains(self::PROPOSAL_ID, $this->found(ignore_inactive: false));
+    }
+}

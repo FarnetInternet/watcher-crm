@@ -1,0 +1,13 @@
+parameters:
+    level: 8
+    treatPhpDocTypesAsCertain: false
+    bootstrapFiles:
+        - config/bootstrap.php
+    paths:
+        - src/
+        - templates/
+        - tests/
+        - plugins/
+        - config/
+    ignoreErrors:
+        - identifier: missingType.iterableValue

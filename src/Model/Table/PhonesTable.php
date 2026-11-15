@@ -1,0 +1,143 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Model\Table;
+
+use App\Phones\Formatter as PhoneFormatter;
+use ArrayObject;
+use Cake\Event\EventInterface;
+use Cake\ORM\RulesChecker;
+use Cake\Validation\Validator;
+use Override;
+
+/**
+ * Phones Model
+ *
+ * @property \App\Model\Table\CustomersTable&\Cake\ORM\Association\BelongsTo $Customers
+ * @method \App\Model\Entity\Phone newEmptyEntity()
+ * @method \App\Model\Entity\Phone newEntity(array $data, array $options = [])
+ * @method \App\Model\Entity\Phone[] newEntities(array $data, array $options = [])
+ * @method \App\Model\Entity\Phone get(mixed $primaryKey, array|string $finder = 'all', null|\Psr\SimpleCache\CacheInterface|string $cache = null, null|\Closure|string $cacheKey = null, mixed ...$args)
+ * @method \App\Model\Entity\Phone findOrCreate($search, callable|array|null $callback = null, $options = [])
+ * @method \App\Model\Entity\Phone patchEntity(\Cake\Datasource\EntityInterface $entity, array $data, array $options = [])
+ * @method \App\Model\Entity\Phone[] patchEntities(iterable $entities, array $data, array $options = [])
+ * @method \App\Model\Entity\Phone|false save(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method \App\Model\Entity\Phone saveOrFail(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method iterable<\App\Model\Entity\Phone>|false saveMany(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\Phone> saveManyOrFail(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\Phone>|false deleteMany(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\Phone> deleteManyOrFail(iterable $entities, $options = [])
+ */
+class PhonesTable extends AppTable
+{
+    /**
+     * Initialize method
+     *
+     * @param array<string, mixed> $config The configuration for the Table.
+     * @return void
+     */
+    #[Override]
+    public function initialize(array $config): void
+    {
+        parent::initialize($config);
+
+        $this->setTable('phones');
+        $this->setDisplayField('phone');
+        $this->setPrimaryKey('id');
+
+        $this->addBehavior('Timestamp');
+        $this->addBehavior('Footprint');
+        $this->addBehavior('StringModifications');
+        // the customer's search document is built from these records
+        $this->addBehavior('FulltextSearchCustomers');
+
+        $this->belongsTo('Customers', [
+            'foreignKey' => 'customer_id',
+            'joinType' => 'INNER',
+        ]);
+    }
+
+    /**
+     * Default validation rules.
+     *
+     * @param \Cake\Validation\Validator $validator Validator instance.
+     * @return \Cake\Validation\Validator
+     */
+    #[Override]
+    public function validationDefault(Validator $validator): Validator
+    {
+        $validator
+            ->uuid('id')
+            ->allowEmptyString('id', null, 'create');
+
+        $validator
+            ->scalar('phone')
+            ->requirePresence('phone', 'create')
+            ->notEmptyString('phone');
+
+        $validator
+            ->boolean('use_for_billing')
+            ->notEmptyString('use_for_billing');
+
+        $validator
+            ->boolean('use_for_outages')
+            ->notEmptyString('use_for_outages');
+
+        $validator
+            ->boolean('use_for_commercial')
+            ->notEmptyString('use_for_commercial');
+
+        $validator
+            ->scalar('note')
+            ->allowEmptyString('note');
+
+        $validator
+            ->uuid('customer_id')
+            ->requirePresence('customer_id', 'create')
+            ->notEmptyString('customer_id');
+
+        return $validator;
+    }
+
+    /**
+     * Returns a rules checker object that will be used for validating
+     * application integrity.
+     *
+     * @param \Cake\ORM\RulesChecker $rules The rules object to be modified.
+     * @return \Cake\ORM\RulesChecker
+     */
+    #[Override]
+    public function buildRules(RulesChecker $rules): RulesChecker
+    {
+        $rules->add($rules->existsIn(['customer_id'], 'Customers'), ['errorField' => 'customer_id']);
+
+        $rules->add(
+            fn($entity, $_options): bool => PhoneFormatter::isValid((string)$entity->phone),
+            'isPhoneNumberValid',
+            [
+                'errorField' => 'phone',
+                'message' => __('The phone number is not valid.'),
+            ],
+        );
+
+        return $rules;
+    }
+
+    /**
+     * Normalization of phone numbers
+     *
+     * @param \Cake\Event\EventInterface<\Cake\ORM\Table> $event Event
+     * @param \ArrayObject<string, mixed> $data Data
+     * @param \ArrayObject<string, mixed> $options Options
+     * @psalm-suppress PossiblyUnusedParam
+     * @return void
+     */
+    public function beforeMarshal(EventInterface $event, ArrayObject $data, ArrayObject $options): void
+    {
+        if (isset($data['phone']) && is_string($data['phone']) && ($data['phone'] !== '')) {
+            // A value that cannot be read is left as it was entered - the "isPhoneNumberValid"
+            // rule is the one that reports it.
+            $data['phone'] = PhoneFormatter::toInternational($data['phone']) ?? $data['phone'];
+        }
+    }
+}

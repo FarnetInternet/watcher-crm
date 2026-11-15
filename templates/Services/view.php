@@ -1,0 +1,173 @@
+<?php
+
+use App\Model\Entity\Billing;
+use Cake\Collection\Collection;
+
+/**
+ * @var \App\View\AppView $this
+ * @var \App\Model\Entity\Service $service
+ */
+?>
+<div class="row">
+    <aside class="column">
+        <div class="side-nav">
+            <h4 class="heading"><?= __('Actions') ?></h4>
+            <?= $this->AuthLink->link(
+                __('Edit Service'),
+                ['action' => 'edit', $service->id],
+                ['class' => 'side-nav-item'],
+            ) ?>
+            <?= $this->AuthLink->postLink(
+                __('Delete Service'),
+                ['action' => 'delete', $service->id],
+                ['confirm' => __('Are you sure you want to delete # {0}?', $service->id), 'class' => 'side-nav-item'],
+            ) ?>
+            <?= $this->AuthLink->link(__('List Services'), ['action' => 'index'], ['class' => 'side-nav-item']) ?>
+            <?= $this->AuthLink->link(__('New Service'), ['action' => 'add'], ['class' => 'side-nav-item']) ?>
+        </div>
+    </aside>
+    <div class="column column-90">
+        <div class="services view content">
+            <?= $this->record(__('Service'), (string)$service->name) ?>
+            <div class="row">
+                <div class="column">
+                    <table>
+                        <tr>
+                            <th><?= __('Name') ?></th>
+                            <td><?= h($service->name) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Service Type') ?></th>
+                            <td><?= $service->service_type !== null ? $this->Html->link(
+                                $service->service_type->name ?? '(' . $service->service_type->id . ')',
+                                ['controller' => 'ServiceTypes', 'action' => 'view', $service->service_type->id],
+                            ) : '' ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Connection Profile') ?></th>
+                            <td><?= $service->connection_profile !== null ? $this->Html->link(
+                                $service->connection_profile->radius_group
+                                    ?? '(' . $service->connection_profile->id . ')',
+                                [
+                                    'controller' => 'ConnectionProfiles',
+                                    'action' => 'view',
+                                    $service->connection_profile->id,
+                                ],
+                            ) : '' ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Price') ?></th>
+                            <td><?= $service->price === null ?
+                                '' : $this->Number->currency($service->price->toString()) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Criticality Level') ?></th>
+                            <td><?= $service->criticality_level === null ?
+                                '' : h($service->criticality_level->label()) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Accounting Product Code') ?></th>
+                            <td><?= h($service->accounting_product_code) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Currently Offered') ?></th>
+                            <td><?= $service->currently_offered ? __('Yes') : __('No'); ?></td>
+                        </tr>
+                    </table>
+                </div>
+                <div class="column">
+                    <?= $this->element('common/audit', ['entity' => $service]) ?>
+                </div>
+            </div>
+            <div class="related">
+                <h4><?= __('Related Billings') ?></h4>
+                <?php if (!empty($service->billings)) : ?>
+                <div class="table-responsive">
+                    <table>
+                        <tr>
+                            <th><?= __('Customer') ?></th>
+                            <th><?= __('Customer Number') ?></th>
+                            <th><?= __('Contract') ?></th>
+                            <th><?= __('Text') ?></th>
+                            <th><?= __('Quantity') ?></th>
+                            <th><?= __('Price') ?></th>
+                            <th><?= __('Fixed Discount') ?></th>
+                            <th><?= __('Percentage Discount') ?></th>
+                            <th><?= __('Total Price') ?></th>
+                            <th><?= __('Billing From') ?></th>
+                            <th><?= __('Billing Until') ?></th>
+                            <th><?= __('Active') ?></th>
+                            <th><?= __('Separate Invoice') ?></th>
+                            <th><?= __('Note') ?></th>
+                            <th class="actions"><?= __('Actions') ?></th>
+                        </tr>
+                        <?php foreach ($service->billings as $billing) : ?>
+                        <tr style="<?= $billing->style ?>">
+                            <td><?= $billing->customer !== null ?
+                                $this->Html->link(
+                                    $billing->customer->name ?? '(' . $billing->customer->id . ')',
+                                    ['controller' => 'Customers', 'action' => 'view', $billing->customer->id],
+                                ) : '' ?></td>
+                            <td><?= $billing->customer !== null ? h($billing->customer->number) : '' ?></td>
+                            <td><?= $billing->contract !== null ?
+                                $this->Html->link(
+                                    $billing->contract->number ?? '--',
+                                    [
+                                        'controller' => 'Contracts',
+                                        'action' => 'view',
+                                        $billing->contract->id,
+                                        'customer_id' => $billing->contract->customer_id,
+                                    ],
+                                ) : '' ?></td>
+                            <td><?= h($billing->text) ?></td>
+                            <td><?= h($billing->quantity) ?></td>
+                            <td><?= h($billing->price) ?><?= $billing->service !== null ?
+                                ' (' . h($billing->service->price) . ')' : '' ?></td>
+                            <td><?= h($billing->fixed_discount) ?></td>
+                            <td><?= h($billing->percentage_discount) ?></td>
+                            <td><?= $this->Number->currency($billing->total_price->toString()) ?></td>
+                            <td><?= h($billing->billing_from) ?></td>
+                            <td><?= h($billing->billing_until) ?></td>
+                            <td><?= $billing->active ? __('Yes') : __('No'); ?></td>
+                            <td><?= $billing->separate_invoice ? __('Yes') : __('No'); ?></td>
+                            <td><?= h($billing->note) ?></td>
+                            <td class="actions">
+                                <?= $this->AuthLink->link(
+                                    __('View'),
+                                    ['controller' => 'Billings', 'action' => 'view', $billing->id],
+                                ) ?>
+                                <?= $this->AuthLink->link(
+                                    __('Edit'),
+                                    ['controller' => 'Billings', 'action' => 'edit', $billing->id],
+                                    ['class' => 'win-link'],
+                                ) ?>
+                                <?= $this->AuthLink->postLink(
+                                    __('Delete'),
+                                    ['controller' => 'Billings', 'action' => 'delete', $billing->id],
+                                    ['confirm' => $this->Billing->deleteConfirmation($billing)],
+                                ) ?>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </table>
+                </div>
+                <div>
+                    <?= __('Total sum of active') . ': ' . $this->Number->currency(
+                        (new Collection($service->billings))
+                            ->filter(
+                                function (Billing $billing) {
+                                    return $billing->active;
+                                },
+                            )
+                            ->sumOf(
+                                function (Billing $billing) {
+                                    return $billing->total_price->toFloat();
+                                },
+                            ),
+                    ) ?><br>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+</div>

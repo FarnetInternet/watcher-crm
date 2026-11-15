@@ -1,0 +1,100 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Controller\Traits;
+
+use App\Model\Enum\LandingPage;
+use Cake\Core\Configure;
+use CakeDC\Auth\Traits\IsAuthorizedTrait;
+
+/**
+ * Covers the user settings
+ *
+ * @method \Cake\Http\ServerRequest getRequest()
+ */
+trait UserSettingsTrait
+{
+    use IsAuthorizedTrait;
+
+    /**
+     * Edit user settings method
+     *
+     * @param string|null $id User id.
+     * @return \Cake\Http\Response|null|void Redirects on successful edit, renders view otherwise.
+     * @throws \Cake\Datasource\Exception\RecordNotFoundException When record not found.
+     */
+    public function userSettings(?string $id = null)
+    {
+        $identity = $this->getRequest()->getAttribute('identity');
+        $identity ??= [];
+
+        $userId = $identity['id'] ?? null;
+
+        if ($id && $identity['is_superuser'] && Configure::read('Users.Superuser.allowedToChangeSettings')) {
+            // superuser can edit settings of all users
+            $redirect = ['action' => 'index'];
+        } elseif ((!$id && $userId) || $id === $userId) {
+            // normal user can edit own settings
+            $id = $userId;
+            $redirect = ['action' => 'profile'];
+        } else {
+            $this->Flash->error(
+                __d('app_users', "You are not allowed to edit another user's settings."),
+            );
+
+            return $this->redirect(['action' => 'profile']);
+        }
+
+        /** @var \App\Model\Table\UsersTable $usersTable */
+        $usersTable = $this->fetchTable(Configure::read('Users.table'));
+
+        $user = $usersTable->get(
+            $id,
+            fields: [
+                'id',
+                'username',
+                'user_settings',
+            ],
+            contain: [],
+        );
+
+        if ($this->getRequest()->is(['patch', 'post', 'put'])) {
+            /** @var \App\Model\Entity\User $user */
+            $user = $usersTable->patchEntity($user, [
+                'user_settings' => $this->getRequest()->getData('user_settings'),
+            ], ['accessibleFields' => ['user_settings' => true]]);
+            if ($usersTable->save($user)) {
+                // update current identity data if it is a logged-in user
+                if ($user->id === $userId) {
+                    // what was picked in the page header for this session gives way to what was saved
+                    $this->getRequest()->getSession()->delete('Config.UI');
+                    $this->getRequest()->getAttribute('identity')
+                        ->getOriginalData()
+                        ->set('user_settings', $user->user_settings);
+                }
+
+                $this->Flash->success(__d('app_users', 'The user settings have been saved.'));
+
+                return $this->redirect($redirect);
+            }
+            $this->Flash->error(__d('app_users', 'The user settings could not be saved. Please, try again.'));
+        }
+
+        // What the task settings are chosen from. A finished state is not offered: a default
+        // that hid everything still waiting would be a filter nobody meant to set.
+        $taskTypes = $this->fetchTable('TaskTypes')->find('list', order: ['name'])->all();
+        $taskStates = $this->fetchTable('TaskStates')->find('list', order: ['name'])
+            ->where(['TaskStates.completed' => false])
+            ->all();
+
+        // Only a page this user could actually open is worth offering to start on. What they
+        // may reach can change after the choice is made, so the redirect checks it again.
+        $landingPages = array_filter(
+            LandingPage::options(),
+            fn(int|string $value): bool => $this->isAuthorized(LandingPage::from((string)$value)->url()),
+            ARRAY_FILTER_USE_KEY,
+        );
+
+        $this->set(compact('user', 'taskTypes', 'taskStates', 'landingPages'));
+    }
+}

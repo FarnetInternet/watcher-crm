@@ -1,0 +1,214 @@
+<?php
+declare(strict_types=1);
+
+namespace App\RegulatoryReporting;
+
+use App\Addresses\Resolver as AddressesResolver;
+use App\Model\Entity\Billing;
+use App\Model\Enum\AccessTechnology;
+use App\Model\Table\AvailableConnectionsTable;
+use App\Model\Table\BillingsTable;
+use Cake\I18n\Date;
+use Cake\ORM\Locator\LocatorAwareTrait;
+use Closure;
+use RuntimeException;
+
+/**
+ * Gathers the address points a regulator's report is made of.
+ *
+ * What is common to them all: the connections running on the last day of a month, at an address the
+ * national registry knows, and those recorded as there to be had, sorted into the regulator's
+ * categories and put together by address point. Which categories there are, and what is reported
+ * about each point, is up to the report.
+ *
+ * The last day because a regulator asks for the state on a day: ČTÚ wants the actual state on
+ * 31 December, with what has been cancelled by then taken out.
+ */
+class ConnectionPointCollector
+{
+    use LocatorAwareTrait;
+
+    /**
+     * What went wrong with the addresses on the way, for the operator to be told.
+     *
+     * @var list<string>
+     */
+    private array $problems = [];
+
+    /**
+     * @param \Closure(\App\Model\Enum\AccessTechnology): ?string $categoryOf The regulator's
+     *      category of a technology, null when it reports nothing of it.
+     */
+    public function __construct(private readonly Closure $categoryOf)
+    {
+    }
+
+    /**
+     * The points as they stand on the last day of the month, by category and then by
+     * "source|reference", both in order.
+     *
+     * @param \Cake\I18n\Date $month Any day of the month.
+     * @param string $registrySource The country's registry, the report being about one country.
+     * @return array<string, array<string, \App\RegulatoryReporting\ConnectionPoint>>
+     */
+    public function collect(Date $month, string $registrySource): array
+    {
+        $this->problems = [];
+
+        /** @var list<\App\Model\Entity\Billing> $billings */
+        $billings = $this->fetchTable(BillingsTable::class)
+            ->find('activeOn', on: $month->lastOfMonth())
+            ->contain('Customers')
+            ->contain(['Contracts' => ['InstallationAddresses']])
+            ->contain(['Services' => ['ServiceTypes', 'ConnectionProfiles']])
+            ->where(['ConnectionProfiles.speed_down IS NOT NULL'])
+            ->where(['ConnectionProfiles.speed_up IS NOT NULL'])
+            ->where(['ConnectionProfiles.access_technology IN' => $this->reportedTechnologies()])
+            ->where(['InstallationAddresses.address_registry_reference IS NOT NULL'])
+            ->where(['InstallationAddresses.address_registry_source' => $registrySource])
+            ->orderBy(['InstallationAddresses.address_registry_reference'])
+            ->all()
+            ->toList();
+
+        $points = [];
+        foreach ($billings as $billing) {
+            $category = $this->categoryOfBilling($billing);
+            $address = $billing->contract->installation_address;
+            // the query reads only billings at an address in the register
+            if ($address === null) {
+                continue;
+            }
+            $key = $address->address_registry_source . '|' . $address->address_registry_reference;
+
+            $points[$category][$key] ??= new ConnectionPoint(
+                $category,
+                (string)$address->address_registry_source,
+                (string)$address->address_registry_reference,
+            );
+            $points[$category][$key]->billings[] = $billing;
+        }
+
+        /** @var list<\App\Model\Entity\AvailableConnection> $available */
+        $available = $this->fetchTable(AvailableConnectionsTable::class)
+            ->find('inService', on: $month->lastOfMonth())
+            ->where(['AvailableConnections.address_registry_source' => $registrySource])
+            ->where(['AvailableConnections.access_technology IN' => $this->reportedTechnologies()])
+            ->all()
+            ->toList();
+
+        foreach ($available as $connection) {
+            $category = (string)($this->categoryOf)($connection->access_technology);
+            $key = $connection->registryKey();
+
+            $points[$category][$key] ??= new ConnectionPoint(
+                $category,
+                $connection->address_registry_source,
+                $connection->address_registry_reference,
+            );
+            $points[$category][$key]->available[] = $connection;
+        }
+
+        ksort($points);
+        foreach ($points as &$byAddress) {
+            uasort($byAddress, fn(ConnectionPoint $a, ConnectionPoint $b): int => strcmp(
+                $a->registryReference,
+                $b->registryReference,
+            ));
+        }
+        unset($byAddress);
+
+        $this->resolve($points, [
+            ...array_map(fn(Billing $billing) => $billing->contract->installation_address, $billings),
+            ...$available,
+        ]);
+
+        return $points;
+    }
+
+    /**
+     * What went wrong with the addresses in the last collection.
+     *
+     * @return list<string>
+     */
+    public function problems(): array
+    {
+        return $this->problems;
+    }
+
+    /**
+     * The technologies the regulator has a category for.
+     *
+     * @return list<string>
+     */
+    private function reportedTechnologies(): array
+    {
+        $technologies = [];
+        foreach (AccessTechnology::cases() as $technology) {
+            if (($this->categoryOf)($technology) !== null) {
+                $technologies[] = $technology->value;
+            }
+        }
+
+        return $technologies;
+    }
+
+    /**
+     * The category of a billing the query let through, which therefore has one.
+     *
+     * @param \App\Model\Entity\Billing $billing A connection.
+     * @return string
+     */
+    private function categoryOfBilling(Billing $billing): string
+    {
+        /** @var \App\Model\Enum\AccessTechnology $technology */
+        $technology = $billing->service?->connection_profile?->access_technology;
+
+        return (string)($this->categoryOf)($technology);
+    }
+
+    /**
+     * Puts the registry's own reference and wording on every point.
+     *
+     * A reference the registry does not know is reported empty and the contracts behind it named,
+     * so that somebody puts the address right. When the registry cannot be asked at all, the
+     * reference on file is all there is to report.
+     *
+     * @param array<string, array<string, \App\RegulatoryReporting\ConnectionPoint>> $points The points.
+     * @param list<\App\Model\Entity\Address|\App\Model\Entity\AvailableConnection|null> $addresses
+     *      Where they are.
+     * @return void
+     */
+    private function resolve(array $points, array $addresses): void
+    {
+        try {
+            $matches = AddressesResolver::matchMap(array_values(array_filter($addresses)));
+        } catch (RuntimeException $e) {
+            $matches = [];
+            $this->problems[] = __(
+                'Could not retrieve addresses from national address registry: {0}',
+                $e->getMessage(),
+            );
+        }
+
+        foreach ($points as $byAddress) {
+            foreach ($byAddress as $key => $point) {
+                $match = $matches[$key] ?? null;
+
+                if ($match !== null) {
+                    $point->reportedReference = $match->registryReference;
+                    $point->formattedAddress = $match->formattedAddress;
+                    $point->registryAddress = $match;
+                } elseif ($matches !== []) {
+                    $this->problems[] = __(
+                        'Invalid RUIAN GID: {0} for addresses associated with contracts: {1}',
+                        $point->registryReference,
+                        implode(', ', $point->contractNumbers()),
+                    );
+                } else {
+                    $point->reportedReference = $point->registryReference;
+                    $point->formattedAddress = $point->available[0]->address_label ?? null;
+                }
+            }
+        }
+    }
+}

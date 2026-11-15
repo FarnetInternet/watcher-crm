@@ -1,0 +1,216 @@
+<?php
+declare(strict_types=1);
+
+namespace Bookkeeping\Service;
+
+use App\Model\Entity\AccountingProfile;
+use App\Model\Entity\Customer;
+use Bookkeeping\Model\Entity\Invoice;
+use Bookkeeping\Model\Enum\InvoiceExportFormat;
+use Bookkeeping\Model\Enum\InvoiceImportFormat;
+use Bookkeeping\Model\Enum\InvoiceSyncMode;
+use Bookkeeping\Provider\AccountingProviderInterface;
+use Cake\I18n\Date;
+use Cake\I18n\DateTime;
+use RuntimeException;
+use Settings\Utility\Settings;
+
+/**
+ * BookkeepingService
+ *
+ * This service acts as a stable API layer between the CRM
+ * and the underlying accounting system provider.
+ *
+ * Controllers and CLI commands should call this service,
+ * not the provider directly.
+ *
+ * The provider can be replaced (Pohoda, Eracuni, Flexibee, ...)
+ * without changing the rest of the application.
+ */
+class BookkeepingService
+{
+    /**
+     * What a customer is loaded with to be sent as a partner.
+     *
+     * @var list<string>
+     */
+    public const PARTNER_ASSOCIATIONS = [
+        'Addresses.Countries',
+        'Emails',
+        'Phones',
+    ];
+
+    private AccountingProviderInterface $provider;
+
+    private readonly InvoiceMapperService $invoiceMapper;
+
+    /**
+     * Constructor
+     *
+     * @param \Bookkeeping\Provider\AccountingProviderInterface|null $provider
+     *   Allows injecting a different provider in the future.
+     */
+    public function __construct(?AccountingProviderInterface $provider = null)
+    {
+        if ($provider instanceof AccountingProviderInterface) {
+            $this->provider = $provider;
+        } else {
+            // Load default provider key (e.g. "pohoda" or "eurofaktura")
+            $defaultKey = Settings::getString(
+                'bookkeeping.accounting.default_provider',
+                'pohoda',
+            );
+
+            // Load provider class from config
+            $providerClass = Settings::get(
+                'bookkeeping.accounting.providers.' . $defaultKey . '.class',
+            );
+
+            if ($providerClass === null) {
+                throw new RuntimeException(
+                    __d(
+                        'bookkeeping',
+                        'Provider class not defined for provider "{0}".',
+                        $defaultKey,
+                    ),
+                );
+            }
+
+            // Validate provider class
+            if (!is_subclass_of($providerClass, AccountingProviderInterface::class)) {
+                throw new RuntimeException(
+                    __d(
+                        'bookkeeping',
+                        'Provider class "{0}" is not subclass of "{1}".',
+                        [$providerClass, AccountingProviderInterface::class],
+                    ),
+                );
+            }
+
+            // Instantiate provider (constructor may or may not accept config)
+            $this->provider = new $providerClass();
+        }
+
+        $this->invoiceMapper = new InvoiceMapperService();
+    }
+
+    /**
+     * Synchronize invoices from the accounting system.
+     *
+     * @param \Bookkeeping\Model\Enum\InvoiceSyncMode $mode Synchronization mode
+     * @param \Cake\I18n\DateTime $lastChanges Timestamp of last successful sync.
+     * @return array{imported:int, created:int, modified:int, skipped:int} Import results.
+     */
+    public function syncInvoices(InvoiceSyncMode $mode, DateTime $lastChanges): array
+    {
+        // Load and parse invoices
+        $drafts = $this->provider->syncInvoices($mode, $lastChanges);
+
+        // Map and save into CRM
+        return $this->invoiceMapper->mapAndSave($drafts);
+    }
+
+    /**
+     * Send invoices to the accounting system.
+     *
+     * @param list<\Bookkeeping\Model\ValueObject\InvoiceDraft> $invoices List of invoice drafts.
+     * @param \Cake\I18n\Date $invoicedMonth Invoiced month used in XML header.
+     * @param \App\Model\Entity\AccountingProfile $accountingProfile Accounting profile and accounting context.
+     * @return void
+     */
+    public function sendInvoices(
+        array $invoices,
+        Date $invoicedMonth,
+        AccountingProfile $accountingProfile,
+    ): void {
+        $this->provider->sendInvoices($invoices, $invoicedMonth, $accountingProfile);
+    }
+
+    /**
+     * Send partners (customers) to the accounting system.
+     *
+     * @param list<\App\Model\Entity\Customer> $customers List of customers, loaded with
+     *   {@see PARTNER_ASSOCIATIONS}.
+     * @param int|null $timeout How long to wait for each answer at most, in seconds.
+     * @return void
+     */
+    public function sendPartners(array $customers, ?int $timeout = null): void
+    {
+        $this->provider->sendPartners($customers, $timeout);
+    }
+
+    /**
+     * The customer number the partner cards in the accounting system are ours from, 0 where they
+     * all are.
+     *
+     * @return int
+     */
+    public function minCustomerNumber(): int
+    {
+        return $this->provider::minCustomerNumber();
+    }
+
+    /**
+     * Whether the customer's partner card in the accounting system is ours to write.
+     *
+     * @param \App\Model\Entity\Customer $customer Customer.
+     * @return bool
+     */
+    public function writesPartnerCardOf(Customer $customer): bool
+    {
+        return $this->provider::writesPartnerCardOf($customer);
+    }
+
+    /**
+     * Export invoices (DBF/XML) for the accounting system.
+     *
+     * @param list<\Bookkeeping\Model\ValueObject\InvoiceDraft> $invoices List of invoice drafts.
+     * @param \Bookkeeping\Model\Enum\InvoiceExportFormat $format Export format.
+     * @param \Cake\I18n\Date $invoicedMonth Invoiced month used in XML header.
+     * @param \App\Model\Entity\AccountingProfile $accountingProfile Accounting profile and accounting context.
+     * @return string File path.
+     */
+    public function exportInvoices(
+        array $invoices,
+        Date $invoicedMonth,
+        AccountingProfile $accountingProfile,
+        InvoiceExportFormat $format,
+    ): string {
+        return $this->provider->exportInvoices($invoices, $invoicedMonth, $accountingProfile, $format);
+    }
+
+    /**
+     * Import invoices from the accounting system (DBF).
+     *
+     * @param \Bookkeeping\Model\Enum\InvoiceImportFormat $format Import format.
+     * @return array{imported:int, created:int, modified:int, skipped:int} Import results.
+     */
+    public function importInvoices(string $filePath, InvoiceImportFormat $format): array
+    {
+        // Parse invoices
+        $drafts = $this->provider->importInvoices($filePath, $format);
+
+        // Map and save into CRM
+        return $this->invoiceMapper->mapAndSave($drafts);
+    }
+
+    /**
+     * Generate invoice number according to provider rules.
+     *
+     * @return string
+     */
+    public function generateInvoiceNumber(DateTime $date, bool $reverseCharge): string
+    {
+        return $this->provider->generateInvoiceNumber($date, $reverseCharge);
+    }
+
+    /**
+     * Get the file path to the invoice PDF.
+     *
+     * @return string Absolute path to the PDF file.
+     */
+    public function getInvoicePdfPath(Invoice $invoice): string
+    {
+        return $this->provider->getInvoicePdfPath($invoice);
+    }
+}

@@ -1,0 +1,228 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Test\TestCase\Controller;
+
+use App\Controller\AccessCredentialsController;
+use App\Test\Traits\ControllerTestTrait;
+use Cake\TestSuite\IntegrationTestTrait;
+use Cake\TestSuite\TestCase;
+use PHPUnit\Framework\Attributes\UsesClass;
+
+/**
+ * App\Controller\AccessCredentialsController Test Case
+ *
+ * Smoke tests: every action is requested once and has to answer. They are deliberately shallow -
+ * their job is to notice an action that stopped answering at all, which is how the query building
+ * bugs in this application have shown up.
+ */
+#[UsesClass(AccessCredentialsController::class)]
+class AccessCredentialsControllerTest extends TestCase
+{
+    use ControllerTestTrait;
+    use IntegrationTestTrait;
+
+    /**
+     * Customer the nested routes hang off.
+     *
+     * @var string
+     */
+    private const CUSTOMER_ID = '403bab0e-52cd-4a8e-83f8-43c2457d0481';
+
+    /**
+     * Contract the nested routes hang off.
+     *
+     * @var string
+     */
+    private const CONTRACT_ID = '7f76dc3f-a11b-4109-958b-4b0382545a66';
+
+    /**
+     * Fixtures
+     *
+     * @var array<string>
+     */
+    protected array $fixtures = [
+        'app.Users',
+        'app.AccountingProfiles',
+        'app.Customers',
+        'app.Countries',
+        'app.Addresses',
+        'app.Commissions',
+        'app.ContractStates',
+        'app.ServiceTypes',
+        'app.Contracts',
+        'app.AccessCredentials',
+    ];
+
+    /**
+     * The listing renders.
+     *
+     * @return void
+     * @link \App\Controller\AccessCredentialsController::index()
+     */
+    public function testIndex(): void
+    {
+        $this->login();
+        $this->get('/access-credentials');
+
+        $this->assertResponseOk();
+    }
+
+    /**
+     * The listing renders with the search filled in, which builds a different query than the plain
+     * listing does and is therefore worth requesting on its own.
+     *
+     * @return void
+     * @link \App\Controller\AccessCredentialsController::index()
+     */
+    public function testIndexWithSearch(): void
+    {
+        $this->login();
+        $this->get('/access-credentials?search=Lorem');
+
+        $this->assertResponseOk();
+    }
+
+    /**
+     * The detail of a record renders.
+     *
+     * @return void
+     * @link \App\Controller\AccessCredentialsController::view()
+     */
+    public function testView(): void
+    {
+        $this->login();
+        $this->get('/access-credentials/view/' . $this->firstId('AccessCredentials'));
+
+        $this->assertResponseOk();
+    }
+
+    /**
+     * The form for a new record renders.
+     *
+     * @return void
+     * @link \App\Controller\AccessCredentialsController::add()
+     */
+    public function testAdd(): void
+    {
+        $this->login();
+        $this->get('/access-credentials/add');
+
+        $this->assertResponseOk();
+    }
+
+    /**
+     * The form of an existing record renders.
+     *
+     * @return void
+     * @link \App\Controller\AccessCredentialsController::edit()
+     */
+    public function testEdit(): void
+    {
+        $this->login();
+        $this->get('/access-credentials/edit/' . $this->firstId('AccessCredentials'));
+
+        $this->assertResponseOk();
+    }
+
+    /**
+     * The delete action runs and redirects. Whether the record really goes depends on what else
+     * still references it, which is the application rules' business rather than this test's.
+     *
+     * @return void
+     * @link \App\Controller\AccessCredentialsController::delete()
+     */
+    public function testDelete(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/access-credentials/delete/' . $this->firstId('AccessCredentials'));
+
+        $this->assertRedirect();
+    }
+
+    /**
+     * Added under its customer and the contract, the record is filed under them without the form saying so.
+     *
+     * The form under a customer and the contract leaves those fields out - the route already says which record it is,
+     * and the controller fills them in. Posting them in the body instead, as a test reaching the
+     * flat route does, asks a different question and leaves this one unasked.
+     *
+     * @return void
+     * @link \App\Controller\AccessCredentialsController::add()
+     */
+    public function testAddUnderTheRouteFilesItUnderTheRoute(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $before = $this->idsIn('AccessCredentials');
+        $this->post('/customers/' . self::CUSTOMER_ID . '/contracts/' . self::CONTRACT_ID . '/access-credentials/add', [
+            'name' => 'Nested credentials',
+        ]);
+
+        $this->assertRedirect();
+        $added = $this->addedRecord('AccessCredentials', $before);
+        $this->assertSame(self::CUSTOMER_ID, $added->get('customer_id'));
+        $this->assertSame(self::CONTRACT_ID, $added->get('contract_id'));
+    }
+
+    /**
+     * And the form does leave them out, which is what the test above only assumed.
+     *
+     * Asking whose it is on a page reached under that very record offers a way to file it
+     * somewhere else by mistake, and reads as a question the page has already answered.
+     *
+     * @return void
+     * @link \App\Controller\AccessCredentialsController::add()
+     */
+    public function testTheFormDoesNotAskWhoseItIsWhenThePageSaysSo(): void
+    {
+        $this->login();
+
+        $this->get('/access-credentials/add');
+        $this->assertResponseOk();
+        $this->assertResponseContains(
+            'name="customer_id"',
+            'Reached on its own, the form has to ask whose the credentials are.',
+        );
+
+        $this->get(
+            '/customers/' . self::CUSTOMER_ID
+            . '/contracts/' . self::CONTRACT_ID . '/access-credentials/add',
+        );
+        $this->assertResponseOk();
+        $this->assertResponseNotContains(
+            'name="customer_id"',
+            'The form asks which customer on a page that is already about one.',
+        );
+        $this->assertResponseNotContains(
+            'name="contract_id"',
+            'The form asks which contract on a page that is already about one.',
+        );
+    }
+
+    /**
+     * A change made on the form reaches the record.
+     *
+     * @return void
+     * @link \App\Controller\AccessCredentialsController::edit()
+     */
+    public function testEditStoresTheChange(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $accessCredentialId = $this->firstId('AccessCredentials');
+        $this->post('/access-credentials/edit/' . $accessCredentialId, ['name' => 'Renamed credentials']);
+
+        $this->assertRedirect();
+        $this->assertSame(
+            'Renamed credentials',
+            $this->getTableLocator()->get('AccessCredentials')->get($accessCredentialId)->name,
+        );
+    }
+}

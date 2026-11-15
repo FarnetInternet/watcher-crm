@@ -1,0 +1,68 @@
+<?php
+/**
+ * @var \App\View\AppView $this
+ * @var iterable<\App\Model\Entity\Email> $emails
+ */
+?>
+<?= $this->Form->create(null, ['type' => 'get', 'valueSources' => ['query', 'context']]) ?>
+<div class="row">
+    <div class="column">
+        <?= $this->Form->control('search', [
+            'label' => __('Search'),
+            'type' => 'search',
+            'onchange' => $this::SUBMIT_ON_CHANGE,
+        ]) ?>
+    </div>
+</div>
+<?= $this->Form->end() ?>
+
+<div class="emails index content">
+    <?= $this->AuthLink->link(__('New Email'), ['action' => 'add'], ['class' => 'button float-right win-link']) ?>
+    <?= $this->heading(__('Emails')) ?>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th><?= $this->Paginator->sort('customer_id') ?></th>
+                    <th><?= $this->Paginator->sort('Customers.nid', __('Customer Number')) ?></th>
+                    <th><?= $this->Paginator->sort('email') ?></th>
+                    <th><?= $this->Paginator->sort('use_for_billing') ?></th>
+                    <th><?= $this->Paginator->sort('use_for_outages') ?></th>
+                    <th><?= $this->Paginator->sort('use_for_commercial') ?></th>
+                    <th class="actions"><?= __('Actions') ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($emails as $email) : ?>
+                <tr>
+                    <td>
+                        <?= $email->customer !== null ? $this->Html->link(
+                            $email->customer->name ?? '(' . $email->customer->id . ')',
+                            ['controller' => 'Customers', 'action' => 'view', $email->customer->id],
+                        ) : '' ?>
+                    </td>
+                    <td><?= $email->customer !== null ? h($email->customer->number) : '' ?></td>
+                    <td><?= $this->Html->link(h($email->email), 'mailto:' . $email->email) ?></td>
+                    <td><?= $email->use_for_billing ? __('Yes') : __('No'); ?></td>
+                    <td><?= $email->use_for_outages ? __('Yes') : __('No'); ?></td>
+                    <td><?= $email->use_for_commercial ? __('Yes') : __('No'); ?></td>
+                    <td class="actions">
+                        <?= $this->AuthLink->link(__('View'), ['action' => 'view', $email->id]) ?>
+                        <?= $this->AuthLink->link(
+                            __('Edit'),
+                            ['action' => 'edit', $email->id],
+                            ['class' => 'win-link'],
+                        ) ?>
+                        <?= $this->AuthLink->postLink(
+                            __('Delete'),
+                            ['action' => 'delete', $email->id],
+                            ['confirm' => __('Are you sure you want to delete # {0}?', $email->id)],
+                        ) ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?= $this->element('common/paginator') ?>
+</div>

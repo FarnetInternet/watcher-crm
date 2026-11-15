@@ -1,0 +1,37 @@
+# LANGUAGE translation of CakePHP Application
+# Copyright YEAR NAME <EMAIL@ADDRESS>
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"POT-Creation-Date: 2026-09-13 19:40+0200\n"
+"PO-Revision-Date: 2026-08-22 17:20+0200\n"
+"Last-Translator: NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <EMAIL@ADDRESS>\n"
+"Language: cs_CZ\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n==1 ? 0 : n>=2 && n<=4 ? 1 : 2);\n"
+"X-Generator: Poedit 3.9\n"
+
+#: plugins/Dashboard/src/Controller/Trait/DashboardControllerTrait.php:55
+msgid "There is no such card."
+msgstr "Taková karta neexistuje."
+
+#: plugins/Dashboard/templates/Dashboard/cards.php:13
+msgid "Dashboard"
+msgstr "Nástěnka"
+
+#: plugins/Dashboard/templates/Dashboard/cards.php:16
+msgid "There is nothing on the dashboard for your role yet."
+msgstr "Na nástěnce zatím není pro vaši roli nic k dispozici."
+
+#: plugins/Dashboard/templates/Dashboard/cards.php:26
+msgid "The card could not be loaded."
+msgstr "Kartu se nepodařilo načíst."
+
+#: plugins/Dashboard/templates/Dashboard/cards.php:28
+msgid "Loading…"
+msgstr "Načítání…"

@@ -1,0 +1,538 @@
+# LANGUAGE translation of CakePHP Application
+# Copyright YEAR NAME <EMAIL@ADDRESS>
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"POT-Creation-Date: 2026-11-11 10:35+0100\n"
+"PO-Revision-Date: YYYY-mm-DD HH:MM+ZZZZ\n"
+"Last-Translator: NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <EMAIL@ADDRESS>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
+
+#: ./plugins/Files/src/Command/CheckFilesCommand.php:95
+msgid "Checks the stored content against what the records say, and reports what does not match."
+msgstr ""
+
+#: ./plugins/Files/src/Command/CheckFilesCommand.php:101
+msgid "Throw away the bytes and the pictures nobody has a row for. Nothing else is touched."
+msgstr ""
+
+#: ./plugins/Files/src/Command/CheckFilesCommand.php:151
+msgid "{0} rows, {1} of them with their content stored."
+msgstr ""
+
+#: ./plugins/Files/src/Command/CheckFilesCommand.php:158
+msgid "Rows whose bytes are gone"
+msgstr ""
+
+#: ./plugins/Files/src/Command/CheckFilesCommand.php:163
+msgid "Rows whose bytes are not the size they say"
+msgstr ""
+
+#: ./plugins/Files/src/Command/CheckFilesCommand.php:168
+msgid "Bytes nobody has a row for"
+msgstr ""
+
+#: ./plugins/Files/src/Command/CheckFilesCommand.php:169
+msgid "Pictures of content nobody has a row for"
+msgstr ""
+
+#: ./plugins/Files/src/Command/CheckFilesCommand.php:172
+msgid "{0} rows nothing points at. They are safe to let go of one at a time from the storage page."
+msgstr ""
+
+#: ./plugins/Files/src/Command/CheckFilesCommand.php:189
+#: ./plugins/Files/src/Command/FilesTrashPurgeCommand.php:99
+msgid "{0} thrown away."
+msgstr ""
+
+#: ./plugins/Files/src/Command/CheckFilesCommand.php:196
+msgid "The store and the records agree."
+msgstr ""
+
+#: ./plugins/Files/src/Command/CheckFilesCommand.php:197
+msgid "Nothing is missing. Run this again with --fix to throw the rest away."
+msgstr ""
+
+#: ./plugins/Files/src/Command/CheckFilesCommand.php:219
+msgid "The store no longer holds everything the records point at."
+msgstr ""
+
+#: ./plugins/Files/src/Command/CheckFilesCommand.php:221
+msgid "Rows whose bytes are gone: {0}"
+msgstr ""
+
+#: ./plugins/Files/src/Command/CheckFilesCommand.php:222
+msgid "Rows whose bytes are not the size they say: {0}"
+msgstr ""
+
+#: ./plugins/Files/src/Command/CheckFilesCommand.php:224
+msgid "Run `bin/cake check_files` to see which. What is missing has to come back from a backup - neither can be put right from there."
+msgstr ""
+
+#: ./plugins/Files/src/Command/CheckFilesCommand.php:232
+msgid "File store check failed"
+msgstr ""
+
+#: ./plugins/Files/src/Command/CheckFilesCommand.php:312
+msgid "  ... and {0} more."
+msgstr ""
+
+#: ./plugins/Files/src/Command/FilesTrashPurgeCommand.php:70
+msgid "Throws away what has been in the trash for long enough."
+msgstr ""
+
+#: ./plugins/Files/src/Command/FilesTrashPurgeCommand.php:73
+msgid "How many days the trash keeps what was removed."
+msgstr ""
+
+#: ./plugins/Files/src/Command/FilesTrashPurgeCommand.php:92
+msgid "The number of days has to be a whole number of at least 1."
+msgstr ""
+
+#: ./plugins/Files/src/Command/FilesTrashPurgeCommand.php:105
+msgid "The trash could not let go of {0} of what had expired."
+msgstr ""
+
+#: ./plugins/Files/src/Command/FilesTrashPurgeCommand.php:108
+msgid "Emptying the trash failed"
+msgstr ""
+
+#: ./plugins/Files/src/Command/GeneratePreviewsCommand.php:80
+msgid "Makes the pictures of what is filed, so that nobody has to wait for them. They are made on demand too, so this only decides who does the waiting."
+msgstr ""
+
+#: ./plugins/Files/src/Command/GeneratePreviewsCommand.php:87
+msgid "How many to make before stopping. Defaults to {0}."
+msgstr ""
+
+#: ./plugins/Files/src/Command/GeneratePreviewsCommand.php:145
+msgid "{0} made."
+msgstr ""
+
+#: ./plugins/Files/src/Command/GeneratePreviewsCommand.php:148
+msgid "{0} could not be made. The log says why."
+msgstr ""
+
+#: ./plugins/Files/src/Controller/FileLinksController.php:144
+msgid "The document has been removed."
+msgstr ""
+
+#: ./plugins/Files/src/Controller/FileLinksController.php:146
+msgid "The document could not be removed: {0}"
+msgstr ""
+
+#: ./plugins/Files/src/Controller/Trait/DocumentationTypesControllerTrait.php:98
+#: ./plugins/Files/src/Controller/Trait/DocumentationTypesControllerTrait.php:130
+msgid "The documentation type has been saved."
+msgstr ""
+
+#: ./plugins/Files/src/Controller/Trait/DocumentationTypesControllerTrait.php:104
+#: ./plugins/Files/src/Controller/Trait/DocumentationTypesControllerTrait.php:136
+msgid "The documentation type could not be saved. Please, try again."
+msgstr ""
+
+#: ./plugins/Files/src/Controller/Trait/DocumentationTypesControllerTrait.php:161
+msgid "The documentation type has been deleted."
+msgstr ""
+
+#: ./plugins/Files/src/Controller/Trait/DocumentationTypesControllerTrait.php:164
+msgid "The documentation type could not be deleted. Please, try again."
+msgstr ""
+
+#: ./plugins/Files/src/Controller/Trait/DocumentationsControllerTrait.php:143
+#: ./plugins/Files/src/Controller/Trait/DocumentationsControllerTrait.php:178
+msgid "The documentation has been saved."
+msgstr ""
+
+#: ./plugins/Files/src/Controller/Trait/DocumentationsControllerTrait.php:149
+#: ./plugins/Files/src/Controller/Trait/DocumentationsControllerTrait.php:184
+msgid "The documentation could not be saved. Please, try again."
+msgstr ""
+
+#: ./plugins/Files/src/Controller/Trait/DocumentationsControllerTrait.php:210
+msgid "The documentation has been deleted."
+msgstr ""
+
+#: ./plugins/Files/src/Controller/Trait/DocumentationsControllerTrait.php:213
+msgid "The documentation could not be deleted. Please, try again."
+msgstr ""
+
+#: ./plugins/Files/src/Controller/Trait/DocumentationsControllerTrait.php:257
+msgid "Nothing was chosen to file."
+msgstr ""
+
+#: ./plugins/Files/src/Controller/Trait/DocumentationsControllerTrait.php:282
+msgid "The file has been removed from the documentation."
+msgstr ""
+
+#: ./plugins/Files/src/Controller/Trait/DocumentationsControllerTrait.php:284
+msgid "The file could not be removed: {0}"
+msgstr ""
+
+#: ./plugins/Files/src/Controller/Trait/DocumentationsControllerTrait.php:306
+msgid "The files could not be reordered: {0}"
+msgstr ""
+
+#: ./plugins/Files/src/Controller/Trait/DocumentationsControllerTrait.php:332
+msgid "That file belongs to something else."
+msgstr ""
+
+#: ./plugins/Files/src/Controller/Trait/DocumentationsControllerTrait.php:246
+msgid "{0} file has been filed."
+msgid_plural "{0} files have been filed."
+msgstr[0] ""
+msgstr[1] ""
+
+#: ./plugins/Files/src/Controller/Trait/HandsOverContentTrait.php:57
+msgid "There is no picture of this document."
+msgstr ""
+
+#: ./plugins/Files/src/Controller/Trait/HandsOverContentTrait.php:82
+msgid "The content of this document is not in the store."
+msgstr ""
+
+#: ./plugins/Files/src/Controller/TrashController.php:155
+msgid "The file could not be restored: {0}"
+msgstr ""
+
+#: ./plugins/Files/src/Controller/TrashController.php:176
+msgid "The file has been deleted for good."
+msgstr ""
+
+#: ./plugins/Files/src/Controller/TrashController.php:178
+msgid "Removed from the trash. The content stays, as another record still uses it."
+msgstr ""
+
+#: ./plugins/Files/src/Controller/TrashController.php:184
+msgid "The file could not be deleted: {0}"
+msgstr ""
+
+#: ./plugins/Files/src/Controller/TrashController.php:147
+msgid "The file has been restored."
+msgid_plural "{0} files have been restored."
+msgstr[0] ""
+msgstr[1] ""
+
+#: ./plugins/Files/src/Model/Table/DocumentationsTable.php:123
+msgid "A documentation needs a name or a day. With neither there is nothing to tell it from the next one of its type."
+msgstr ""
+
+#: ./plugins/Files/src/Model/Table/DocumentationsTable.php:193
+msgid "This documentation type is filed under the day it is about."
+msgstr ""
+
+#: ./plugins/Files/src/Model/Table/FilesTable.php:92
+msgid "The hash of the content is written in hexadecimal."
+msgstr ""
+
+#: ./plugins/Files/src/Service/FiledPages.php:229
+msgid "This server takes at most {0} files at once, so whatever was chosen beyond that never arrived. Send the rest as a second batch."
+msgstr ""
+
+#: ./plugins/Files/src/Service/FiledPages.php:318
+msgid "The file"
+msgstr ""
+
+#: ./plugins/Files/src/Service/FiledPages.php:322
+msgid "{0} is larger than this server takes in one go."
+msgstr ""
+
+#: ./plugins/Files/src/Service/FiledPages.php:327
+msgid "{0} only arrived in part."
+msgstr ""
+
+#: ./plugins/Files/src/Service/FiledPages.php:328
+msgid "{0} could not be taken in."
+msgstr ""
+
+#: ./plugins/Files/src/Service/FiledPages.php:347
+msgid "The uploaded file could not be read."
+msgstr ""
+
+#: ./plugins/Files/src/Service/FiledPages.php:368
+msgid "A {0} is not a document that can be filed."
+msgstr ""
+
+#: ./plugins/Files/src/Service/Trash.php:287
+msgid "This document has been made again since, so its place is taken."
+msgstr ""
+
+#: ./plugins/Files/src/Service/Trash.php:295
+msgid "The record it belonged to no longer exists."
+msgstr ""
+
+#: ./plugins/Files/src/View/Helper/PreviewHelper.php:99
+msgid "Look through ({0})"
+msgstr ""
+
+#: ./plugins/Files/src/View/Helper/UploadHelper.php:72
+msgid "%d files are chosen and this server takes at most {0} at once. Choose fewer, or send them in more than one batch."
+msgstr ""
+
+#: ./plugins/Files/src/View/Helper/UploadHelper.php:84
+msgid "%s are chosen and this server takes at most {0} in one go. Send them in more than one batch."
+msgstr ""
+
+#: ./plugins/Files/templates/FileLinks/index.php:18
+#: ./plugins/Files/templates/FileLinks/index.php:71
+#: ./plugins/Files/templates/Storage/view.php:97
+#: ./plugins/Files/templates/Trash/index.php:19
+#: ./plugins/Files/templates/Trash/index.php:52
+msgid "Model"
+msgstr ""
+
+#: ./plugins/Files/templates/FileLinks/index.php:26
+#: ./plugins/Files/templates/FileLinks/index.php:72
+#: ./plugins/Files/templates/Storage/view.php:99
+#: ./plugins/Files/templates/Trash/index.php:53
+msgid "Document Type"
+msgstr ""
+
+#: ./plugins/Files/templates/FileLinks/index.php:34
+#: ./plugins/Files/templates/FileLinks/index.php:73
+#: ./plugins/Files/templates/Storage/view.php:100
+#: ./plugins/Files/templates/Trash/index.php:54
+msgid "Variant"
+msgstr ""
+
+#: ./plugins/Files/templates/FileLinks/index.php:42
+#: ./plugins/Files/templates/FileLinks/index.php:75
+#: ./plugins/Files/templates/Storage/view.php:102
+#: ./plugins/Files/templates/Trash/index.php:27
+#: ./plugins/Files/templates/Trash/index.php:55
+#: ./plugins/Files/templates/cell/Documentations/contents.php:39
+msgid "Name"
+msgstr ""
+
+#: ./plugins/Files/templates/FileLinks/index.php:52
+#: ./plugins/Files/templates/Storage/index.php:44
+#: ./plugins/Files/templates/Storage/view.php:13
+msgid "Storage"
+msgstr ""
+
+#: ./plugins/Files/templates/FileLinks/index.php:57
+#: ./plugins/Files/templates/Trash/index.php:41
+#: ./plugins/Files/templates/Trash/index.php:44
+msgid "Trash"
+msgstr ""
+
+#: ./plugins/Files/templates/FileLinks/index.php:61
+#: ./plugins/Files/templates/FileLinks/index.php:64
+#: ./plugins/Files/templates/Storage/index.php:40
+#: ./plugins/Files/templates/Storage/index.php:58
+#: ./plugins/Files/templates/Storage/view.php:18
+#: ./plugins/Files/templates/Storage/view.php:68
+#: ./plugins/Files/templates/Trash/index.php:37
+msgid "File Links"
+msgstr ""
+
+#: ./plugins/Files/templates/FileLinks/index.php:63
+msgid "Every file the records have, and what each of them is filed as."
+msgstr ""
+
+#: ./plugins/Files/templates/FileLinks/index.php:70
+#: ./plugins/Files/templates/Storage/index.php:54
+#: ./plugins/Files/templates/Storage/view.php:58
+#: ./plugins/Files/templates/cell/Documentations/contents.php:41
+msgid "Created"
+msgstr ""
+
+#: ./plugins/Files/templates/FileLinks/index.php:74
+#: ./plugins/Files/templates/Storage/view.php:101
+msgid "Position"
+msgstr ""
+
+#: ./plugins/Files/templates/FileLinks/index.php:76
+#: ./plugins/Files/templates/Storage/index.php:57
+#: ./plugins/Files/templates/Storage/view.php:50
+#: ./plugins/Files/templates/Trash/index.php:56
+#: ./plugins/Files/templates/cell/Documentations/contents.php:40
+#: ./plugins/Files/templates/cell/Documentations/display.php:24
+msgid "Size"
+msgstr ""
+
+#: ./plugins/Files/templates/FileLinks/index.php:78
+#: ./plugins/Files/templates/Storage/index.php:59
+#: ./plugins/Files/templates/Storage/view.php:11
+#: ./plugins/Files/templates/Storage/view.php:103
+#: ./plugins/Files/templates/Trash/index.php:58
+#: ./plugins/Files/templates/cell/Documentations/contents.php:42
+msgid "Actions"
+msgstr ""
+
+#: ./plugins/Files/templates/FileLinks/index.php:94
+#: ./plugins/Files/templates/Storage/view.php:117
+#: ./plugins/Files/templates/Trash/index.php:81
+msgid "Open"
+msgstr ""
+
+#: ./plugins/Files/templates/FileLinks/index.php:99
+#: ./plugins/Files/templates/Storage/view.php:122
+#: ./plugins/Files/templates/Trash/index.php:86
+#: ./plugins/Files/templates/cell/Documentations/contents.php:53
+msgid "Download"
+msgstr ""
+
+#: ./plugins/Files/templates/FileLinks/index.php:103
+msgid "Content"
+msgstr ""
+
+#: ./plugins/Files/templates/FileLinks/index.php:108
+#: ./plugins/Files/templates/Trash/index.php:107
+#: ./plugins/Files/templates/cell/Documentations/contents.php:62
+msgid "Delete"
+msgstr ""
+
+#: ./plugins/Files/templates/FileLinks/index.php:110
+msgid "Remove this document from the record? It goes to the trash."
+msgstr ""
+
+#: ./plugins/Files/templates/Storage/index.php:13
+#: ./plugins/Files/templates/Storage/index.php:56
+#: ./plugins/Files/templates/Storage/view.php:46
+msgid "MIME Type"
+msgstr ""
+
+#: ./plugins/Files/templates/Storage/index.php:21
+msgid "Hash Begins With"
+msgstr ""
+
+#: ./plugins/Files/templates/Storage/index.php:30
+msgid "Without Links Only"
+msgstr ""
+
+#: ./plugins/Files/templates/Storage/index.php:45
+msgid "Each piece of content once, however many records point at it. What nothing points at any more is here too - that is the state a torn backup leaves behind, and the harmless one."
+msgstr ""
+
+#: ./plugins/Files/templates/Storage/index.php:55
+msgid "Hash"
+msgstr ""
+
+#: ./plugins/Files/templates/Storage/index.php:73
+msgid "nothing"
+msgstr ""
+
+#: ./plugins/Files/templates/Storage/index.php:76
+msgid "{0} in the trash"
+msgstr ""
+
+#: ./plugins/Files/templates/Storage/index.php:80
+msgid "View"
+msgstr ""
+
+#: ./plugins/Files/templates/Storage/index.php:90
+msgid "{0} in the store, {1} in all, {2} of them pointed at by nothing."
+msgstr ""
+
+#: ./plugins/Files/templates/Storage/view.php:26
+msgid "File"
+msgstr ""
+
+#: ./plugins/Files/templates/Storage/view.php:31
+msgid "The bytes this row stands for are not in the store. Nothing that points at it can be handed over until they are put back."
+msgstr ""
+
+#: ./plugins/Files/templates/Storage/view.php:42
+msgid "Hash Type"
+msgstr ""
+
+#: ./plugins/Files/templates/Storage/view.php:54
+msgid "Path"
+msgstr ""
+
+#: ./plugins/Files/templates/Storage/view.php:62
+msgid "Created By"
+msgstr ""
+
+#: ./plugins/Files/templates/Storage/view.php:72
+msgid "{0} removed from the records and waiting in the trash, which keeps this content until it has let go of them."
+msgstr ""
+
+#: ./plugins/Files/templates/Storage/view.php:84
+msgid "Nothing points at this content. It is what a backup taken while something was being written leaves behind, and it is safe to throw away."
+msgstr ""
+
+#: ./plugins/Files/templates/Storage/view.php:98
+msgid "Foreign Key"
+msgstr ""
+
+#: ./plugins/Files/templates/Trash/index.php:43
+msgid "What was removed from the records, until it comes back or its time is up."
+msgstr ""
+
+#: ./plugins/Files/templates/Trash/index.php:50
+msgid "Removed"
+msgstr ""
+
+#: ./plugins/Files/templates/Trash/index.php:51
+msgid "Removed By"
+msgstr ""
+
+#: ./plugins/Files/templates/Trash/index.php:91
+#: ./plugins/Files/templates/Trash/index.php:103
+msgid "Restore"
+msgstr ""
+
+#: ./plugins/Files/templates/Trash/index.php:94
+msgid "Restore this document? It says what it said when it was made, which may no longer be what the record says."
+msgstr ""
+
+#: ./plugins/Files/templates/Trash/index.php:99
+msgid "Restore this file?"
+msgstr ""
+
+#: ./plugins/Files/templates/Trash/index.php:109
+msgid "Delete this file for good? This cannot be undone."
+msgstr ""
+
+#: ./plugins/Files/templates/cell/Documentations/contents.php:23
+msgid "Nothing is filed in this documentation yet."
+msgstr ""
+
+#: ./plugins/Files/templates/cell/Documentations/contents.php:70
+msgid "Take {0} out of this documentation?"
+msgstr ""
+
+#: ./plugins/Files/templates/cell/Documentations/contents.php:26
+msgid "{0} file, {1}"
+msgid_plural "{0} files, {1}"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ./plugins/Files/templates/cell/Documentations/display.php:14
+msgid "Nothing is filed here yet."
+msgstr ""
+
+#: ./plugins/Files/templates/cell/Documentations/display.php:20
+msgid "Documentation"
+msgstr ""
+
+#: ./plugins/Files/templates/cell/Documentations/display.php:21
+msgid "Documentation Type"
+msgstr ""
+
+#: ./plugins/Files/templates/cell/Documentations/display.php:22
+msgid "Happened On"
+msgstr ""
+
+#: ./plugins/Files/templates/cell/Documentations/display.php:23
+msgid "Files"
+msgstr ""
+
+#: ./plugins/Files/templates/cell/Documentations/display.php:25
+msgid "Note"
+msgstr ""
+
+#: ./plugins/Files/templates/cell/Documentations/display.php:53
+msgid "{0} file"
+msgid_plural "{0} files"
+msgstr[0] ""
+msgstr[1] ""
+

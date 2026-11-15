@@ -1,0 +1,885 @@
+/* Fonts are served from here so that opening a page reaches no third party. */
+/* Fira Sans comes as one file per weight and style, Exo 2 is variable and covers every weight. */
+/* Fira's bold is its semibold, which the browser picks for bold text as the nearest weight. */
+@font-face {
+    font-family: "Fira Sans";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("../vendor/fira-sans/fira-sans-400-latin-ext.woff2") format("woff2");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+    font-family: "Fira Sans";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("../vendor/fira-sans/fira-sans-400-latin.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: "Fira Sans";
+    font-style: italic;
+    font-weight: 400;
+    font-display: swap;
+    src: url("../vendor/fira-sans/fira-sans-400-italic-latin-ext.woff2") format("woff2");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+    font-family: "Fira Sans";
+    font-style: italic;
+    font-weight: 400;
+    font-display: swap;
+    src: url("../vendor/fira-sans/fira-sans-400-italic-latin.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: "Fira Sans";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url("../vendor/fira-sans/fira-sans-600-latin-ext.woff2") format("woff2");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+    font-family: "Fira Sans";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url("../vendor/fira-sans/fira-sans-600-latin.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: "Exo 2";
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url("../vendor/exo-2/exo-2-latin-ext.woff2") format("woff2");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+    font-family: "Exo 2";
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url("../vendor/exo-2/exo-2-latin.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Default UI */
+:root {
+    /* The following are official CakePHP colors */
+    --color-cakephp-red: #d02f37;
+    --color-cakephp-gray: #404041;
+    --color-cakephp-blue: #2f85ae;
+    --color-cakephp-lightblue: #34bdd7;
+
+    /* the colour of the application: its icon, its name in the bar and its buttons */
+    --color-accent: #db341e;
+
+    /* These are additional colors */
+    --color-lightgray: #606c76;
+    --color-white: #ffffff;
+
+    --color-main: var(--color-lightgray);
+    --color-main-bg: #ddf0ff;
+    --color-links: var(--color-cakephp-blue);
+    --color-links-active: #2a6496;
+    --color-links-active-bg: transparent;
+    --color-nav-links: var(--color-lightgray);
+    --color-nav-links-active: var(--color-links-active);
+    --color-nav-links-active-bg: transparent;
+    --color-headings: #363637;
+    --color-content-bg: #fbfcff;
+    --color-table-bg: #ffffff;
+    --color-card-bg: #e4f3ff;
+    --color-table-borders: #aaaaaa;
+    --color-table-headings-bg: #c0e0ff;
+
+    /* A step off every other background, so a hash or a path reads as one thing set apart from
+       the sentence around it - wherever it sits, in a table cell or in a paragraph. */
+    --color-code-bg: #eef1f4;
+
+    --color-message-success-bg: #e3fcec;
+    --color-message-success-text: #1f9d55;
+    --color-message-success-border: #51d88a;
+
+    --color-message-warning-bg: #fffabc;
+    --color-message-warning-text: #8d7b00;
+    --color-message-warning-border: #d3b800;
+
+    --color-message-error-bg: #fcebea;
+    --color-message-error-text: #cc1f1a;
+    --color-message-error-border: #ef5753;
+
+    --color-message-info-bg: #eff8ff;
+    --color-message-info-text: #2779bd;
+    --color-message-info-border: #6cb2eb;
+}
+
+/* Ping status */
+.ping-status {
+    vertical-align: top;
+    width: 20px;
+    height: 20px;
+}
+
+/* to right */
+.to-right {
+    text-align: right;
+}
+
+/* to center */
+.to-center {
+    text-align: center;
+}
+
+/* Select2 overrides */
+.select2-container {
+    color: black;
+    margin-bottom: 1rem;
+    display: table;
+    table-layout: fixed;
+}
+
+.select2-container
+.select2-selection {
+    font-family: inherit;
+    font-size: 100%;
+    line-height: 1.15;
+}
+.select2-container
+.select2-selection--single {
+    height: 3rem;
+}
+.select2-container
+.select2-selection--single
+.select2-selection__rendered {
+    line-height: inherit;
+    padding: 0.6rem 1rem;
+}
+/* Multi-selects have to grow with the chosen items. With a fixed height the
+   rendered list overflows the selection, covers whatever follows it and
+   swallows the clicks meant for it. */
+.select2-container
+.select2-selection--multiple {
+    height: auto;
+    min-height: 3rem;
+}
+/* Milligram spaces list items apart, which tears the chosen items into rows
+   far too loose. */
+.select2-container
+.select2-selection--multiple
+.select2-selection__rendered li {
+    margin-bottom: 0;
+}
+/* The inline search field is a textarea, so it would otherwise pick up the
+   minimum height and the margin Milligram gives every textarea. It is as tall
+   as a chosen item - the line height of the selection and the border - or the
+   row it ends up on stands further apart than the others. */
+.select2-container
+.select2-selection--multiple
+.select2-search__field {
+    height: calc(1.15em + 2px);
+    min-height: 0;
+    line-height: inherit;
+    margin-bottom: 0;
+}
+/* The cross that takes a chosen item away is a button, and Milligram makes
+   every button tall, spaced out and in capitals - the cross ends up below the
+   item, out of sight. */
+.select2-container
+.select2-selection__choice__remove {
+    height: auto;
+    line-height: normal;
+    margin: 0;
+    letter-spacing: normal;
+    text-transform: none;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+.select2-results__options {
+    padding: 0.6rem 1rem;
+}
+.select2-results__option {
+    min-height: 2.5rem;
+    margin-bottom: 0;
+}
+.select2-container .select2-results>.select2-results__options {
+    max-height: 300px;
+}
+
+/* Milligram overrides */
+.button,
+button,
+input[type='button'],
+input[type='reset'],
+input[type='submit'] {
+    background-color: var(--color-accent);
+    border-color: var(--color-accent);
+}
+
+.button.button-outline,
+button.button-outline,
+input[type='button'].button-outline,
+input[type='reset'].button-outline,
+input[type='submit'].button-outline {
+    color: var(--color-accent);
+}
+
+input[type='color']:focus,
+input[type='date']:focus,
+input[type='datetime']:focus,
+input[type='datetime-local']:focus,
+input[type='email']:focus,
+input[type='month']:focus,
+input[type='number']:focus,
+input[type='password']:focus,
+input[type='search']:focus,
+input[type='tel']:focus,
+input[type='text']:focus,
+input[type='url']:focus,
+input[type='week']:focus,
+input:not([type]):focus,
+textarea:focus,
+select:focus {
+  border-color: var(--color-cakephp-gray);
+}
+
+select {
+    appearance: auto;
+    background: none;
+}
+
+select:focus {
+    background: none;
+}
+
+blockquote,
+dl,
+figure,
+form,
+ol,
+p,
+pre,
+table,
+ul {
+    margin-bottom: 0rem;
+}
+
+body {
+    font-family: "Fira Sans", sans-serif;
+    font-weight: 400;
+    color: var(--color-main);
+    background: var(--color-main-bg);
+}
+
+/*
+ * Milligram gives both of these a light grey and leaves the text to inherit, which is unreadable
+ * the moment the page is dark. Said once here for every theme, with each theme naming its own
+ * shade; the text needs nothing, because it already inherits what the body is set in.
+ */
+pre,
+code {
+    background: var(--color-code-bg);
+}
+
+.top-nav-title,
+.top-nav-links,
+.side-nav,
+h1, h2, h3, h4, h5, h6 {
+    font-family: "Exo 2", sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    color: var(--color-headings);
+    margin-bottom: 0.3rem;
+}
+
+h4 {
+    font-size: 2rem;
+    padding-bottom: 0.3rem;
+}
+
+.main h4 {
+    border-bottom: 0.1rem solid var(--color-table-headings-bg);
+}
+
+hr {
+    border-top: 0.1rem solid var(--color-headings);
+}
+
+a {
+    color: var(--color-links);
+    transition: color 0.2s linear;
+}
+
+a:hover,
+a:focus,
+a:active {
+    color: var(--color-links-active);
+    background-color: var(--color-links-active-bg);
+    transition: color 0.2s ease-out;
+}
+
+.side-nav a,
+th a,
+.actions a {
+    font-family: "Exo 2", sans-serif;
+    font-size: 1.05em;
+    color: var(--color-nav-links);
+}
+
+.side-nav a:hover,
+.side-nav a:focus,
+.actions a:hover,
+.actions a:focus {
+    color: var(--color-nav-links-active);
+    background-color: var(--color-nav-links-active-bg);
+}
+
+/* Labels */
+label {
+    font-family: "Exo 2", sans-serif;
+    font-size: 1.05em;
+    font-weight: 500;
+    margin-bottom: 0.3rem;
+}
+
+/* Legend */
+legend {
+    display: block;
+    width: 100%;
+    font-family: "Exo 2", sans-serif;
+    font-weight: 500;
+    font-size: 2.0rem;
+    color: var(--color-headings);
+    letter-spacing: -.08rem;
+    margin-bottom: 2rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 0.1rem solid var(--color-table-headings-bg);
+}
+
+/* Input */
+input[type='email'],
+input[type='number'],
+input[type='password'],
+input[type='search'],
+input[type='tel'],
+input[type='text'],
+input[type='url'],
+input[type='color'],
+input[type='date'],
+input[type='month'],
+input[type='week'],
+input[type='datetime'],
+input[type='datetime-local'],
+input:not([type]),
+textarea,
+select {
+    height: 3.0rem;
+    background-color: var(--color-white);
+}
+
+/* Tables */
+table {
+    border-collapse:collapse;
+    width: calc(100% - 3px);
+    margin-bottom: 6px;
+    margin-right: 3px;
+    background-color: var(--color-table-bg);
+
+    border-radius: 0.4rem;
+    box-shadow: 0 3px 6px 0 rgba(60, 66, 87, 0.1), 0 3px 6px 0 rgba(0, 0, 0, 0.05);
+}
+
+tr:hover td {
+    background: var(--color-main-bg);
+}
+
+/* Figures of one width, so that amounts and addresses line up down a column. */
+th, td {
+    font-variant-numeric: tabular-nums;
+    border: 0.1rem solid var(--color-table-borders);
+    vertical-align: baseline;
+    padding: 0.2rem 0.2rem;
+}
+
+iframe {
+    border: 0.1rem solid var(--color-table-borders);
+}
+
+td:first-child,
+th:first-child {
+    padding-left: 0.7rem;
+}
+
+/* A row whose leading cells are joined into the row above has no cell at the table's left edge,
+   so the gutter that belongs there must not land on whichever cell happens to come first. */
+tr.continued td:first-child {
+    padding-left: 0.2rem;
+}
+
+fieldset, input, select, textarea {
+    margin-bottom: 1.0rem;
+}
+
+fieldset.settings-group {
+    padding-left: 1.0rem;
+    border: #d1d1d1 solid 0.1rem;
+}
+
+fieldset.settings-group legend {
+    width: auto;
+    display: revert;
+    border-bottom: none;
+}
+
+/* Full width */
+.container {
+    max-width: none;
+}
+
+/* Utility */
+.table-responsive {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Main */
+body {
+    font-size: 1.3em;
+    line-height: 1.2em;
+}
+
+.content {
+    padding: 2rem;
+    background: var(--color-content-bg);
+    border-radius: 0.4rem;
+    /* Thanks Stripe */
+    box-shadow: 0 7px 14px 0 rgba(60, 66, 87, 0.1),
+        0 3px 6px 0 rgba(0, 0, 0, 0.07);
+}
+
+.content form {
+    margin: 0;
+}
+
+.actions a {
+    font-weight: bold;
+    padding: 0 0.4rem;
+}
+
+th {
+    background: var(--color-table-headings-bg);
+}
+
+/* Nav bar */
+nav.top-nav {
+    top: 0;
+    z-index: 100;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 7px 14px 0 rgb(60 66 87 / 10%), 0 3px 6px 0 rgb(0 0 0 / 7%);
+    background-color: var(--color-content-bg);
+}
+.top-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 2rem;
+    margin: 0 auto;
+}
+
+/* the name keeps to one line, the links wrap instead */
+.top-nav-title {
+    flex-shrink: 0;
+    margin-right: 1rem;
+}
+
+.top-nav-title a {
+    font-size: 2.4rem;
+    color: var(--color-accent);
+    white-space: nowrap;
+}
+
+.top-nav-title span {
+    color: var(--color-cakephp-gray);
+}
+
+.top-nav-logo {
+    height: 3rem;
+    margin-right: 0.8rem;
+    vertical-align: -0.65rem;
+}
+
+.top-nav-title a,
+.top-nav-links a {
+    font-weight: bold;
+}
+
+.side-nav-item {
+    display: block;
+    padding: 0.5rem 0;
+}
+
+/* a menu that stays in view at the bottom of the window while the page scrolls */
+.side-nav-fixed {
+    position: fixed;
+    bottom: 1rem;
+}
+
+/* View action */
+.view.content .text {
+    margin-top: 1.2rem;
+}
+
+.related {
+    margin-top: 1.5rem;
+}
+
+/* Flash messages */
+.message {
+    padding: 1rem;
+    background: var(--color-message-info-bg);
+    color: var(--color-message-info-text);
+    border-color: var(--color-message-info-border);
+    border-width: 1px;
+    border-style: solid;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    cursor: pointer;
+}
+
+.message.hidden {
+    display: none;
+}
+
+.message.success {
+    background: var(--color-message-success-bg);
+    color: var(--color-message-success-text);
+    border-color: var(--color-message-success-border);
+}
+
+.message.warning {
+    background: var(--color-message-warning-bg);
+    color: var(--color-message-warning-text);
+    border-color: var(--color-message-warning-border);
+}
+
+.message.error {
+    background: var(--color-message-error-bg);
+    color: var(--color-message-error-text);
+    border-color: var(--color-message-error-border);
+}
+
+.error-message {
+    padding: 0.5rem;
+    background: var(--color-message-error-bg);
+    color: var(--color-message-error-text);
+}
+
+/* A remark within a line of text that something is wrong, where a whole message would be too much */
+.error-text {
+    color: var(--color-message-error-text);
+}
+
+/* The same, for something that is missing rather than wrong */
+.warning-text {
+    color: var(--color-message-warning-text);
+    cursor: help;
+}
+
+/* The same again, for a word that only says how things stand */
+.info-text {
+    color: var(--color-message-info-text);
+}
+
+/* Forms */
+/*
+ * The line under a field saying what it is for. It belongs to the field above it, so it is
+ * pulled up against it and the air is left underneath - drawn as it comes, the field's own
+ * bottom margin puts the gap above the hint, and it ends up nearer the field that follows
+ * than the one it explains.
+ */
+.input > .hint {
+    display: block;
+    margin-top: -1.0rem;
+    margin-bottom: 1.5rem;
+}
+
+/* A tick carries no bottom margin of its own, so its hint has nothing to be pulled up over. */
+.input.radio > .hint,
+.input.checkbox > .hint,
+.input.multicheckbox > .hint {
+    margin-top: 0;
+}
+
+/*
+ * What is wrong with a field is said between the field and its hint, so it is pulled up against
+ * the field the way the hint would be, and the hint then follows the message instead.
+ */
+.input.error > .error-message {
+    margin-top: -0.5rem;
+    margin-bottom: 0.2rem;
+}
+
+.input.radio.error > .error-message,
+.input.checkbox.error > .error-message,
+.input.multicheckbox.error > .error-message {
+    margin-top: 0;
+}
+
+.input.error > .hint {
+    margin-top: 0;
+}
+
+.input.radio,
+.input.checkbox,
+.input.multicheckbox {
+    margin-bottom: 1.0rem;
+}
+
+.input.radio input,
+.input.checkbox input,
+.input.multicheckbox input {
+    margin: 0;
+}
+
+.input.radio label,
+.input.checkbox label,
+.input.multicheckbox label {
+    margin: 0;
+    display: flex;
+    align-items: center;
+}
+
+.input.radio label > input,
+.input.checkbox label > input,
+.input.multicheckbox label > input {
+    margin-right: 1.0rem;
+}
+
+input[type='color'] {
+    padding: 0.3rem .5rem 0.3rem;
+}
+
+/* Paginator */
+.paginator {
+    text-align: right;
+}
+
+.paginator p {
+    margin-bottom: 0;
+}
+
+.pagination {
+    display: flex;
+    justify-content: center;
+    list-style: none;
+    margin: 0 0 1rem 0;
+    padding: 0;
+}
+
+.pagination li {
+    display: inline-block;
+    margin: 0.25rem;
+    text-align: center;
+}
+
+.pagination a {
+    color: var(--color-cakephp-blue);
+    display: inline-block;
+    font-size: 1.25rem;
+    line-height: 2rem;
+    min-width: 2rem;
+    padding: 0;
+    position: relative;
+    text-decoration: none;
+    transition: background .3s,color .3s;
+}
+
+.pagination li.active a,
+.pagination a:hover {
+    text-decoration: underline;
+}
+
+.pagination .disabled a {
+    cursor: not-allowed;
+    color: var(--color-lightgray);
+    text-decoration: none;
+}
+
+.first a,
+.prev a,
+.next a,
+.last a {
+    padding: 0 .75rem;
+}
+
+.disabled a:hover {
+    background: initial;
+    color: initial;
+}
+
+.asc:after {
+    content: " \2193";
+}
+
+.desc:after {
+    content: " \2191";
+}
+
+/* Error in non debug mode */
+.error-container {
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    justify-content: center;
+}
+
+@media screen and (min-height: 800px) {
+    .top-nav {
+        position: sticky;
+    }
+}
+
+@media screen and (max-width: 800px) {
+    /* milligram puts columns side by side from 640px, these keep them stacked up to here */
+    .row {
+        flex-direction: column;
+        margin-left: 0;
+        width: 100%;
+    }
+
+    .row .column {
+        padding: 0;
+    }
+
+    /* Fix milligram not having a responsive column system */
+    .row .column[class*='column-'] {
+        flex: 0 0 100%;
+        max-width: 100%
+    }
+
+    .top-nav {
+        margin: 0 auto;
+    }
+
+    /* the logo stands for the name, which still names the link to a screen reader */
+    .top-nav-title a {
+        font-size: 0;
+    }
+
+    .top-nav-logo {
+        margin-right: 0;
+    }
+
+    .side-nav {
+        margin-bottom: 1rem;
+    }
+
+    .heading {
+        margin-bottom: 1rem;
+    }
+
+    .side-nav-item {
+        display: inline;
+        margin: 0 1.5rem 0 0;
+    }
+
+    /* above the page, kept in view it would cover it */
+    .side-nav-fixed {
+        position: static;
+    }
+
+    /*
+    .asc:after {
+        content: " \2192";
+    }
+
+    .desc:after {
+        content: " \2190";
+    }
+    */
+}
+
+.button {
+    font-family: "Exo 2", sans-serif;
+    font-size: 1.2rem;
+    margin-left: 0.5rem;
+    padding:0 1.5rem;
+    width: auto;
+    margin-bottom: 0.5rem;
+}
+
+.button-small {
+    height: 2.8rem;
+    line-height: 2.6rem;
+    padding: 0 1.2rem;
+}
+
+.button-auto {
+    height: auto;
+    line-height: 2.0rem;
+    padding: 0 1.5rem;
+}
+
+.button-selected {
+    background-color: var(--color-lightgray);
+    border-color: var(--color-lightgray);
+}
+
+.app-label {
+    font-family: "Exo 2", sans-serif;
+    font-size: 1.2rem;
+    border: 0.1rem solid  var(--color-accent);
+    border-radius: 0.4rem;
+    display: inline-block;
+    padding: 0.6rem 1.5rem;
+    margin-bottom: 0.5rem;
+    color: var(--color-white);
+}
+
+.active {
+    font-weight: bold;
+}
+
+.nav-container {
+    padding-left: 0px;
+}
+
+.nav-content {
+    padding-top: 1rem;
+    padding-bottom: 0.5rem;
+    padding-left: 1rem;
+}
+
+.nav-content-left {
+    min-width: 10%;
+}
+
+.nav-content-right {
+    text-align: right;
+}
+
+/* Lazy Load */
+.lazy-load.loading {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+/* Choices */
+
+/* A long run of switches reads better across the page than down it. The browser fits as many
+   columns as the width allows, so this needs no breakpoints of its own, and a switch is kept
+   whole rather than broken over a column boundary. */
+.choices {
+    columns: 40rem;
+}
+
+.choices > * {
+    break-inside: avoid;
+}

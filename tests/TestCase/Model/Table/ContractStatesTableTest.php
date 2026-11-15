@@ -1,0 +1,104 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Test\TestCase\Model\Table;
+
+use App\Model\Table\ContractStatesTable;
+use App\Test\Traits\TableTestTrait;
+use Cake\TestSuite\TestCase;
+use Override;
+
+/**
+ * App\Model\Table\ContractStatesTable Test Case
+ */
+class ContractStatesTableTest extends TestCase
+{
+    use TableTestTrait;
+
+    /**
+     * Test subject
+     *
+     * @var \App\Model\Table\ContractStatesTable
+     */
+    protected $ContractStates;
+
+    /**
+     * Fixtures
+     *
+     * @var array<string>
+     */
+    protected array $fixtures = [
+        'app.Users',
+        'app.AccountingProfiles',
+        'app.Customers',
+        'app.Countries',
+        'app.Addresses',
+        'app.Commissions',
+        'app.ContractStates',
+        'app.ServiceTypes',
+        'app.Contracts',
+    ];
+
+    /**
+     * setUp method
+     *
+     * @return void
+     */
+    #[Override]
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $config = $this->getTableLocator()->exists('ContractStates') ? [] : ['className' => ContractStatesTable::class];
+        $this->ContractStates = $this->getTableLocator()->get('ContractStates', $config);
+    }
+
+    /**
+     * tearDown method
+     *
+     * @return void
+     */
+    #[Override]
+    protected function tearDown(): void
+    {
+        /** @phpstan-ignore unset.possiblyHookedProperty */
+        unset($this->ContractStates);
+
+        parent::tearDown();
+    }
+
+    /**
+     * A new record with nothing filled in is refused - see the trait for why that is the question
+     * worth asking here.
+     *
+     * @return void
+     * @link \App\Model\Table\ContractStatesTable::validationDefault()
+     */
+    public function testValidationDefault(): void
+    {
+        $this->assertEmptyRecordIsRefused($this->ContractStates);
+    }
+
+    /**
+     * The colour of a state ends up in a style attribute, so only a colour gets in.
+     *
+     * @return void
+     * @link \App\Model\Table\ContractStatesTable::validationDefault()
+     */
+    public function testOnlyAColorIsStored(): void
+    {
+        $this->assertSame([], $this->ContractStates->newEntity(['color' => '#c8e6c9'])->getError('color'));
+        $this->assertNotSame([], $this->ContractStates->newEntity(['color' => '"><img'])->getError('color'));
+    }
+
+    /**
+     * The rules refuse a record whose references point nowhere - see the trait for why that is
+     * the question worth asking here.
+     *
+     * @return void
+     * @link \App\Model\Table\ContractStatesTable::buildRules()
+     */
+    public function testBuildRules(): void
+    {
+        $this->assertDanglingReferencesAreRefused($this->ContractStates);
+    }
+}

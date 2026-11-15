@@ -1,0 +1,150 @@
+<?php
+use Doctrine\SqlFormatter\HtmlHighlighter;
+use Doctrine\SqlFormatter\SqlFormatter;
+
+/**
+ * @var \App\View\AppView $this
+ * @var \App\Model\Entity\Label $label
+ */
+?>
+<div class="row">
+    <aside class="column">
+        <div class="side-nav">
+            <h4 class="heading"><?= __('Actions') ?></h4>
+            <?= $this->AuthLink->link(
+                __('Edit Label'),
+                ['action' => 'edit', $label->id],
+                ['class' => 'side-nav-item'],
+            ) ?>
+            <?= $this->AuthLink->postLink(
+                __('Delete Label'),
+                ['action' => 'delete', $label->id],
+                ['confirm' => __('Are you sure you want to delete # {0}?', $label->id), 'class' => 'side-nav-item'],
+            ) ?>
+            <?= $this->AuthLink->link(__('List Labels'), ['action' => 'index'], ['class' => 'side-nav-item']) ?>
+            <?= $this->AuthLink->link(__('New Label'), ['action' => 'add'], ['class' => 'side-nav-item']) ?>
+        </div>
+    </aside>
+    <div class="column column-90">
+        <div class="labels view content">
+            <?= $this->AuthLink->postLink(
+                __('Update Related Customer Labels'),
+                ['action' => 'updateRelatedCustomerLabels', $label->id],
+                [
+                    'confirm' => __('Are you sure you want to update related customer labels # {0}?', $label->id),
+                    'class' => 'button float-right',
+                ],
+            ) ?>
+            <?= $this->record(__('Label'), (string)$label->name) ?>
+            <div class="row">
+                <div class="column">
+                    <table>
+                        <tr>
+                            <th><?= __('Name') ?></th>
+                            <td><?= h($label->name) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Caption') ?></th>
+                            <td><?= h($label->caption) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Color') ?></th>
+                            <td style="background-color: <?= h($label->color) ?>;"><?= h($label->color) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Validity') ?></th>
+                            <td><?= $label->validity === null ? '' : $this->Number->format($label->validity) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Dynamic') ?></th>
+                            <td><?= $label->dynamic ? __('Yes') : __('No'); ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Show on Dashboard') ?></th>
+                            <td><?= $label->show_on_dashboard ? __('Yes') : __('No'); ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Dashboard Roles') ?></th>
+                            <td><?= empty($label->dashboard_roles)
+                                ? __('All')
+                                : h(implode(', ', $label->dashboard_role_names)) ?></td>
+                        </tr>
+                    </table>
+                </div>
+                <div class="column">
+                    <?= $this->element('common/audit', ['entity' => $label]) ?>
+                </div>
+            </div>
+            <div class="text">
+                <strong><?= __('Dynamic Sql') ?></strong>
+                <?=
+                    (new SqlFormatter(
+                        new HtmlHighlighter([
+                            HtmlHighlighter::HIGHLIGHT_QUOTE => 'style="color: #004d40;"',
+                            HtmlHighlighter::HIGHLIGHT_BACKTICK_QUOTE => 'style="color: #26a69a;"',
+                            HtmlHighlighter::HIGHLIGHT_NUMBER => 'style="color: #ec407a;"',
+                            HtmlHighlighter::HIGHLIGHT_WORD => 'style="color: #9c27b0;"',
+                            HtmlHighlighter::HIGHLIGHT_PRE => 'style="color: #222; background-color: transparent;"',
+                        ]),
+                    ))
+                    ->format($label->dynamic_sql ?? '') ?>
+            </div>
+            <div class="related">
+                <h4><?= __('Related Customer Labels') ?></h4>
+                <?php if (!empty($label->customer_labels)) : ?>
+                <div class="table-responsive">
+                    <table>
+                        <tr>
+                            <th><?= __('Customer') ?></th>
+                            <th><?= __('Customer Number') ?></th>
+                            <th><?= __('Contract') ?></th>
+                            <th><?= __('Note') ?></th>
+                            <th><?= __('Created') ?></th>
+                            <th class="actions"><?= __('Actions') ?></th>
+                        </tr>
+                        <?php foreach ($label->customer_labels as $customerLabel) : ?>
+                        <tr>
+                            <td><?= $customerLabel->customer !== null ?
+                                $this->Html->link(
+                                    $customerLabel->customer->name ?? '(' . $customerLabel->customer->id . ')',
+                                    ['controller' => 'Customers', 'action' => 'view', $customerLabel->customer->id],
+                                ) : '' ?></td>
+                            <td><?= $customerLabel->customer !== null ?
+                                h($customerLabel->customer->number) : '' ?></td>
+                            <td><?= $customerLabel->contract !== null ?
+                                $this->Html->link(
+                                    $customerLabel->contract->number ?? '--',
+                                    [
+                                        'controller' => 'Contracts',
+                                        'action' => 'view',
+                                        $customerLabel->contract->id,
+                                        'customer_id' => $customerLabel->contract->customer_id,
+                                    ],
+                                ) : '' ?></td>
+                            <td><?= h($customerLabel->note) ?></td>
+                            <td><?= h($customerLabel->created) ?></td>
+                            <td class="actions">
+                                <?= $this->AuthLink->link(
+                                    __('View'),
+                                    ['controller' => 'CustomerLabels', 'action' => 'view', $customerLabel->id],
+                                ) ?>
+                                <?= $this->AuthLink->link(
+                                    __('Edit'),
+                                    ['controller' => 'CustomerLabels', 'action' => 'edit', $customerLabel->id],
+                                    ['class' => 'win-link'],
+                                ) ?>
+                                <?= $this->AuthLink->postLink(
+                                    __('Delete'),
+                                    ['controller' => 'CustomerLabels', 'action' => 'delete', $customerLabel->id],
+                                    ['confirm' => __('Are you sure you want to delete # {0}?', $customerLabel->id)],
+                                ) ?>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </table>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+</div>

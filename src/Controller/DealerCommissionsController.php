@@ -1,0 +1,178 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Controller;
+
+use App\Model\Enum\CustomerDealer;
+use Cake\Http\Response;
+
+/**
+ * DealerCommissions Controller
+ *
+ * @property \App\Model\Table\DealerCommissionsTable $DealerCommissions
+ */
+class DealerCommissionsController extends AppController
+{
+    /**
+     * Index method
+     *
+     * @return void Renders view
+     */
+    public function index(): void
+    {
+        // filter
+        $conditions = [];
+
+        // search
+        $search = $this->getRequest()->getQuery('search');
+        if (!empty($search)) {
+            $conditions[] = [
+                'OR' => [
+                    'Commissions.name ILIKE' => '%' . trim((string)$search) . '%',
+                ],
+            ];
+        }
+
+        $dealerCommissions = $this->paginate($this->newestFirst($this->DealerCommissions->find(
+            'all',
+            contain: [
+                'Commissions',
+                'Dealers',
+            ],
+            conditions: $conditions,
+        )));
+
+        $this->set(compact('dealerCommissions'));
+    }
+
+    /**
+     * View method
+     *
+     * @param string|null $id Dealer Commission id.
+     * @return void Renders view
+     * @throws \Cake\Datasource\Exception\RecordNotFoundException When record not found.
+     */
+    public function view(?string $id = null): void
+    {
+        $dealerCommission = $this->DealerCommissions->get($id, contain: [
+            'Dealers',
+            'Commissions',
+            'Creators',
+            'Modifiers',
+        ]);
+
+        $this->set(compact('dealerCommission'));
+    }
+
+    /**
+     * Add method
+     *
+     * @return \Cake\Http\Response|null Redirects on successful add, renders view otherwise.
+     */
+    public function add(): ?Response
+    {
+        $dealerCommission = $this->DealerCommissions->newEmptyEntity();
+        if ($this->getRequest()->is('post')) {
+            $dealerCommission = $this->DealerCommissions
+                ->patchEntity($dealerCommission, $this->getRequest()->getData());
+
+            if ($this->DealerCommissions->save($dealerCommission)) {
+                $this->Flash->success(__('The dealer commission has been saved.'));
+
+                return $this->afterAddRedirect(['action' => 'view', $dealerCommission->id]);
+            }
+            $this->Flash->error(__('The dealer commission could not be saved. Please, try again.'));
+        }
+        $dealers = $this->DealerCommissions->Dealers
+            ->find()
+            ->where([
+                'dealer' => 1, // only current dealers
+            ])
+            ->orderBy([
+                'dealer',
+                'company',
+                'last_name',
+                'first_name',
+            ])
+            ->all()
+            ->map(function ($dealer): array {
+                return [
+                    'value' => $dealer->id,
+                    'text' => $dealer->name_for_lists,
+                    'style' => $dealer->dealer == CustomerDealer::Current ? null : 'color: darkgray;',
+                ];
+            });
+        $commissions = $this->DealerCommissions->Commissions->find('list', order: [
+            'name',
+        ]);
+        $this->set(compact('dealerCommission', 'dealers', 'commissions'));
+
+        return null;
+    }
+
+    /**
+     * Edit method
+     *
+     * @param string|null $id Dealer Commission id.
+     * @return \Cake\Http\Response|null Redirects on successful edit, renders view otherwise.
+     * @throws \Cake\Datasource\Exception\RecordNotFoundException When record not found.
+     */
+    public function edit(?string $id = null): ?Response
+    {
+        $dealerCommission = $this->DealerCommissions->get($id, contain: []);
+        if ($this->getRequest()->is(['patch', 'post', 'put'])) {
+            $dealerCommission = $this->DealerCommissions
+                ->patchEntity($dealerCommission, $this->getRequest()->getData());
+
+            if ($this->DealerCommissions->save($dealerCommission)) {
+                $this->Flash->success(__('The dealer commission has been saved.'));
+
+                return $this->afterEditRedirect(['action' => 'view', $dealerCommission->id]);
+            }
+            $this->Flash->error(__('The dealer commission could not be saved. Please, try again.'));
+        }
+        $dealers = $this->DealerCommissions->Dealers
+            ->find()
+            ->orderBy([
+                'dealer',
+                'company',
+                'last_name',
+                'first_name',
+            ])
+            ->all()
+            ->map(function ($dealer): array {
+                return [
+                    'value' => $dealer->id,
+                    'text' => $dealer->name_for_lists,
+                    'style' => $dealer->dealer == CustomerDealer::Current ? null : 'color: darkgray;',
+                ];
+            });
+        $commissions = $this->DealerCommissions->Commissions->find('list', order: [
+            'name',
+        ]);
+        $this->set(compact('dealerCommission', 'dealers', 'commissions'));
+
+        return null;
+    }
+
+    /**
+     * Delete method
+     *
+     * @param string|null $id Dealer Commission id.
+     * @return \Cake\Http\Response|null Redirects to index.
+     * @throws \Cake\Datasource\Exception\RecordNotFoundException When record not found.
+     */
+    public function delete(?string $id = null): ?Response
+    {
+        $this->getRequest()->allowMethod(['post', 'delete']);
+        $dealerCommission = $this->DealerCommissions->get($id);
+        if ($this->DealerCommissions->delete($dealerCommission)) {
+            $this->Flash->success(__('The dealer commission has been deleted.'));
+        } else {
+            $this->flashValidationErrors($dealerCommission->getErrors());
+            $this->Flash->error(__('The dealer commission could not be deleted. Please, try again.'));
+        }
+
+        return $this->afterDeleteRedirect(['action' => 'index']);
+    }
+}

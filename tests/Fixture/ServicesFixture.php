@@ -1,0 +1,58 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Test\Fixture;
+
+use Cake\TestSuite\Fixture\TestFixture;
+use Override;
+
+/**
+ * ServicesFixture
+ */
+class ServicesFixture extends TestFixture
+{
+    /**
+     * Init method
+     *
+     * @return void
+     */
+    #[Override]
+    public function init(): void
+    {
+        $this->records = [
+            [
+                'created' => 1698516626,
+                'modified' => 1698516626,
+                'name' => 'Lorem ipsum dolor sit amet',
+                'price' => 1,
+                'accounting_product_code' => 'Lorem ipsum dolor sit amet',
+                'currently_offered' => 0,
+                // deliberately the *higher* level of the two: it is only billed
+                // historically, so it must never leak into a recipient's flags
+                'criticality_level' => 30,
+                'connection_profile_id' => '9a2952ed-9947-4c0e-bda8-97f00614eab4',
+                'service_type_id' => '907cbc5c-af88-43b6-b535-959b4fa2ce3d',
+                'id' => 'eaacfeb3-1430-43ce-842e-497c5c95d953',
+                'created_by' => '11edb519-be76-4d66-aea0-34188d31eae1',
+                'modified_by' => '11edb519-be76-4d66-aea0-34188d31eae1',
+            ],
+            // second service, billed open-ended by the seeded contract — lets a
+            // test tell an active service apart from a historically billed one
+            [
+                'created' => 1698516626,
+                'modified' => 1698516626,
+                'name' => 'Sed do eiusmod tempor',
+                'price' => 2,
+                'accounting_product_code' => 'Sed do eiusmod tempor',
+                'currently_offered' => 1,
+                'criticality_level' => 20,
+                'connection_profile_id' => '9a2952ed-9947-4c0e-bda8-97f00614eab4',
+                'service_type_id' => '907cbc5c-af88-43b6-b535-959b4fa2ce3d',
+                'id' => '5f6a2f47-0a4d-4c05-9bcb-2f0dc0a3f0d2',
+                'created_by' => '11edb519-be76-4d66-aea0-34188d31eae1',
+                'modified_by' => '11edb519-be76-4d66-aea0-34188d31eae1',
+            ],
+        ];
+        parent::init();
+    }
+}

@@ -1,0 +1,330 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Contracts\Proposal;
+
+use App\Model\Entity\Billing;
+use App\Model\Entity\ContractProposal;
+use App\Model\Entity\ContractVersion;
+use Cake\I18n\Date;
+
+/**
+ * How things would stand if a proposal were applied.
+ *
+ * This is what the documents are drawn from: the snapshot as it was taken, with the proposed
+ * changes laid over it. Nothing here touches the live records - a paper describes what is being
+ * asked for, and whether it happens is settled later, by somebody pressing a button.
+ *
+ * The order is fixed on the way out. Nothing downstream sorts, so leaving it to whatever order the
+ * lines happened to be written in would make two printings of one proposal look different.
+ */
+final class ProposalProjection
+{
+    /**
+     * The billing lines as the proposal would leave them.
+     *
+     * @param array<\App\Model\Entity\Billing> $billings The billings as the snapshot took them.
+     * @param \App\Contracts\Proposal\ProposalChanges $changes What the proposal asks for.
+     * @param \Cake\I18n\Date $effective_from The day the proposal takes effect.
+     * @param array<string, \App\Model\Entity\Service> $services The services the lines name, by id.
+     * @return array<\App\Model\Entity\Billing> Unsaved records; never put them back on a contract.
+     */
+    public function projectBillings(
+        array $billings,
+        ProposalChanges $changes,
+        Date $effective_from,
+        array $services = [],
+    ): array {
+        $projected = [];
+
+        foreach ($this->explain($billings, $changes, $effective_from, $services) as $row) {
+            // A billing the papers end before it ever began is removed rather than ended, so
+            // afterwards there is no such billing to show.
+            if (!$row['dropped']) {
+                $projected[] = $row['billing'];
+            }
+        }
+
+        return $projected;
+    }
+
+    /**
+     * The billing lines as the proposal would leave them, each saying where it comes from.
+     *
+     * This is what the proposal's own table is drawn from: the operator reads what would be billed
+     * for and, on each row, whether it stands as it is, was changed, was added, or stops here. The
+     * papers read the same rows, so the two cannot disagree.
+     *
+     * @param array<\App\Model\Entity\Billing> $billings The billings as the snapshot took them.
+     * @param \App\Contracts\Proposal\ProposalChanges $changes What the proposal asks for.
+     * @param \Cake\I18n\Date $effective_from The day the proposal takes effect.
+     * @param array<string, \App\Model\Entity\Service> $services The services the lines name, by id.
+     * @return array<array{billing: \App\Model\Entity\Billing, line: \App\Contracts\Proposal\ProposedBilling|null, ending: bool, stopped: bool, dropped: bool}>
+     */
+    public function explain(
+        array $billings,
+        ProposalChanges $changes,
+        Date $effective_from,
+        array $services = [],
+    ): array {
+        $acted_on = $changes->billingsByBillingId();
+        $rows = [];
+
+        foreach ($billings as $billing) {
+            $line = $acted_on[(string)$billing->id] ?? null;
+
+            // The snapshot holds everything the contract has ever billed for. What ran out before
+            // the papers take effect has nothing left to stop, so neither a line nor the button
+            // that would draw one has anything to do with it.
+            $stopped = $billing->billing_until !== null
+                && $billing->billing_until->lessThan($effective_from);
+
+            if ($line === null) {
+                $rows[] = [
+                    'billing' => $billing,
+                    'line' => null,
+                    'ending' => false,
+                    'stopped' => $stopped,
+                    'dropped' => false,
+                ];
+
+                continue;
+            }
+
+            // A billing that has not begun yet is not ended but taken away, so the row says that
+            // rather than showing a last day before the first.
+            $dropped = $line->neverRunsAfterAll($effective_from, $billing->billing_from);
+
+            // What is replaced or ended stops the day before what replaces it starts - the same two
+            // halves applying the changes will write. A line that starts later than the proposal
+            // leaves the old billing running until then.
+            $rows[] = [
+                'billing' => $dropped ? $billing : $this->ending($billing, $line, $effective_from),
+                'line' => $line->terminatesOnly() ? $line : null,
+                // Said only where it is true: applying the changes leaves a billing that stopped of its
+                // own accord alone, and a row claiming otherwise would be a promise it breaks.
+                'ending' => !$dropped
+                    && $line->endsTheBillingOn($effective_from, $billing->billing_until) !== null,
+                'stopped' => $stopped,
+                'dropped' => $dropped,
+            ];
+
+            if ($line->startsABilling()) {
+                $rows[] = [
+                    'billing' => $this->starting($line, $billing, $effective_from, $services),
+                    'line' => $line,
+                    'ending' => false,
+                    'stopped' => false,
+                    'dropped' => false,
+                ];
+            }
+        }
+
+        foreach ($changes->billings as $line) {
+            if ($line->isAddition()) {
+                $rows[] = [
+                    'billing' => $this->starting($line, null, $effective_from, $services),
+                    'line' => $line,
+                    'ending' => false,
+                    'stopped' => false,
+                    'dropped' => false,
+                ];
+            }
+        }
+
+        usort($rows, fn(array $one, array $other): int => $this->compare($one['billing'], $other['billing']));
+
+        return $rows;
+    }
+
+    /**
+     * The equipment lent with the contract as the proposal would leave it.
+     *
+     * @param array<\App\Model\Entity\BorrowedEquipment> $borrowed The equipment as the snapshot took it.
+     * @param \App\Contracts\Proposal\ProposalChanges $changes What the proposal asks for.
+     * @param array<string, \App\Model\Entity\BorrowedEquipment> $lent What its lines lend, by line.
+     * @return \App\Contracts\Proposal\ProjectedEquipment Unsaved records; never put them back on a contract.
+     */
+    public function projectEquipment(array $borrowed, ProposalChanges $changes, array $lent): ProjectedEquipment
+    {
+        $takenBack = $changes->equipmentTakenBack();
+        $continuing = [];
+        $returned = [];
+
+        foreach ($borrowed as $equipment) {
+            if (isset($takenBack[(string)$equipment->id])) {
+                $returned[] = $equipment;
+            } else {
+                $continuing[] = $equipment;
+            }
+        }
+
+        return new ProjectedEquipment($continuing, array_values($lent), $returned);
+    }
+
+    /**
+     * The same projection, with each piece saying where it comes from.
+     *
+     * What the proposal's own table is drawn from: what stays as it is, what goes back and what is
+     * lent, each with the line that says so.
+     *
+     * @param array<\App\Model\Entity\BorrowedEquipment> $borrowed The equipment as the snapshot took it.
+     * @param \App\Contracts\Proposal\ProposalChanges $changes What the proposal asks for.
+     * @param array<string, \App\Model\Entity\BorrowedEquipment> $lent What its lines lend, by line.
+     * @return list<array{equipment: \App\Model\Entity\BorrowedEquipment, line: \App\Contracts\Proposal\ProposedEquipment|null}>
+     */
+    public function explainEquipment(array $borrowed, ProposalChanges $changes, array $lent): array
+    {
+        $takenBack = $changes->equipmentTakenBack();
+        $rows = [];
+
+        foreach ($borrowed as $equipment) {
+            $rows[] = ['equipment' => $equipment, 'line' => $takenBack[(string)$equipment->id] ?? null];
+        }
+
+        foreach ($lent as $line_id => $equipment) {
+            $rows[] = ['equipment' => $equipment, 'line' => $changes->equipmentLine((string)$line_id)];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * The version as the proposal would leave it.
+     *
+     * @param \App\Model\Entity\ContractVersion $version The version as the snapshot took it.
+     * @param \App\Contracts\Proposal\ProposedVersion $asked What the proposal asks of it.
+     * @return \App\Model\Entity\ContractVersion An unsaved record.
+     */
+    public function projectVersion(ContractVersion $version, ProposedVersion $asked): ContractVersion
+    {
+        $projected = clone $version;
+
+        foreach ($asked->asked() as $field => $value) {
+            $projected->set($field, $value);
+        }
+
+        return $projected;
+    }
+
+    /**
+     * What the version papers bring into being says, where there is none yet.
+     *
+     * Drawn from the snapshot and the proposed changes rather than from anything live, so that the
+     * record ends up saying what the printed paper says. The day it starts is the day the papers
+     * take effect, which for a new contract is the same thing said twice.
+     *
+     * @param \App\Model\Entity\ContractProposal $proposal The proposal.
+     * @return array{valid_from: \Cake\I18n\Date|null, valid_until: \Cake\I18n\Date|null, obligation_until: \Cake\I18n\Date|null, conclusion_date: \Cake\I18n\Date|null}
+     */
+    public function versionToStart(ContractProposal $proposal): array
+    {
+        $projected = $this->projectVersion(
+            $proposal->stateOfThings()->hydrateVersion(),
+            $proposal->proposedChanges()->version,
+        );
+
+        return [
+            'valid_from' => $proposal->effective_from,
+            'valid_until' => $projected->valid_until,
+            'obligation_until' => $projected->obligation_until,
+            'conclusion_date' => $proposal->conclusion_date,
+        ];
+    }
+
+    /**
+     * A version an earlier proposal is replacing, as it would stand once it has.
+     *
+     * @param \App\Model\Entity\ContractVersion $version The version being replaced.
+     * @param \Cake\I18n\Date $effective_from The day the replacement takes effect.
+     * @return \App\Model\Entity\ContractVersion An unsaved record.
+     */
+    public function projectTerminatedVersion(
+        ContractVersion $version,
+        Date $effective_from,
+    ): ContractVersion {
+        $projected = clone $version;
+        $projected->set('valid_until', $effective_from->subDays(1));
+
+        return $projected;
+    }
+
+    /**
+     * The billing being replaced, stopped the day before its replacement starts.
+     *
+     * Handed back untouched where it stopped earlier of its own accord - the line has nothing
+     * left to end, and the table has to show what applying the changes would actually do.
+     *
+     * @param \App\Model\Entity\Billing $billing What is being replaced.
+     * @param \App\Contracts\Proposal\ProposedBilling $line The line that ends it.
+     * @param \Cake\I18n\Date $effective_from The day the proposal takes effect.
+     * @return \App\Model\Entity\Billing
+     */
+    private function ending(Billing $billing, ProposedBilling $line, Date $effective_from): Billing
+    {
+        $ends = $line->endsTheBillingOn($effective_from, $billing->billing_until);
+
+        if ($ends === null) {
+            return $billing;
+        }
+
+        $ending = clone $billing;
+        $ending->set('billing_until', $ends);
+
+        return $ending;
+    }
+
+    /**
+     * The billing a line puts in place, whether it replaces one or adds one.
+     *
+     * A replacement keeps whatever the line does not speak of - who it belongs to and what it is
+     * called - from the billing it replaces; an addition has nothing to keep.
+     *
+     * @param \App\Contracts\Proposal\ProposedBilling $line What the proposal asks for.
+     * @param \App\Model\Entity\Billing|null $replaced What it replaces, where it replaces one.
+     * @param \Cake\I18n\Date $effective_from The day the proposal takes effect.
+     * @param array<string, \App\Model\Entity\Service> $services The services the lines name, by id.
+     * @return \App\Model\Entity\Billing
+     */
+    private function starting(
+        ProposedBilling $line,
+        ?Billing $replaced,
+        Date $effective_from,
+        array $services,
+    ): Billing {
+        $starting = $replaced === null ? new Billing() : clone $replaced;
+
+        $starting->unset('id');
+        $starting->patch(['billing_from' => $line->startsOn($effective_from)] + $line->terms($replaced));
+
+        // The service is what the document names and prices the line by. A line that names one
+        // brings it - the contract's own snapshot has never heard of it - and only a line that
+        // leaves it alone keeps what was there.
+        if ($replaced === null || !$line->leavesTheServiceAlone()) {
+            $chosen = $services[(string)$line->service_id] ?? null;
+
+            if ($chosen === null) {
+                $starting->unset('service');
+            } else {
+                $starting->set('service', $chosen);
+            }
+        }
+
+        return $starting;
+    }
+
+    /**
+     * What starts first comes first, and what starts together goes by its name.
+     *
+     * By the day rather than by how a day is written, which depends on the application's format.
+     *
+     * @param \App\Model\Entity\Billing $one One line.
+     * @param \App\Model\Entity\Billing $other The other.
+     * @return int
+     */
+    private function compare(Billing $one, Billing $other): int
+    {
+        return [$one->billing_from?->toDateString(), (string)$one->name]
+            <=> [$other->billing_from?->toDateString(), (string)$other->name];
+    }
+}

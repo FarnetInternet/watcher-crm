@@ -1,0 +1,504 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Test\TestCase\Contracts\Proposal;
+
+use App\Contracts\Proposal\ProposalChanges;
+use App\Contracts\Proposal\ProposalProjection;
+use App\Contracts\Proposal\ProposedBilling;
+use App\Contracts\Proposal\ProposedVersion;
+use App\Model\Entity\Billing;
+use App\Model\Entity\BorrowedEquipment;
+use App\Model\Entity\ContractProposal;
+use App\Model\Entity\ContractVersion;
+use App\Model\Entity\CustomerProposal;
+use App\Model\Entity\Service;
+use Cake\I18n\Date;
+use Cake\TestSuite\TestCase;
+use PhpCollective\DecimalObject\Decimal;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\UsesClass;
+use ReflectionProperty;
+
+/**
+ * App\Contracts\Proposal\ProposalProjection Test Case
+ */
+#[CoversClass(ProposalProjection::class)]
+#[UsesClass(ProposalChanges::class)]
+#[UsesClass(ProposedBilling::class)]
+#[UsesClass(ProposedVersion::class)]
+class ProposalProjectionTest extends TestCase
+{
+    /**
+     * The day everything below takes effect.
+     */
+    private const EFFECTIVE_FROM = '2026-10-01';
+
+    /**
+     * The day before it.
+     */
+    private const DAY_BEFORE = '2026-09-30';
+
+    /**
+     * A billing as the snapshot took it.
+     *
+     * @param string $id Which billing.
+     * @param string $text What it is called.
+     * @return \App\Model\Entity\Billing
+     */
+    private function billing(string $id, string $text = 'Internet'): Billing
+    {
+        return new Billing([
+            'id' => $id,
+            'billing_from' => new Date('2025-01-01'),
+            'billing_until' => null,
+            'text' => $text,
+            'quantity' => 1,
+            'price' => null,
+            'separate_invoice' => false,
+        ]);
+    }
+
+    /**
+     * The projection of the given changes over the given billings.
+     *
+     * @param array<\App\Model\Entity\Billing> $billings What the snapshot took.
+     * @param array<string, mixed> $changes What the proposal asks for.
+     * @param array<string, \App\Model\Entity\Service> $services The services the lines name.
+     * @return array<\App\Model\Entity\Billing>
+     */
+    private function project(array $billings, array $changes, array $services = []): array
+    {
+        return (new ProposalProjection())->projectBillings(
+            $billings,
+            ProposalChanges::fromArray($changes),
+            new Date(self::EFFECTIVE_FROM),
+            $services,
+        );
+    }
+
+    /**
+     * A proposal that changes nothing leaves the billings exactly as they were - which is the
+     * ordinary case, because a new contract has its billings in place before the papers are drawn
+     * up.
+     *
+     * @return void
+     */
+    public function testNothingProposedLeavesEverythingAlone(): void
+    {
+        $billings = [$this->billing('b1'), $this->billing('b2', 'Television')];
+
+        $projected = $this->project($billings, []);
+
+        $this->assertCount(2, $projected);
+        $this->assertNull($projected[0]->billing_until);
+        $this->assertNull($projected[1]->billing_until);
+    }
+
+    /**
+     * A replaced billing stops the day before, and what takes its place starts on the day itself -
+     * the same two halves applying the changes will write.
+     *
+     * @return void
+     */
+    public function testAReplacedBillingStopsTheDayBeforeItsReplacementStarts(): void
+    {
+        $projected = $this->project(
+            [$this->billing('b1')],
+            ['billings' => [[
+                'billing_id' => 'b1',
+                'service_id' => 's2',
+                'quantity' => 1,
+                'price' => '299.00',
+            ]]],
+        );
+
+        $this->assertCount(2, $projected);
+
+        [$ending, $starting] = $projected;
+        $this->assertSame(self::DAY_BEFORE, $ending->billing_until?->toDateString());
+        $this->assertSame(self::EFFECTIVE_FROM, $starting->billing_from?->toDateString());
+        $this->assertSame('299.00', $starting->price?->toString());
+        $this->assertNull($starting->id);
+    }
+
+    /**
+     * A line that only ends a billing leaves nothing behind it.
+     *
+     * @return void
+     */
+    public function testAnEndedBillingHasNothingTakeItsPlace(): void
+    {
+        $projected = $this->project(
+            [$this->billing('b1')],
+            ['billings' => [['billing_id' => 'b1', 'terminates_only' => true]]],
+        );
+
+        $this->assertCount(1, $projected);
+        $this->assertSame(self::DAY_BEFORE, $projected[0]->billing_until?->toDateString());
+    }
+
+    /**
+     * A billing written to begin after the papers take effect never runs, so afterwards there is
+     * none - it is removed rather than given a last day before its first.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ProposedBilling::neverRunsAfterAll()
+     */
+    public function testABillingThatNeverRunsIsNotThereAfterwards(): void
+    {
+        $later = $this->billing('b1');
+        $later->set('billing_from', new Date('2027-01-01'));
+
+        $projected = $this->project(
+            [$later],
+            ['billings' => [['billing_id' => 'b1', 'terminates_only' => true]]],
+        );
+
+        $this->assertSame([], $projected);
+    }
+
+    /**
+     * And where something takes its place, only the replacement is there.
+     *
+     * @return void
+     */
+    public function testWhatReplacesABillingThatNeverRunsStandsAlone(): void
+    {
+        $later = $this->billing('b1');
+        $later->set('billing_from', new Date('2027-01-01'));
+
+        $projected = $this->project(
+            [$later],
+            ['billings' => [[
+                'billing_id' => 'b1',
+                'terminates_only' => false,
+                'text' => 'Internet, cheaper',
+                'quantity' => 1,
+            ]]],
+        );
+
+        $this->assertCount(1, $projected);
+        $this->assertSame(self::EFFECTIVE_FROM, $projected[0]->billing_from?->toDateString());
+        $this->assertSame('Internet, cheaper', $projected[0]->get('text'));
+    }
+
+    /**
+     * A billing that ran out before the papers take effect is left where it is, and the table says
+     * so rather than promising an ending that will not happen.
+     *
+     * The snapshot holds everything the contract has ever billed for, so an ending drawn up long
+     * after the fact used to stretch each of them back over every month in between.
+     *
+     * @return void
+     */
+    public function testABillingThatHadAlreadyStoppedIsLeftWhereItIs(): void
+    {
+        $stopped = $this->billing('b1');
+        $stopped->set('billing_until', new Date('2022-06-30'));
+
+        $changes = ['billings' => [['billing_id' => 'b1', 'terminates_only' => true]]];
+
+        $projected = $this->project([$stopped], $changes);
+        $this->assertSame('2022-06-30', $projected[0]->billing_until?->toDateString());
+
+        $rows = (new ProposalProjection())->explain(
+            [$stopped],
+            ProposalChanges::fromArray($changes),
+            new Date(self::EFFECTIVE_FROM),
+        );
+        $this->assertFalse($rows[0]['ending'], 'The table promised an ending the transfer will not do.');
+        $this->assertTrue($rows[0]['stopped']);
+    }
+
+    /**
+     * A line without a billing puts one there that was not there before - which is how a contract
+     * looks when its billings are only drawn up once the papers come back signed.
+     *
+     * @return void
+     */
+    public function testAnAddedBillingAppearsOnTheDay(): void
+    {
+        $projected = $this->project([], ['billings' => [[
+            'billing_id' => null,
+            'service_id' => 's1',
+            'quantity' => 2,
+        ]]]);
+
+        $this->assertCount(1, $projected);
+        $this->assertSame(self::EFFECTIVE_FROM, $projected[0]->billing_from?->toDateString());
+        $this->assertSame(2, $projected[0]->quantity);
+    }
+
+    /**
+     * A line that names no service and no text keeps the service of what it replaces, the record of
+     * it as well as what the paper prints.
+     *
+     * @return void
+     */
+    public function testALineNamingNothingKeepsTheServiceOnThePaper(): void
+    {
+        $billing = $this->billing('b-1');
+        $billing->unset('text');
+        $billing->set('service_id', 's-1');
+        $billing->set('service', new Service(['id' => 's-1', 'name' => 'A tariff', 'price' => 450]));
+
+        $projected = $this->project([$billing], [
+            'billings' => [['billing_id' => 'b-1', 'percentage_discount' => 100]],
+        ]);
+
+        $replacement = $projected[array_key_last($projected)];
+        $this->assertSame('A tariff', $replacement->name);
+        $this->assertSame('s-1', $replacement->service_id);
+    }
+
+    /**
+     * What starts first comes first, however days are written. A paper is printed with the day in
+     * front, and read as text the first of January comes before the first of December before it.
+     *
+     * @return void
+     */
+    public function testTheOrderGoesByTheDayNotByHowItIsWritten(): void
+    {
+        $december = $this->billing('b1', 'December');
+        $december->set('billing_from', new Date('2026-12-01'));
+        $january = $this->billing('b2', 'January');
+        $january->set('billing_from', new Date('2027-01-01'));
+
+        $format = (new ReflectionProperty(Date::class, '_toStringFormat'))->getValue();
+        Date::setToStringFormat('dd.MM.yyyy');
+
+        try {
+            $projected = $this->project([$january, $december], []);
+            $rows = (new ProposalProjection())->explain(
+                [$january, $december],
+                ProposalChanges::fromArray([]),
+                new Date(self::EFFECTIVE_FROM),
+            );
+        } finally {
+            Date::setToStringFormat($format);
+        }
+
+        $this->assertSame('December', $projected[0]->name);
+        $this->assertSame('December', $rows[0]['billing']->name);
+    }
+
+    /**
+     * A line with a text of its own is no longer for a service, so the paper says what the records
+     * will: neither the name of the service nor its price.
+     *
+     * @return void
+     */
+    public function testALineWithATextOfItsOwnLeavesTheServiceBehindOnThePaper(): void
+    {
+        $billing = $this->billing('b-1');
+        $billing->unset('text');
+        $billing->set('service', new Service([
+            'id' => 's-1',
+            'name' => 'A tariff',
+            'price' => Decimal::create('450.00'),
+        ]));
+
+        $projected = $this->project([$billing], [
+            'billings' => [['billing_id' => 'b-1', 'text' => 'An individual line']],
+        ]);
+
+        $line = $projected[array_key_last($projected)];
+
+        $this->assertSame('An individual line', $line->name);
+        $this->assertNull($line->service);
+        $this->assertSame('0.00', (string)$line->total_price);
+    }
+
+    /**
+     * Billings the proposal says nothing about pass through untouched.
+     *
+     * @return void
+     */
+    public function testWhatIsNotSpokenOfPassesThrough(): void
+    {
+        $projected = $this->project(
+            [$this->billing('b1'), $this->billing('b2', 'Television')],
+            ['billings' => [['billing_id' => 'b1', 'terminates_only' => true]]],
+        );
+
+        $untouched = array_values(array_filter(
+            $projected,
+            fn(Billing $billing): bool => $billing->id === 'b2',
+        ));
+
+        $this->assertCount(1, $untouched);
+        $this->assertNull($untouched[0]->billing_until);
+    }
+
+    /**
+     * A line that changes the service brings the one it chose, because the contract's own snapshot
+     * was taken before it was chosen and has never heard of it.
+     *
+     * @return void
+     */
+    public function testALineThatChangesTheServiceBringsIt(): void
+    {
+        $chosen = new Service(['id' => 's2', 'name' => 'Internet 100', 'price' => '399.00']);
+
+        $projected = $this->project(
+            [$this->billing('b1')],
+            ['billings' => [['billing_id' => 'b1', 'service_id' => 's2']]],
+            ['s2' => $chosen],
+        );
+
+        $this->assertSame('Internet 100', $projected[1]->service?->name);
+    }
+
+    /**
+     * Two printings of one proposal have to look the same, so the order is settled here rather than
+     * left to whatever order the lines were written in.
+     *
+     * @return void
+     */
+    public function testTheOrderDoesNotDependOnHowTheLinesWereWritten(): void
+    {
+        $billings = [$this->billing('b1', 'Zulu'), $this->billing('b2', 'Alpha')];
+
+        $one = $this->project($billings, []);
+        $other = $this->project(array_reverse($billings), []);
+
+        $this->assertSame(
+            array_map(fn(Billing $billing): string => (string)$billing->name, $one),
+            array_map(fn(Billing $billing): string => (string)$billing->name, $other),
+        );
+        $this->assertSame('Alpha', (string)$one[0]->name);
+    }
+
+    /**
+     * The version takes what the proposal asks of it, including being asked to have no obligation
+     * at all - which is a different thing from not being asked about it.
+     *
+     * @return void
+     */
+    public function testTheVersionTakesWhatIsAskedOfIt(): void
+    {
+        $version = new ContractVersion([
+            'id' => 'v1',
+            'valid_from' => new Date('2025-01-01'),
+            'valid_until' => null,
+            'obligation_until' => new Date('2027-01-01'),
+        ]);
+
+        $projection = new ProposalProjection();
+
+        $ended = $projection->projectVersion(
+            $version,
+            ProposedVersion::fromArray(['valid_until' => '2026-12-31', 'obligation_until' => null]),
+        );
+        $this->assertSame('2026-12-31', $ended->valid_until?->toDateString());
+        $this->assertNull($ended->obligation_until);
+
+        $untouched = $projection->projectVersion($version, ProposedVersion::untouched());
+        $this->assertNull($untouched->valid_until);
+        $this->assertSame('2027-01-01', $untouched->obligation_until?->toDateString());
+
+        $this->assertNull($version->valid_until, 'The record the projection was made from moved.');
+    }
+
+    /**
+     * The version a proposal replaces stops the day before the replacement takes effect.
+     *
+     * @return void
+     */
+    public function testAReplacedVersionStopsTheDayBefore(): void
+    {
+        $version = new ContractVersion(['id' => 'v1', 'valid_until' => null]);
+
+        $projected = (new ProposalProjection())
+            ->projectTerminatedVersion($version, new Date(self::EFFECTIVE_FROM));
+
+        $this->assertSame(self::DAY_BEFORE, $projected->valid_until?->toDateString());
+        $this->assertNull($version->valid_until, 'The record the projection was made from moved.');
+    }
+
+    /**
+     * The papers and the table read the same rows. A billing that never runs is on the table, which
+     * has to say it goes, and not on the papers, which say what is left.
+     *
+     * @return void
+     */
+    public function testThePapersReadWhatTheTableReads(): void
+    {
+        $billing = $this->billing('b-1');
+        $billing->set('billing_from', new Date('2027-06-01'));
+        $changes = ProposalChanges::fromArray([
+            'billings' => [
+                ['billing_id' => 'b-1', 'terminates_only' => true],
+                ['billing_id' => 'b-2', 'terminates_only' => true],
+            ],
+        ]);
+        $billings = [$billing, $this->billing('b-2'), $this->billing('b-3')];
+        $projection = new ProposalProjection();
+        $day = new Date('2027-01-01');
+
+        $rows = $projection->explain($billings, $changes, $day);
+        $kept = array_filter($rows, fn(array $row): bool => !$row['dropped']);
+
+        $this->assertCount(3, $rows);
+        $this->assertEquals(
+            array_column($kept, 'billing'),
+            $projection->projectBillings($billings, $changes, $day),
+        );
+    }
+
+    /**
+     * What a version the papers start says, for the plan and for the record alike.
+     *
+     * @return void
+     */
+    public function testTheVersionThePapersStartIsWhatTheySay(): void
+    {
+        $proposal = new ContractProposal([
+            'effective_from' => new Date('2027-01-01'),
+            'snapshot' => ['contract' => [], 'customer' => [], 'version' => [], 'billings' => []],
+            'changes' => ['version' => ['valid_until' => '2028-12-31']],
+            'customer_proposal' => new CustomerProposal(['conclusion_date' => new Date('2026-12-15')]),
+        ]);
+
+        $starting = (new ProposalProjection())->versionToStart($proposal);
+
+        $this->assertSame('2027-01-01', $starting['valid_from']?->toDateString());
+        $this->assertSame('2028-12-31', $starting['valid_until']?->toDateString());
+        $this->assertNull($starting['obligation_until']);
+        $this->assertSame('2026-12-15', $starting['conclusion_date']?->toDateString());
+    }
+
+    /**
+     * What a proposal does to the equipment is read in three lists: what stays lent, what goes
+     * back and what is lent now. The table on the proposal reads the same, line by line.
+     *
+     * @return void
+     */
+    public function testTheEquipmentIsSplitByWhereItGoes(): void
+    {
+        $kept = new BorrowedEquipment(['id' => 'kept']);
+        $back = new BorrowedEquipment(['id' => 'back']);
+        $new = new BorrowedEquipment(['serial_number' => 'SN-NEW']);
+
+        $changes = ProposalChanges::fromArray([ProposalChanges::EQUIPMENTS => [
+            ['id' => 'return', 'move' => 'return', 'borrowed_equipment_id' => 'back'],
+            ['id' => 'lend', 'move' => 'lend', 'equipment_type_id' => 'type-1'],
+        ]]);
+
+        $projected = (new ProposalProjection())->projectEquipment([$kept, $back], $changes, ['lend' => $new]);
+
+        $this->assertSame([$kept], $projected->continuing);
+        $this->assertSame([$back], $projected->returned);
+        $this->assertSame([$new], $projected->lent);
+        $this->assertSame([$kept, $new], $projected->afterwards());
+        $this->assertTrue($projected->isAnExchange());
+
+        $rows = (new ProposalProjection())->explainEquipment([$kept, $back], $changes, ['lend' => $new]);
+
+        $this->assertNull($rows[0]['line']);
+        $this->assertSame('return', $rows[1]['line']?->id);
+        $this->assertSame($new, $rows[2]['equipment']);
+        $this->assertSame('lend', $rows[2]['line']?->id);
+    }
+}

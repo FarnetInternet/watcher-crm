@@ -1,0 +1,78 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Customers\Check;
+
+use App\Model\Enum\CustomerProposalPurpose;
+use App\Proposals\LateProposals;
+use App\Service\CustomerPrint\CustomerDocuments;
+use Cake\ORM\Query\SelectQuery;
+use Override;
+
+/**
+ * The customer signed and the signed copy has not been filed.
+ *
+ * The one of the three that matters most: a consent is the paper somebody may one day have to be
+ * shown.
+ */
+class UnfiledCustomerProposalCheck extends AbstractCustomerProposalCheck
+{
+    /**
+     * How long after the signature the scan may be missing, if nothing says otherwise.
+     */
+    private const AFTER_DAYS = 7;
+
+    /**
+     * Where the settings say how long that is.
+     */
+    private const AFTER_DAYS_PATH = 'core.customers.paperwork.unfiled.after_signature_days';
+
+    /**
+     * @return string
+     */
+    #[Override]
+    public function id(): string
+    {
+        return 'unfiled_customer_proposal';
+    }
+
+    /**
+     * @return string
+     */
+    #[Override]
+    public function title(): string
+    {
+        return __('Customer Proposal Without Its Documents on File');
+    }
+
+    /**
+     * @return string
+     */
+    #[Override]
+    public function emptyMessage(): string
+    {
+        return __('Every signature recorded has its signed documents on file.');
+    }
+
+    /**
+     * Proposals whose signed copy never arrived.
+     *
+     * @return \Cake\ORM\Query\SelectQuery<\Cake\Datasource\EntityInterface>
+     */
+    #[Override]
+    public function find(): SelectQuery
+    {
+        $after = $this->days(self::AFTER_DAYS_PATH, self::AFTER_DAYS);
+
+        // Only a proposal that asks something of the customer. One that is handed over is concluded
+        // by delivering it, and one with no purpose of its own carries the contracts' papers and
+        // nothing else - their signed copies are filed against the contracts and asked for there.
+        $query = $this->candidates()->where([
+            'CustomerProposals.purpose IN' => CustomerProposalPurpose::signed(),
+        ]);
+
+        LateProposals::unfiled($query, 'CustomerProposals', CustomerDocuments::MODEL, $after);
+
+        return $this->scoped($query);
+    }
+}

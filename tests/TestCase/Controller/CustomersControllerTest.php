@@ -1,0 +1,1611 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Test\TestCase\Controller;
+
+use App\BusinessRegister\Registry;
+use App\Controller\CustomersController;
+use App\Model\Entity\Customer;
+use App\Model\Enum\CustomerDealer;
+use App\Model\Enum\CustomerInvoiceDeliveryType;
+use App\Model\Enum\CustomerLegalStatus;
+use App\Test\TestCase\BusinessRegister\Source\StubSource;
+use App\Test\Traits\ConfigureTestTrait;
+use App\Test\Traits\ControllerTestTrait;
+use Bookkeeping\Provider\Pohoda\PohodaProvider;
+use Cake\Cache\Cache;
+use Cake\Database\Connection;
+use Cake\Database\Log\LoggedQuery;
+use Cake\Datasource\ConnectionManager;
+use Cake\I18n\Date;
+use Cake\TestSuite\IntegrationTestTrait;
+use Cake\TestSuite\TestCase;
+use Override;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\TestWith;
+use PHPUnit\Framework\Attributes\UsesClass;
+use Psr\Log\AbstractLogger;
+use Psr\Log\NullLogger;
+use Settings\Utility\Settings;
+use Stringable;
+
+/**
+ * App\Controller\CustomersController Test Case
+ */
+#[UsesClass(CustomersController::class)]
+class CustomersControllerTest extends TestCase
+{
+    use ConfigureTestTrait;
+    use ControllerTestTrait;
+    use IntegrationTestTrait;
+
+    /**
+     * Customer owning the contract from the Contracts fixture.
+     *
+     * @var string
+     */
+    private const CUSTOMER_ID = '403bab0e-52cd-4a8e-83f8-43c2457d0481';
+
+    /**
+     * Accounting profile from the AccountingProfiles fixture. Every customer belongs to one - the
+     * column is not nullable - so a customer written here has to name it.
+     *
+     * @var string
+     */
+    private const ACCOUNTING_PROFILE_ID = 'ab05963c-1531-4677-a9ee-80cecde25124';
+
+    /**
+     * Contract from the Contracts fixture.
+     *
+     * @var string
+     */
+    private const CONTRACT_ID = '7f76dc3f-a11b-4109-958b-4b0382545a66';
+
+    /**
+     * Verification code of the contract from the Contracts fixture, rendered in the column
+     * the obligation column has to precede.
+     *
+     * @var string
+     */
+    private const VERIFICATION_CODE = 'Lorem ipsum dolor sit amet';
+
+    /**
+     * Fixtures
+     *
+     * @var array<string>
+     */
+    protected array $fixtures = [
+        'app.Users',
+        'app.AccountingProfiles',
+        'app.Customers',
+        'app.Countries',
+        'app.Addresses',
+        'app.Commissions',
+        'app.ContractStates',
+        'app.ServiceTypes',
+        'app.Contracts',
+        'app.ContractVersions',
+        'app.CustomerProposals',
+        'app.ContractProposals',
+        'app.ConnectionProfiles',
+        'app.Services',
+        'app.Billings',
+        'app.EquipmentTypes',
+        'app.BorrowedEquipments',
+        'app.Emails',
+        'app.Labels',
+        'app.CustomerLabels',
+        'app.Logins',
+        'app.Phones',
+        'app.SoldEquipments',
+        'app.IpAddresses',
+        'app.RemovedIpAddresses',
+        'app.IpNetworks',
+        'app.RemovedIpNetworks',
+        'app.TaskStates',
+        'app.TaskTypes',
+        'app.Tasks',
+        'app.TaskCollaborators',
+        'app.DealerCommissions',
+        'app.FulltextSearchCustomers',
+        'app.ServiceOverrides',
+        'plugin.Radius.Accounts',
+        'plugin.Radius.Radusergroup',
+        'plugin.Settings.Settings',
+    ];
+
+    /**
+     * tearDown method
+     *
+     * @return void
+     */
+    #[Override]
+    public function tearDown(): void
+    {
+        $this->restoreConfigure();
+        Cache::clear('business_register');
+        StubSource::reset();
+
+        parent::tearDown();
+    }
+
+    /**
+     * Adds a contract version with the given obligation date to the fixture contract.
+     *
+     * @param string $obligationUntil Obligation date.
+     * @return void
+     */
+    private function addContractVersion(string $obligationUntil): void
+    {
+        $contractVersionsTable = $this->getTableLocator()->get('ContractVersions');
+        $contractVersion = $contractVersionsTable->newEntity([
+            'contract_id' => self::CONTRACT_ID,
+            'valid_from' => '2023-01-01',
+            'obligation_until' => $obligationUntil,
+            'obligations_settled' => false,
+            'number_of_amendments' => 0,
+        ]);
+        $contractVersionsTable->saveOrFail($contractVersion);
+    }
+
+    /**
+     * Asserts the obligation cell of the fixture contract, anchored to the verification code
+     * cell that has to follow it.
+     *
+     * @param string $style Expected style attribute of the cell.
+     * @param string $obligationUntil Expected content of the cell.
+     * @return void
+     */
+    private function assertObligationCell(string $style, string $obligationUntil): void
+    {
+        $this->assertResponseRegExp(
+            '~<td style="' . preg_quote($style, '~') . '">' . preg_quote($obligationUntil, '~') . '</td>\s*'
+            . '<td>' . preg_quote(self::VERIFICATION_CODE, '~') . '</td>~',
+        );
+    }
+
+    /**
+     * Test index method
+     *
+     * The advanced search carries its parameters in the condition expression rather than binding
+     * them on the query, so that they survive the derived table the eager loader builds for the
+     * contained associations. Without that the contracts fetch runs with unbound placeholders.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::index()
+     */
+    public function testIndex(): void
+    {
+        $this->login();
+        $this->get('/customers?advanced_search=1&search=Lorem');
+
+        $this->assertResponseOk();
+
+        /** @var iterable<\App\Model\Entity\Customer> $customers */
+        $customers = $this->viewVariable('customers');
+        $found = [];
+        foreach ($customers as $customer) {
+            $found[] = $customer->id;
+            $this->assertNotNull($customer->contracts);
+        }
+
+        $this->assertContains(self::CUSTOMER_ID, $found);
+    }
+
+    /**
+     * The listing finds a customer by what their related records say, which is what the advanced
+     * search is for - the address searched for is on no column of the customer.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::index()
+     */
+    public function testIndexFindsACustomerByWhatTheirRelatedRecordsSay(): void
+    {
+        $this->fetchTable('FulltextSearchCustomers')->rebuild();
+
+        $this->login();
+        $this->get('/customers?advanced_search=1&search=192.168.11.11');
+
+        $this->assertResponseOk();
+
+        /** @var iterable<\App\Model\Entity\Customer> $customers */
+        $customers = $this->viewVariable('customers');
+        $found = [];
+        foreach ($customers as $customer) {
+            $found[] = $customer->id;
+        }
+
+        $this->assertContains(self::CUSTOMER_ID, $found);
+    }
+
+    /**
+     * The advanced search is answered no more than twice per page - once for the listing and once
+     * for the count that pages it.
+     *
+     * The `subquery` strategy CakePHP 5.4 made the default for hasMany runs the whole listing
+     * query again for every contained association, four of them here. The strategy is pinned in
+     * the contain against that, and this is what notices a hasMany added without one.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::index()
+     */
+    public function testIndexAnswersTheAdvancedSearchTwiceAtMost(): void
+    {
+        $connection = ConnectionManager::get('test');
+        assert($connection instanceof Connection);
+
+        $searches = 0;
+        $connection->getDriver()->setLogger(new class ($searches) extends AbstractLogger {
+            /**
+             * @param int $searches Times the search has been answered.
+             */
+            public function __construct(private int &$searches)
+            {
+            }
+
+            /**
+             * @inheritDoc
+             */
+            public function log($level, string|Stringable $message, array $context = []): void
+            {
+                $query = $context['query'] ?? null;
+                if (!$query instanceof LoggedQuery) {
+                    return;
+                }
+
+                if (str_contains((string)($query->jsonSerialize()['query'] ?? ''), 'websearch_to_tsquery')) {
+                    $this->searches++;
+                }
+            }
+        });
+
+        $this->login();
+        $this->get('/customers?advanced_search=1&search=Lorem');
+
+        $connection->getDriver()->setLogger(new NullLogger());
+
+        $this->assertResponseOk();
+        $this->assertLessThanOrEqual(2, $searches, 'The advanced search is being answered more than once per query.');
+    }
+
+    /**
+     * Test view method
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::view()
+     */
+    public function testView(): void
+    {
+        $this->login();
+        $this->get('/customers/view/' . self::CUSTOMER_ID);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains(__('Obligation Until'));
+    }
+
+    /**
+     * The card offers to send the customer to the accounting system at once, rather than on the
+     * next scheduled run - only where their partner card there is ours to write, and only to whoever
+     * may send it.
+     *
+     * @return array<string, array{string, bool, int, bool}>
+     */
+    public static function partnerCards(): array
+    {
+        return [
+            'to be synchronized' => ['admin', true, 0, true],
+            'not to be synchronized' => ['admin', false, 0, false],
+            'below the first number' => ['admin', true, 999999999, false],
+            'for whoever may not send it' => ['user', true, 0, false],
+        ];
+    }
+
+    /**
+     * @param string $role Role to sign in as.
+     * @param bool $syncToAccounting Whether the customer is to be synchronized.
+     * @param int $minCustomerNumber The number the partner cards are ours from.
+     * @param bool $offered Whether the card offers to send them.
+     * @return void
+     * @link \App\Controller\CustomersController::view()
+     */
+    #[DataProvider('partnerCards')]
+    public function testViewOffersToSendTheCustomerToTheAccountingSystem(
+        string $role,
+        bool $syncToAccounting,
+        int $minCustomerNumber,
+        bool $offered,
+    ): void {
+        Cache::clear('default');
+        Settings::set('bookkeeping.accounting.default_provider', 'pohoda');
+        Settings::set(PohodaProvider::SETTINGS_ROOT . '.customers.min_customer_number', $minCustomerNumber);
+        $this->getTableLocator()->get('Customers')
+            ->updateAll(['sync_to_accounting' => $syncToAccounting], ['id' => self::CUSTOMER_ID]);
+
+        $this->login($role);
+        $this->get('/customers/view/' . self::CUSTOMER_ID);
+        Cache::clear('default');
+
+        $this->assertResponseOk();
+        $offered
+            ? $this->assertResponseContains('/bookkeeping/partners/send/' . self::CUSTOMER_ID)
+            : $this->assertResponseNotContains('/bookkeeping/partners/send/');
+    }
+
+    /**
+     * As on a contract: whoever may look at the customer may ask what does not add up about
+     * them. The findings being fetched on their own must not narrow who is shown them.
+     *
+     * @param string $role Role to sign in as.
+     * @return void
+     * @link \App\Controller\CustomersController::problems()
+     */
+    #[DataProvider('everyRole')]
+    public function testWhoeverMayLookAtTheCustomerMayAskWhatIsWrongWithThem(string $role): void
+    {
+        $this->login($role);
+        $this->get('/customers/view/' . self::CUSTOMER_ID);
+        $viewing = $this->_response?->getStatusCode();
+
+        $this->login($role);
+        $this->get('/customers/problems/' . self::CUSTOMER_ID);
+
+        $this->assertSame(
+            $viewing,
+            $this->_response?->getStatusCode(),
+            sprintf('%s is shown the customer but not what does not add up about them.', $role),
+        );
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function everyRole(): array
+    {
+        $roles = [
+            'admin',
+            'sales-manager',
+            'network-manager',
+            'bookkeeper',
+            'sales-representative',
+            'network-technician',
+            'customer-service-technician',
+        ];
+
+        return array_combine($roles, array_map(fn(string $role): array => [$role], $roles));
+    }
+
+    /**
+     * The checks come to about as much work as the rest of the page put together, so the card
+     * must not be waiting on them - it draws first and asks for them afterwards.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::view()
+     */
+    public function testViewAsksForTheFindingsRatherThanWaitingForThem(): void
+    {
+        $this->login();
+        $this->get('/customers/view/' . self::CUSTOMER_ID);
+
+        $this->assertResponseOk();
+        $this->assertNull($this->viewVariable('problems'), 'The card ran the checks itself.');
+        $this->assertResponseContains('/customers/problems/' . self::CUSTOMER_ID);
+        $this->assertResponseContains('js/lazy-load.js');
+    }
+
+    /**
+     * What does not add up on a customer's contracts is shown on their card, gathered over all
+     * of them - most of what is wrong with one was done to all of them on the day they were
+     * written, and a customer's card is where that is seen at once.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::view()
+     */
+    public function testViewShowsWhatDoesNotAddUpOnTheirContracts(): void
+    {
+        $contracts = $this->getTableLocator()->get('Contracts');
+        $contract_id = $contracts->find()
+            ->where(['Contracts.customer_id' => self::CUSTOMER_ID])
+            ->firstOrFail()
+            ->get('id');
+
+        $billings = $this->getTableLocator()->get('Billings');
+        $billings->deleteAll(['customer_id' => self::CUSTOMER_ID]);
+
+        $service_id = $this->getTableLocator()->get('Services')->find()->firstOrFail()->get('id');
+
+        // a year that nobody is billed for, which is what the check is there to find
+        foreach ([['+1 month', '+13 months'], ['+25 months', null]] as [$from, $until]) {
+            $billings->saveOrFail($billings->newEntity([
+                'customer_id' => self::CUSTOMER_ID,
+                'contract_id' => $contract_id,
+                'service_id' => $service_id,
+                'billing_from' => Date::now()->modify($from)->format('Y-m-d'),
+                'billing_until' => $until === null ? null : Date::now()->modify($until)->format('Y-m-d'),
+                'quantity' => 1,
+                'separate_invoice' => false,
+            ]));
+        }
+
+        $this->login();
+        $this->get('/customers/problems/' . self::CUSTOMER_ID);
+
+        $this->assertResponseOk();
+        $this->assertContains('billing_gap', $this->reportedChecks());
+
+        // gathered over several contracts, so each row has to say which one it is about
+        $this->assertResponseContains('probably not right');
+        $this->assertResponseContains('Gap Between Consecutive Billings');
+
+        // drawn on its own, so it arrives as the block itself rather than as a page
+        $this->assertResponseNotContains('<html');
+    }
+
+    /**
+     * And what is missing about the customer themselves, which is the third family the card
+     * gathers. Whichever family a finding came from is not something the page has to know.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::problems()
+     */
+    public function testViewShowsWhatIsMissingAboutTheCustomerToo(): void
+    {
+        $this->getTableLocator()->get('Emails')->deleteAll(['customer_id' => self::CUSTOMER_ID]);
+
+        $this->login();
+        $this->get('/customers/problems/' . self::CUSTOMER_ID);
+
+        $this->assertResponseOk();
+        $this->assertContains('missing_email', $this->reportedChecks());
+        $this->assertResponseContains('No E-mail Address');
+    }
+
+    /**
+     * The card carries what the address checks have on them beside what the contract checks
+     * do. Which family a finding came from is not something the page has to know - the check
+     * says which listing draws it - and this is what says the two really do arrive together.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::view()
+     */
+    public function testViewShowsWhatIsWrongWithTheirAddressesToo(): void
+    {
+        $this->login();
+        $this->get('/customers/problems/' . self::CUSTOMER_ID);
+
+        $this->assertResponseOk();
+
+        $reported = $this->reportedChecks();
+
+        $this->assertContains('missing_installation_address', $reported, 'No address check reached the card.');
+        $this->assertResponseContains('Contract Without an Installation Address');
+    }
+
+    /**
+     * The RADIUS accounts are held against the tariffs on the card too, drawn by the plugin's
+     * own listing. The fixtures put the customer's account in another group than their tariff names.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::problems()
+     */
+    public function testViewShowsTheRadiusAccountsNotMatchingTheirTariff(): void
+    {
+        $this->login();
+        $this->get('/customers/problems/' . self::CUSTOMER_ID);
+
+        $this->assertResponseOk();
+        $this->assertContains('radius_group_mismatch', $this->reportedChecks());
+        $this->assertResponseContains('RADIUS Group Not Matching the Tariff');
+        $this->assertResponseContains('/radius/accounts/view/ab8f2c14-6d3e-4b91-9f0a-7c25d8e41b63');
+    }
+
+    /**
+     * A customer holding a dozen contracts gathers enough findings to push their card off the
+     * screen, so a banner past a few rows is cut to a height and opened by whoever wants it.
+     * Nothing is left out - the checks all ran and all of them are in the page.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::problems()
+     */
+    public function testALongBannerIsCutToAHeightAndOpenedByTheReader(): void
+    {
+        $this->login();
+        $this->get('/customers/problems/' . self::CUSTOMER_ID);
+
+        $this->assertResponseOk();
+        $this->assertGreaterThan(1, count($this->reportedChecks()), 'The card had too little on it to be cut.');
+        $this->assertResponseContains('problems-toggle');
+        $this->assertResponseContains('problems-viewport clamped');
+    }
+
+    /**
+     * The checks reported on the card, by name.
+     *
+     * @return list<string>
+     */
+    private function reportedChecks(): array
+    {
+        /** @var list<array{check: \App\Check\CheckInterface, records: iterable<mixed>}> $problems */
+        $problems = $this->viewVariable('problems');
+
+        return array_map(fn(array $problem): string => $problem['check']->id(), $problems);
+    }
+
+    /**
+     * The tasks filed under the customer are listed on their card - one table written once and
+     * shown wherever tasks stand beside a record.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::view()
+     */
+    public function testViewListsTheTasksFiledUnderTheCustomer(): void
+    {
+        /** @var \App\Model\Entity\Task $task */
+        $task = $this->getTableLocator()->get('Tasks')
+            ->find()
+            ->where(['Tasks.customer_id' => self::CUSTOMER_ID])
+            ->firstOrFail();
+
+        $this->login();
+        $this->get('/customers/view/' . self::CUSTOMER_ID);
+
+        $this->assertResponseOk();
+        // by identifier rather than by number: a task is numbered from one, and a page carries
+        // plenty of small numbers that say nothing about tasks
+        $this->assertResponseContains($task->id);
+    }
+
+    /**
+     * Test that the related contracts show the latest obligation date of their contract versions.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::view()
+     */
+    public function testViewShowsLatestObligationUntilOfContractVersions(): void
+    {
+        // later than the 2022-11-30 obligation of the fixture contract version, but still in the past
+        $this->addContractVersion('2023-06-30');
+
+        $this->login();
+        $this->get('/customers/view/' . self::CUSTOMER_ID);
+
+        $this->assertResponseOk();
+        $this->assertObligationCell('', (string)new Date('2023-06-30'));
+    }
+
+    /**
+     * Test that an obligation date in the future is highlighted, as it is on the contract detail.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::view()
+     */
+    public function testViewHighlightsFutureObligationUntil(): void
+    {
+        $futureObligationUntil = Date::now()->addYears(1);
+        $this->addContractVersion($futureObligationUntil->toDateString());
+
+        $this->login();
+        $this->get('/customers/view/' . self::CUSTOMER_ID);
+
+        $this->assertResponseOk();
+        $this->assertObligationCell('color: red;', (string)$futureObligationUntil);
+    }
+
+    /**
+     * Test that a contract without any obligation renders an empty cell.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::view()
+     */
+    public function testViewRendersEmptyObligationUntilWithoutObligation(): void
+    {
+        $contractVersionsTable = $this->getTableLocator()->get('ContractVersions');
+        $contractVersionsTable->updateAll(['obligation_until' => null], ['contract_id' => self::CONTRACT_ID]);
+
+        $this->login();
+        $this->get('/customers/view/' . self::CUSTOMER_ID);
+
+        $this->assertResponseOk();
+        $this->assertObligationCell('', '');
+    }
+
+    /**
+     * The form for a new customer renders.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::add()
+     */
+    public function testAdd(): void
+    {
+        $this->login();
+        $this->get('/customers/add');
+
+        $this->assertResponseOk();
+    }
+
+    /**
+     * The form of an existing customer renders.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::edit()
+     */
+    public function testEdit(): void
+    {
+        $this->login();
+        $this->get('/customers/' . self::CUSTOMER_ID . '/edit');
+
+        $this->assertResponseOk();
+    }
+
+    /**
+     * A customer filled in on the form is really stored, and the operator is sent to the record
+     * they just made.
+     *
+     * Rendering the form proves the page is there; this proves the way through it works. Everything
+     * between the two - marshalling, validation, the application rules and the save - only ever
+     * runs on a request that carries data, and a controller test that never posts one leaves the
+     * whole of it unasked.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::add()
+     */
+    public function testAddStoresACustomer(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        // the fixtures write the identity column with the values they carry, which leaves the
+        // identity itself where it started
+        $this->advanceIdentity('customers', 'nid');
+
+        $this->post('/customers/add', [
+            'last_name' => 'Smith',
+            'first_name' => 'John',
+            'legal_status' => CustomerLegalStatus::NaturalPerson->value,
+            'dealer' => CustomerDealer::Never->value,
+            'invoice_delivery_type' => CustomerInvoiceDeliveryType::Email->value,
+            'accounting_profile_id' => self::ACCOUNTING_PROFILE_ID,
+        ]);
+
+        $this->assertRedirect();
+        $customers = $this->getTableLocator()->get('Customers');
+        /** @var \App\Model\Entity\Customer $stored */
+        $stored = $customers->find()->where(['last_name' => 'Smith'])->firstOrFail();
+        $this->assertSame('John', $stored->first_name);
+        $this->assertRedirectContains('/customers/' . $stored->id);
+    }
+
+    /**
+     * A new customer is one to synchronize until somebody says otherwise, and the form has to open
+     * that way: an operator who never looks at the box gets what everybody had before it existed.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::add()
+     */
+    public function testAddOpensWithSynchronizationToAccountingTurnedOn(): void
+    {
+        $this->login();
+        $this->get('/customers/add');
+
+        $this->assertResponseOk();
+        $this->assertResponseContains(
+            '<input type="checkbox" name="sync_to_accounting" value="1" id="sync-to-accounting"'
+            . ' checked="checked">',
+        );
+    }
+
+    /**
+     * A box somebody unticks is really stored unticked. It is the whole of what the flag does - the
+     * partner is then theirs to keep right in the accounting system - so a save that quietly put it
+     * back would send them to the accounting system anyway.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::add()
+     */
+    public function testAddStoresACustomerNotToBeSynchronized(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        // the fixtures write the identity column with the values they carry, which leaves the
+        // identity itself where it started
+        $this->advanceIdentity('customers', 'nid');
+
+        $this->post('/customers/add', [
+            'last_name' => 'Baker',
+            'legal_status' => CustomerLegalStatus::NaturalPerson->value,
+            'dealer' => CustomerDealer::Never->value,
+            'invoice_delivery_type' => CustomerInvoiceDeliveryType::Email->value,
+            'accounting_profile_id' => self::ACCOUNTING_PROFILE_ID,
+            'sync_to_accounting' => '0',
+        ]);
+
+        $this->assertRedirect();
+        $customers = $this->getTableLocator()->get('Customers');
+        /** @var \App\Model\Entity\Customer $stored */
+        $stored = $customers->find()->where(['last_name' => 'Baker'])->firstOrFail();
+        $this->assertFalse($stored->sync_to_accounting);
+    }
+
+    /**
+     * A customer the rules refuse is not stored, and the operator is given the form back rather
+     * than a redirect that would suggest it went through.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::add()
+     */
+    public function testAddRefusesACustomerTheRulesRejects(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->advanceIdentity('customers', 'nid');
+
+        $customers = $this->getTableLocator()->get('Customers');
+        $before = $customers->find()->count();
+
+        // an accounting profile that is not there - the rules have to catch it
+        $this->post('/customers/add', [
+            'last_name' => 'Smith',
+            'dealer' => CustomerDealer::Never->value,
+            'invoice_delivery_type' => CustomerInvoiceDeliveryType::Email->value,
+            'accounting_profile_id' => '3f2b1a0c-0000-4000-8000-000000000000',
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertSame($before, $customers->find()->count());
+    }
+
+    /**
+     * A customer submitted without an accounting profile is given the form back with the field
+     * marked, rather than an error page.
+     *
+     * Every customer is billed under a profile and the column says so, but nothing used to ask for
+     * one before the save - so a form submitted without it reached the database and came back as a
+     * not-null violation, which the operator sees as a 500.
+     *
+     * @return void
+     * @link \App\Model\Table\CustomersTable::validationDefault()
+     */
+    public function testAddRefusesACustomerWithoutAnAccountingProfile(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->advanceIdentity('customers', 'nid');
+
+        $customers = $this->getTableLocator()->get('Customers');
+        $before = $customers->find()->count();
+
+        $this->post('/customers/add', [
+            'last_name' => 'Smith',
+            'dealer' => CustomerDealer::Never->value,
+            'invoice_delivery_type' => CustomerInvoiceDeliveryType::Email->value,
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertSame($before, $customers->find()->count());
+    }
+
+    /**
+     * A change made on the form reaches the record.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::edit()
+     */
+    public function testEditStoresTheChange(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $this->post('/customers/' . self::CUSTOMER_ID . '/edit', ['last_name' => 'Brown']);
+
+        $this->assertRedirect();
+        $this->assertSame(
+            'Brown',
+            $this->getTableLocator()->get('Customers')->get(self::CUSTOMER_ID)->last_name,
+        );
+    }
+
+    /**
+     * A role that is not admin does not get to add a customer.
+     *
+     * Every other test here logs in as admin, which `config/permissions.php` lets through
+     * everything - so none of them can tell a controller that is guarded from one that is not. This
+     * asks the authorization layer the only question that matters about it: does a refusal really
+     * happen.
+     *
+     * A refusal is a redirect away rather than a status in the 400s - the middleware sends whoever
+     * is not allowed somewhere they are - so what this holds on to is that they do not arrive at
+     * the form.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::add()
+     */
+    public function testAddIsRefusedToANonAdminRole(): void
+    {
+        $this->login('user');
+
+        $this->get('/customers/add');
+
+        $this->assertRedirect('/');
+    }
+
+    /**
+     * The same role does get to list customers, which all the staff are allowed. Without this the test
+     * above would pass just as well on a role that is refused everything, and would be saying
+     * nothing about the permissions at all.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::index()
+     */
+    public function testIndexIsAllowedToANonAdminRole(): void
+    {
+        $this->login('user');
+
+        $this->get('/customers');
+
+        $this->assertResponseOk();
+    }
+
+    /**
+     * Letting that role in is not letting it read the customers. It gets the one whose number it
+     * knows, and neither the whole list nor a search by name, whatever the request says.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::index()
+     */
+    public function testANonAdminRoleFindsACustomerOnlyByTheNumber(): void
+    {
+        $number = $this->fetchTable('Customers')->get(self::CUSTOMER_ID)->get('number');
+        $found = function (string $query): array {
+            $this->get('/customers' . $query);
+            $this->assertResponseOk();
+
+            /** @var iterable<\App\Model\Entity\Customer> $customers */
+            $customers = $this->viewVariable('customers');
+
+            return array_map(fn(Customer $customer): string => (string)$customer->id, [...$customers]);
+        };
+
+        $this->login('admin');
+        $this->assertContains(self::CUSTOMER_ID, $found('?search=&advanced_search=0'));
+
+        $this->login('user');
+        $this->assertSame([], $found('?search=&advanced_search=0'));
+        $this->assertSame([], $found('?search=NETAIR&advanced_search=1'));
+        $this->assertSame([self::CUSTOMER_ID], $found('?search=' . $number));
+    }
+
+    /**
+     * The delete action runs and redirects. Whether the customer really goes depends on what else
+     * still references them, which is the application rules' business rather than this test's.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::delete()
+     */
+    public function testDelete(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/customers/' . self::CUSTOMER_ID . '/delete');
+
+        $this->assertRedirect();
+    }
+
+    /**
+     * An identification number that fails its own check digit is marked as the mistake it is,
+     * rather than being left to be read off a bracket among the others.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::view()
+     */
+    public function testViewMarksAnInvalidIdentityNumberAsAnError(): void
+    {
+        $customers = $this->getTableLocator()->get('Customers');
+        /** @var \App\Model\Entity\Customer $customer */
+        $customer = $customers->get(self::CUSTOMER_ID);
+        $customer->identity_number = '12345678'; // eight digits, wrong check digit
+        $customers->saveOrFail($customer, ['checkRules' => false]);
+
+        $this->login();
+        $this->get('/customers/view/' . self::CUSTOMER_ID);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('<span class="error-text"> (Invalid)</span>');
+    }
+
+    /**
+     * A number that holds up is not dressed as a mistake.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::view()
+     */
+    public function testViewLeavesAValidIdentityNumberUnmarked(): void
+    {
+        $this->login();
+        $this->get('/customers/view/' . self::CUSTOMER_ID);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains(' (OK)');
+        $this->assertResponseNotContains('<span class="error-text"> (Invalid)</span>');
+    }
+
+    /**
+     * Picking a company in the register fills the form in and hands it back, without storing
+     * anything - the operator has not said to save yet, only which company they meant.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::add()
+     */
+    public function testAddFillsTheFormInFromTheRegisterWithoutStoring(): void
+    {
+        StubSource::$entries = [
+            [
+                'reference' => '27496139',
+                'name' => 'NETAIR, s.r.o.',
+                'company' => 'NETAIR, s.r.o.',
+                'identity_number' => '27496139',
+                'vat_number' => 'CZ27496139',
+            ],
+        ];
+        $this->withConfigure(['BusinessRegister.sources' => ['stub' => StubSource::class]]);
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $customers = $this->getTableLocator()->get('Customers');
+        $before = $customers->find()->count();
+
+        $this->post('/customers/add', [
+            'refresh' => 'refresh',
+            'business_register_source' => 'stub',
+            'business_register_search' => 'stub|27496139',
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('NETAIR, s.r.o.');
+        $this->assertResponseContains('CZ27496139');
+        $this->assertSame($before, $customers->find()->count());
+    }
+
+    /**
+     * A form sent to be saved and refused is not filled in again from the company it still carries,
+     * which would take away what the operator wrote on it.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::add()
+     * @link \App\Controller\CustomersController::edit()
+     */
+    public function testARefusedFormKeepsWhatWasWrittenOnIt(): void
+    {
+        StubSource::$entries = [
+            [
+                'reference' => '27496139',
+                'name' => 'NETAIR, s.r.o.',
+                'company' => 'NETAIR, s.r.o.',
+                'identity_number' => '27496139',
+            ],
+        ];
+        $this->withConfigure(['BusinessRegister.sources' => ['stub' => StubSource::class]]);
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        foreach (['/customers/add', '/customers/edit/' . self::CUSTOMER_ID] as $url) {
+            $this->post($url, [
+                'business_register_source' => 'stub',
+                'business_register_search' => 'stub|27496139',
+                'company' => 'NETAIR, s.r.o.',
+                'date_of_birth' => '1980-05-17',
+                'bank_code' => '123456',
+            ]);
+
+            $this->assertResponseOk();
+            $this->assertResponseContains('value="1980-05-17"');
+        }
+    }
+
+    /**
+     * The page asks no register of its own: the notes are fetched once it is already up, so a
+     * register taking its time - VIES has taken six seconds over a personal VAT number - is no
+     * longer six seconds of the customer's detail not being there.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::view()
+     */
+    public function testViewLeavesTheRegistersToBeAskedAfterwards(): void
+    {
+        StubSource::$entries = [
+            ['reference' => '27496139', 'name' => 'NETAIR, s.r.o.'],
+        ];
+        $this->withConfigure(['BusinessRegister.sources' => ['stub' => StubSource::class]]);
+        $this->givenCustomerNumbers('27496139', 'CZ27496139');
+
+        $this->login();
+        $this->get('/customers/view/' . self::CUSTOMER_ID);
+
+        $this->assertResponseOk();
+        // the numbers themselves, and what the check digit makes of them, are on the page at once
+        $this->assertResponseContains('27496139');
+        // what a register says is asked for separately, once for each number
+        $this->assertResponseContains('/customers/register-note/' . self::CUSTOMER_ID . '/identity');
+        $this->assertResponseContains('/customers/register-note/' . self::CUSTOMER_ID . '/vat');
+        $this->assertResponseNotContains('NETAIR, s.r.o. (');
+    }
+
+    /**
+     * The search reads no cache, so the operator can pick a company somebody looked up before it
+     * was registered. Picking it has to work, not say the register no longer holds it.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::add()
+     */
+    public function testACompanyRegisteredSinceTheLastLookupCanBePicked(): void
+    {
+        $this->withConfigure(['BusinessRegister.sources' => ['stub' => StubSource::class]]);
+        Registry::byReferenceFromCache('stub', '27496139');
+        StubSource::$entries = [['reference' => '27496139', 'name' => 'NETAIR, s.r.o.']];
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/customers/add', [
+            'refresh' => 'refresh',
+            'business_register_source' => 'stub',
+            'business_register_search' => 'stub|27496139',
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertResponseNotContains(__('The company is no longer held by the register.'));
+        $this->assertResponseContains('NETAIR, s.r.o.');
+    }
+
+    /**
+     * There are two numbers to ask about and nothing else, so a third name is nowhere to be found
+     * rather than quietly answered with an empty note.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::registerNote()
+     */
+    public function testThereIsNoThirdNumberToAskAbout(): void
+    {
+        $this->login();
+        $this->get('/customers/register-note/' . self::CUSTOMER_ID . '/something-else');
+
+        $this->assertResponseCode(404);
+    }
+
+    /**
+     * Gives the fixture customer the numbers a register is asked about.
+     *
+     * @param string $identityNumber The identification number to give them.
+     * @param string $vatNumber The VAT number to give them.
+     * @param \App\Model\Enum\CustomerLegalStatus|null $legalStatus Who they are in law.
+     * @return void
+     */
+    private function givenCustomerNumbers(
+        string $identityNumber,
+        string $vatNumber,
+        ?CustomerLegalStatus $legalStatus = null,
+    ): void {
+        $customers = $this->getTableLocator()->get('Customers');
+        /** @var \App\Model\Entity\Customer $customer */
+        $customer = $customers->get(self::CUSTOMER_ID);
+        $customer->company = 'NETAIR, s.r.o.';
+        $customer->identity_number = $identityNumber;
+        $customer->vat_number = $vatNumber;
+        $customer->legal_status = $legalStatus;
+        $customers->saveOrFail($customer);
+    }
+
+    /**
+     * A register naming somebody else under the customer's identification number is marked as the
+     * mistake it is - the number checks out, so nothing else would show it.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::view()
+     */
+    public function testViewMarksARegisterNamingSomebodyElse(): void
+    {
+        StubSource::$entries = [
+            ['reference' => '27496139', 'name' => 'Somebody Else, a.s.'],
+        ];
+        $this->withConfigure(['BusinessRegister.sources' => ['stub' => StubSource::class]]);
+
+        $customers = $this->getTableLocator()->get('Customers');
+        /** @var \App\Model\Entity\Customer $customer */
+        $customer = $customers->get(self::CUSTOMER_ID);
+        $customer->company = 'NETAIR, s.r.o.';
+        $customer->identity_number = '27496139';
+        $customers->saveOrFail($customer);
+
+        $this->login();
+        $this->get('/customers/register-note/' . self::CUSTOMER_ID . '/identity');
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('<span class="error-text"> (Somebody Else, a.s.)</span>');
+    }
+
+    /**
+     * The same name written the way another register writes it is not a mistake, so it is left
+     * alone - a legal form abbreviated differently is the same company.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::view()
+     */
+    public function testViewLeavesAMatchingNameUnmarked(): void
+    {
+        StubSource::$entries = [
+            ['reference' => '27496139', 'name' => 'NETAIR s. r. o.'],
+        ];
+        $this->withConfigure(['BusinessRegister.sources' => ['stub' => StubSource::class]]);
+
+        $customers = $this->getTableLocator()->get('Customers');
+        /** @var \App\Model\Entity\Customer $customer */
+        $customer = $customers->get(self::CUSTOMER_ID);
+        $customer->company = 'NETAIR, s.r.o.';
+        $customer->identity_number = '27496139';
+        $customers->saveOrFail($customer);
+
+        $this->login();
+        $this->get('/customers/register-note/' . self::CUSTOMER_ID . '/identity');
+
+        $this->assertResponseOk();
+        $this->assertResponseContains(' (NETAIR s. r. o.)');
+        $this->assertResponseNotContains('<span class="error-text"> (NETAIR s. r. o.)</span>');
+    }
+
+    /**
+     * Not being in a register of companies is a mistake for somebody in business and nothing at
+     * all for anybody else, so it says the same in both but is marked only for the first. The
+     * customer here has a company name, which is what speaks for one with no legal status yet.
+     *
+     * @param \App\Model\Enum\CustomerLegalStatus|null $legalStatus Who the customer is in law.
+     * @param bool $wrong Whether it is marked.
+     * @return void
+     * @link \App\Controller\CustomersController::registerNote()
+     */
+    #[TestWith([CustomerLegalStatus::LegalEntity, true])]
+    #[TestWith([CustomerLegalStatus::SoleTrader, true])]
+    #[TestWith([CustomerLegalStatus::NaturalPerson, false])]
+    #[TestWith([null, true])]
+    public function testRegisterNoteMarksAMissingNumberOnlyOfABusiness(
+        ?CustomerLegalStatus $legalStatus,
+        bool $wrong,
+    ): void {
+        $this->withConfigure(['BusinessRegister.sources' => ['stub' => StubSource::class]]);
+        $this->givenCustomerNumbers('27496139', 'CZ27496139', $legalStatus);
+
+        $this->login();
+        $this->get('/customers/register-note/' . self::CUSTOMER_ID . '/identity');
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('not in the register');
+        $this->assertSame($wrong, str_contains($this->_getBodyAsString(), 'error-text'));
+    }
+
+    /**
+     * A legal status the register disagrees with is marked, because it decides the clauses the
+     * customer's contract papers print and nothing else on the page would show it.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::registerNote()
+     */
+    public function testRegisterNoteMarksALegalStatusTheRegisterDisagreesWith(): void
+    {
+        StubSource::$entries = [
+            ['reference' => '27496139', 'name' => 'NETAIR, s.r.o.', 'legal_status' => 'legal-entity'],
+        ];
+        $this->withConfigure(['BusinessRegister.sources' => ['stub' => StubSource::class]]);
+        $this->givenCustomerNumbers('27496139', 'CZ27496139', CustomerLegalStatus::NaturalPerson);
+
+        $this->login();
+        $this->get('/customers/register-note/' . self::CUSTOMER_ID . '/identity');
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('<span class="error-text"> (in the register as Legal Entity)</span>');
+    }
+
+    /**
+     * A legal status the register agrees with needs no remark.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::registerNote()
+     */
+    public function testRegisterNoteLeavesAMatchingLegalStatusUnmarked(): void
+    {
+        StubSource::$entries = [
+            ['reference' => '27496139', 'name' => 'NETAIR, s.r.o.', 'legal_status' => 'legal-entity'],
+        ];
+        $this->withConfigure(['BusinessRegister.sources' => ['stub' => StubSource::class]]);
+        $this->givenCustomerNumbers('27496139', 'CZ27496139', CustomerLegalStatus::LegalEntity);
+
+        $this->login();
+        $this->get('/customers/register-note/' . self::CUSTOMER_ID . '/identity');
+
+        $this->assertResponseOk();
+        $this->assertResponseNotContains('in the register as');
+    }
+
+    /**
+     * A customer is not stored without a legal status, as the clauses of their papers follow it.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::add()
+     */
+    public function testAddRefusesACustomerWithoutALegalStatus(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $this->post('/customers/add', [
+            'last_name' => 'Nobody',
+            'legal_status' => '',
+            'dealer' => CustomerDealer::Never->value,
+            'invoice_delivery_type' => CustomerInvoiceDeliveryType::Email->value,
+            'accounting_profile_id' => self::ACCOUNTING_PROFILE_ID,
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('Choose the legal status, the clauses of the contract papers follow it.');
+        $this->assertSame(0, $this->getTableLocator()->get('Customers')->find()->where(['last_name' => 'Nobody'])->count());
+    }
+
+    /**
+     * A customer nobody has said the legal status of is marked on their detail, so that it is put
+     * right before any papers are drawn for them.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::view()
+     */
+    public function testViewMarksAMissingLegalStatus(): void
+    {
+        $this->givenCustomerNumbers('27496139', 'CZ27496139', null);
+
+        $this->login();
+        $this->get('/customers/view/' . self::CUSTOMER_ID);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains(
+            '<span class="error-text">Choose the legal status, the clauses of the contract papers follow it.</span>',
+        );
+    }
+
+    /**
+     * A new customer opens as a natural person, which is what most of them are.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::add()
+     */
+    public function testAddOpensAsANaturalPerson(): void
+    {
+        $this->login();
+        $this->get('/customers/add');
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('<option value="natural-person" selected="selected">');
+    }
+
+    /**
+     * The legal status chosen on the form is stored.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::add()
+     */
+    public function testAddStoresTheLegalStatus(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        // the fixtures write the identity column with the values they carry, which leaves the
+        // identity itself where it started
+        $this->advanceIdentity('customers', 'nid');
+
+        $this->post('/customers/add', [
+            'last_name' => 'Smith',
+            'first_name' => 'John',
+            'legal_status' => CustomerLegalStatus::SoleTrader->value,
+            'dealer' => CustomerDealer::Never->value,
+            'invoice_delivery_type' => CustomerInvoiceDeliveryType::Email->value,
+            'accounting_profile_id' => self::ACCOUNTING_PROFILE_ID,
+        ]);
+
+        $this->assertRedirect();
+        /** @var \App\Model\Entity\Customer $stored */
+        $stored = $this->getTableLocator()->get('Customers')->find()->where(['last_name' => 'Smith'])->firstOrFail();
+        $this->assertSame(CustomerLegalStatus::SoleTrader, $stored->legal_status);
+    }
+
+    /**
+     * Picking a company in the register fills its legal status in along with its name.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::add()
+     */
+    public function testAddFillsTheLegalStatusInFromTheRegister(): void
+    {
+        StubSource::$entries = [
+            [
+                'reference' => '27496139',
+                'name' => 'NETAIR, s.r.o.',
+                'company' => 'NETAIR, s.r.o.',
+                'identity_number' => '27496139',
+                'legal_status' => 'legal-entity',
+            ],
+        ];
+        $this->withConfigure(['BusinessRegister.sources' => ['stub' => StubSource::class]]);
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $this->post('/customers/add', [
+            'refresh' => 'refresh',
+            'legal_status' => CustomerLegalStatus::NaturalPerson->value,
+            'business_register_source' => 'stub',
+            'business_register_search' => 'stub|27496139',
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('<option value="legal-entity" selected="selected">');
+    }
+
+    /**
+     * A register that does not say who the subject is in law leaves the operator's choice alone.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::add()
+     */
+    public function testAddKeepsTheLegalStatusTheRegisterDoesNotGive(): void
+    {
+        StubSource::$entries = [
+            [
+                'reference' => '27496139',
+                'name' => 'NETAIR, s.r.o.',
+                'company' => 'NETAIR, s.r.o.',
+                'identity_number' => '27496139',
+            ],
+        ];
+        $this->withConfigure(['BusinessRegister.sources' => ['stub' => StubSource::class]]);
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $this->post('/customers/add', [
+            'refresh' => 'refresh',
+            'legal_status' => CustomerLegalStatus::SoleTrader->value,
+            'business_register_source' => 'stub',
+            'business_register_search' => 'stub|27496139',
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('<option value="sole-trader" selected="selected">');
+    }
+
+    /**
+     * A company with an entry like NETAIR's, which two people sit in the statutory body of.
+     *
+     * @return void
+     */
+    private function givenACompanyWithTwoOfficers(): void
+    {
+        StubSource::$entries = [
+            [
+                'reference' => '27496139',
+                'name' => 'NETAIR, s.r.o.',
+                'company' => 'NETAIR, s.r.o.',
+                'identity_number' => '27496139',
+                'officers' => [
+                    [
+                        'key' => 'marko',
+                        'title' => null,
+                        'first_name' => 'Marko',
+                        'last_name' => 'Jujnović',
+                        'suffix' => null,
+                        'date_of_birth' => '1970-05-31',
+                    ],
+                    [
+                        'key' => 'jana',
+                        'title' => null,
+                        'first_name' => 'Jana',
+                        'last_name' => 'Janatová',
+                        'suffix' => null,
+                        'date_of_birth' => '1983-08-17',
+                    ],
+                ],
+            ],
+        ];
+        $this->withConfigure(['BusinessRegister.sources' => ['stub' => StubSource::class]]);
+    }
+
+    /**
+     * Where several people sit in the statutory body, the form offers them and fills in nobody of
+     * its own accord - the name goes onto a contract as who the company was represented by.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::add()
+     */
+    public function testAddOffersTheOfficersOfACompanyRepresentedBySeveral(): void
+    {
+        $this->givenACompanyWithTwoOfficers();
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $this->post('/customers/add', [
+            'refresh' => 'refresh',
+            'business_register_source' => 'stub',
+            'business_register_search' => 'stub|27496139',
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('name="business_register_officer"');
+        $this->assertResponseContains('Jujnović');
+        $this->assertResponseContains('Janatová');
+        // the picked company has to come back with the form, or the next submit loses it
+        $this->assertResponseContains('value="stub|27496139"');
+    }
+
+    /**
+     * Choosing one of them fills their name in, and still does not store the customer.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::add()
+     */
+    public function testAddFillsInTheChosenOfficer(): void
+    {
+        $this->givenACompanyWithTwoOfficers();
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $customers = $this->getTableLocator()->get('Customers');
+        $before = $customers->find()->count();
+
+        $this->post('/customers/add', [
+            'refresh' => 'refresh',
+            'business_register_source' => 'stub',
+            'business_register_search' => 'stub|27496139',
+            'business_register_officer' => 'jana',
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('value="Jana"');
+        $this->assertResponseContains('value="Janatová"');
+        $this->assertResponseContains('1983-08-17');
+        $this->assertSame($before, $customers->find()->count());
+    }
+
+    /**
+     * A choice left over from a company picked before this one names nobody here, so what the
+     * entry says of itself stands - which for a company of several is no name at all.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::add()
+     */
+    public function testAddIgnoresAnOfficerTheCompanyDoesNotHave(): void
+    {
+        $this->givenACompanyWithTwoOfficers();
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $this->post('/customers/add', [
+            'refresh' => 'refresh',
+            'business_register_source' => 'stub',
+            'business_register_search' => 'stub|27496139',
+            'business_register_officer' => 'somebody-from-another-company',
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertResponseNotContains('value="Jana"');
+        $this->assertResponseNotContains('value="Marko"');
+    }
+
+    /**
+     * One person sitting is already filled in, so there is nothing to choose and no list to show.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::add()
+     */
+    public function testAddOffersNoChoiceWhereOnlyOneSits(): void
+    {
+        StubSource::$entries = [
+            [
+                'reference' => '28992121',
+                'name' => 'Statek Polánka s.r.o.',
+                'company' => 'Statek Polánka s.r.o.',
+                'first_name' => 'Marek',
+                'last_name' => 'Zbořil',
+                'officers' => [
+                    [
+                        'key' => 'marek',
+                        'title' => 'Ing.',
+                        'first_name' => 'Marek',
+                        'last_name' => 'Zbořil',
+                        'suffix' => null,
+                        'date_of_birth' => '1973-10-31',
+                    ],
+                ],
+            ],
+        ];
+        $this->withConfigure(['BusinessRegister.sources' => ['stub' => StubSource::class]]);
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $this->post('/customers/add', [
+            'refresh' => 'refresh',
+            'business_register_source' => 'stub',
+            'business_register_search' => 'stub|28992121',
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertResponseNotContains('name="business_register_officer"');
+        $this->assertResponseContains('value="Zbořil"');
+    }
+
+    /**
+     * A reference the register no longer holds is said out loud rather than quietly filling the
+     * form in with nothing.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::add()
+     */
+    public function testAddSaysSoWhenTheRegisterNoLongerHoldsTheCompany(): void
+    {
+        $this->withConfigure(['BusinessRegister.sources' => ['stub' => StubSource::class]]);
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $this->post('/customers/add', [
+            'refresh' => 'refresh',
+            'business_register_source' => 'stub',
+            'business_register_search' => 'stub|00000000',
+        ]);
+
+        $this->assertResponseOk();
+        // the form is rendered rather than redirected to, so the message is shown on the way out
+        // instead of waiting in the session
+        $this->assertResponseContains('The company is no longer held by the register.');
+    }
+
+    /**
+     * A number too long for a customer number is looked for among the identity numbers, whatever
+     * its length: an OIB has eleven digits, a Czech birth number ten.
+     *
+     * @return void
+     * @link \App\Controller\CustomersController::index()
+     */
+    public function testALongNumberIsLookedForAsAnIdentityNumber(): void
+    {
+        $this->login();
+        $customerId = $this->firstId('Customers');
+        $this->getTableLocator()->get('Customers')->updateAll(
+            ['identity_number' => '12345678901'],
+            ['id' => $customerId],
+        );
+
+        $this->get('/customers?search=12345678901');
+        $this->assertResponseOk();
+        $this->assertSame(
+            [$customerId],
+            array_map(fn($customer): string => $customer->id, $this->viewVariable('customers')->toArray()),
+        );
+
+        $this->get('/customers?search=9999999999');
+        $this->assertResponseOk();
+    }
+}

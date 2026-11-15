@@ -1,0 +1,38 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Test\Fixture;
+
+use Cake\TestSuite\Fixture\TestFixture;
+use Override;
+
+/**
+ * ConnectionProfilesFixture
+ */
+class ConnectionProfilesFixture extends TestFixture
+{
+    /**
+     * Init method
+     *
+     * @return void
+     */
+    #[Override]
+    public function init(): void
+    {
+        $this->records = [
+            [
+                'radius_group' => 'Lorem ipsum dolor sit amet',
+                'name' => 'Lorem ipsum dolor sit amet',
+                'fup_limit' => 1,
+                'data_limit' => 1,
+                'speed_up' => 1,
+                'speed_down' => 1,
+                'access_technology' => 'fwa_unlicensed',
+                'created' => 1698519305,
+                'modified' => 1698519305,
+                'id' => '9a2952ed-9947-4c0e-bda8-97f00614eab4',
+            ],
+        ];
+        parent::init();
+    }
+}

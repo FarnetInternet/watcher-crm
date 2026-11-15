@@ -1,0 +1,74 @@
+<?php
+/**
+ * @var \App\View\AppView $this
+ * @var iterable<\App\Model\Entity\Login> $logins
+ */
+?>
+<?= $this->Form->create(null, ['type' => 'get', 'valueSources' => ['query', 'context']]) ?>
+<div class="row">
+    <div class="column">
+        <?= $this->Form->control('search', [
+            'label' => __('Search'),
+            'type' => 'search',
+            'onchange' => $this::SUBMIT_ON_CHANGE,
+        ]) ?>
+    </div>
+</div>
+<?= $this->Form->end() ?>
+
+<div class="logins index content">
+    <?= $this->AuthLink->link(__('New Login'), ['action' => 'add'], ['class' => 'button float-right win-link']) ?>
+    <?= $this->heading(__('Logins')) ?>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th><?= $this->Paginator->sort('customer_id') ?></th>
+                    <th><?= $this->Paginator->sort('Customers.nid', __('Customer Number')) ?></th>
+                    <th><?= $this->Paginator->sort('login') ?></th>
+                    <th><?= $this->Paginator->sort('rights') ?></th>
+                    <th><?= $this->Paginator->sort('locked') ?></th>
+                    <th><?= $this->Paginator->sort('last_granted') ?></th>
+                    <th><?= $this->Paginator->sort('last_granted_ip') ?></th>
+                    <th><?= $this->Paginator->sort('last_denied') ?></th>
+                    <th><?= $this->Paginator->sort('last_denied_ip') ?></th>
+                    <th class="actions"><?= __('Actions') ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($logins as $login) : ?>
+                <tr>
+                    <td>
+                        <?= $login->customer !== null ? $this->Html->link(
+                            $login->customer->name ?? '(' . $login->customer->id . ')',
+                            ['controller' => 'Customers', 'action' => 'view', $login->customer->id],
+                        ) : '' ?>
+                    </td>
+                    <td><?= $login->customer !== null ? h($login->customer->number) : '' ?></td>
+                    <td><?= h($login->login) ?></td>
+                    <td><?= h($login->rights->label()) ?></td>
+                    <td><?= $login->locked ? __('Yes') : __('No'); ?></td>
+                    <td><?= h($login->last_granted) ?></td>
+                    <td><?= h($login->last_granted_ip) ?></td>
+                    <td><?= h($login->last_denied) ?></td>
+                    <td><?= h($login->last_denied_ip) ?></td>
+                    <td class="actions">
+                        <?= $this->AuthLink->link(__('View'), ['action' => 'view', $login->id]) ?>
+                        <?= $this->AuthLink->link(
+                            __('Edit'),
+                            ['action' => 'edit', $login->id],
+                            ['class' => 'win-link'],
+                        ) ?>
+                        <?= $this->AuthLink->postLink(
+                            __('Delete'),
+                            ['action' => 'delete', $login->id],
+                            ['confirm' => __('Are you sure you want to delete # {0}?', $login->id)],
+                        ) ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?= $this->element('common/paginator') ?>
+</div>

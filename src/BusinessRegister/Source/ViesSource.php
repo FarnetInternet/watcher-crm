@@ -1,0 +1,285 @@
+<?php
+declare(strict_types=1);
+
+namespace App\BusinessRegister\Source;
+
+use App\BusinessRegister\Dto\Subject;
+use App\BusinessRegister\IdentityNumber;
+use App\BusinessRegister\VatNumberCheck;
+use App\BusinessRegister\VatNumberStatus;
+use App\Http\Answer;
+use Cake\Collection\Collection;
+use Cake\Collection\CollectionInterface;
+use Cake\Http\Client\Response;
+use Override;
+
+/**
+ * The European VAT number check (VIES).
+ *
+ * It confirms a VAT number and says who holds it, which makes it a register of last resort for
+ * the countries that have no register of their own here. It cannot be searched by name, so a
+ * name is answered with nothing rather than with an error - the field says as much.
+ *
+ * A number is given whole, prefix included ("HR12345678901"), because the prefix is what says
+ * which member state to ask.
+ */
+class ViesSource extends BaseSource implements VatNumberCheckInterface
+{
+    /**
+     * The prefixes VIES answers for: the member states, Greece as EL and Northern Ireland as XI.
+     *
+     * @var list<string>
+     */
+    private const MEMBER_STATES = [
+        'AT', 'BE', 'BG', 'CY', 'CZ', 'DE', 'DK', 'EE', 'EL', 'ES', 'FI', 'FR', 'HR', 'HU',
+        'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PL', 'PT', 'RO', 'SE', 'SI', 'SK', 'XI',
+    ];
+
+    /**
+     * @inheritDoc
+     */
+    #[Override]
+    public function key(): string
+    {
+        return 'vies';
+    }
+
+    /**
+     * @inheritDoc
+     */
+    #[Override]
+    public function label(): string
+    {
+        return __('EU - VIES (by VAT number only)');
+    }
+
+    /**
+     * @inheritDoc
+     */
+    #[Override]
+    public function search(string $query, int $limit = 25): Answer
+    {
+        $answer = $this->byReference($query);
+
+        // being handed a name is not a fault, there is only nothing to find it by
+        if (!$answer->asked) {
+            return Answer::of(new Collection([]));
+        }
+
+        return $answer->map(
+            fn(?Subject $subject): CollectionInterface => new Collection($subject === null ? [] : [$subject]),
+        );
+    }
+
+    /**
+     * @inheritDoc
+     */
+    #[Override]
+    public function byReference(string $reference): Answer
+    {
+        $asked = $this->ask($reference);
+        if (!$asked->ok()) {
+            return Answer::sameFailure($asked);
+        }
+
+        // asked, and VIES has nothing under the number
+        if ($asked->data === null) {
+            return Answer::of(null);
+        }
+
+        [$memberState, $number, $answer] = $asked->data;
+
+        if (self::confirmed($answer) === null) {
+            return $this->withoutAVerdict($memberState, $number, $answer);
+        }
+
+        return Answer::of(self::toSubject(self::mapSubject($answer, $memberState, $number)));
+    }
+
+    /**
+     * VIES only knows VAT registrations, so a number it does not confirm is as far as it can
+     * say invalid - it has no way of telling a company that never registered from one that does
+     * not exist.
+     *
+     * @return \App\Http\Answer<\App\BusinessRegister\VatNumberCheck|null>
+     * @inheritDoc
+     */
+    #[Override]
+    public function vatNumberCheck(string $vatNumber): Answer
+    {
+        $asked = $this->ask($vatNumber);
+
+        // not a number VIES can be asked about at all
+        if (!$asked->asked) {
+            return Answer::of(null);
+        }
+
+        if (!$asked->ok()) {
+            return Answer::sameFailure($asked);
+        }
+
+        // asked, and VIES has nothing under the number
+        if ($asked->data === null) {
+            return Answer::of(null);
+        }
+
+        [$memberState, $number, $answer] = $asked->data;
+
+        $confirmed = self::confirmed($answer);
+        if ($confirmed === null) {
+            return $this->withoutAVerdict($memberState, $number, $answer);
+        }
+
+        return Answer::of($confirmed
+            ? new VatNumberCheck(VatNumberStatus::Registered, self::readValue($answer['name'] ?? null))
+            : new VatNumberCheck(VatNumberStatus::Invalid));
+    }
+
+    /**
+     * Ask VIES about a number, not asked when it is not a number VIES can be asked about.
+     *
+     * @param string $vatNumber The number as it was given, prefix included.
+     * @return \App\Http\Answer Answering with the member state, the number without it, and what
+     *      VIES said - or with null where it holds nothing under the number.
+     * @return \App\Http\Answer<array{0: string, 1: string, 2: array<int|string, mixed>}|null>
+     */
+    private function ask(string $vatNumber): Answer
+    {
+        $vatNumber = strtoupper(self::withoutWhitespace($vatNumber));
+        if (!preg_match('/^([A-Z]{2})([0-9A-Z]{2,12})$/', $vatNumber, $matches)) {
+            return Answer::notAsked();
+        }
+
+        [, $memberState, $number] = $matches;
+        // a name reads like a number too, Netair as NE and TAIR
+        if (!in_array($memberState, self::MEMBER_STATES, true)) {
+            return Answer::notAsked();
+        }
+
+        $path = self::path($memberState, $number);
+
+        return $this->readOrMissing(fn(): Response => $this->http()->get($this->endpoint($path)), $path)
+            ->map(fn(?array $answer): ?array => $answer === null ? null : [$memberState, $number, $answer]);
+    }
+
+    /**
+     * What VIES made of the number: yes, no, or nothing at all.
+     *
+     * It answers HTTP 200 whether it checked the number or never got to - a member state that is
+     * down, a timeout, too many requests at once - and says which in `userError`, leaving
+     * `isValid` false either way. Only two of those words are a verdict, so only those two are
+     * read as one and anything else is nothing to go on.
+     *
+     * Read as a whitelist rather than a list of troubles on purpose: a word VIES adds later then
+     * falls on the side where it is taken for no answer, rather than for a number nobody holds.
+     *
+     * @param array<int|string, mixed> $answer The answer as VIES returned it.
+     * @return bool|null True where the number is registered, false where it is not, and null
+     *      where VIES did not get far enough to say.
+     */
+    public static function confirmed(array $answer): ?bool
+    {
+        return match ((string)($answer['userError'] ?? '')) {
+            'VALID' => true,
+            'INVALID' => false,
+            default => null,
+        };
+    }
+
+    /**
+     * VIES having answered without answering, said the way every other failure is said.
+     *
+     * @param string $memberState The two letter member state the number was asked against.
+     * @param string $number The number without its member state prefix.
+     * @param array<int|string, mixed> $answer The answer as VIES returned it.
+     * @return \App\Http\Answer<never>
+     */
+    private function withoutAVerdict(string $memberState, string $number, array $answer): Answer
+    {
+        return self::unexpected(
+            $this->service(),
+            $this->endpoint(self::path($memberState, $number)),
+            (string)($answer['userError'] ?? 'no verdict'),
+        );
+    }
+
+    /**
+     * Where VIES is asked about one number.
+     *
+     * @param string $memberState The two letter member state to ask.
+     * @param string $number The number without its member state prefix.
+     * @return string
+     */
+    private static function path(string $memberState, string $number): string
+    {
+        return sprintf('ms/%s/vat/%s', urlencode($memberState), urlencode($number));
+    }
+
+    /**
+     * Read one VIES answer into the shape every register answers in, null when the number is
+     * not one VIES knows.
+     *
+     * VIES writes "---" where it has nothing, and returns the address as several lines, which
+     * are joined back into the one line the suggestion list has room for.
+     *
+     * @param array<int|string, mixed> $subject The answer as VIES returned it.
+     * @param string $memberState The two letter member state the number was asked against.
+     * @param string $number The number without its member state prefix.
+     * @return array<string, mixed>|null
+     */
+    public static function mapSubject(array $subject, string $memberState, string $number): ?array
+    {
+        if (($subject['isValid'] ?? false) !== true) {
+            return null;
+        }
+
+        $company = self::readValue($subject['name'] ?? null);
+        $address = self::readValue($subject['address'] ?? null);
+        if ($address !== null) {
+            $address = trim((string)preg_replace('/\s*\R\s*/u', ', ', $address));
+        }
+
+        // For both countries the CRM knows, the VAT number without its prefix is the
+        // identification number - but only where it holds up as one. The number of any other
+        // country says nothing, however well it passes for one of these two by its length.
+        $identityNumber = in_array($memberState, ['CZ', 'HR'], true) && IdentityNumber::isValid($number, $memberState)
+            ? $number
+            : null;
+
+        return [
+            'reference' => $memberState . $number,
+            'name' => $company ?? '',
+            'company' => $company ?? '',
+            'title' => null,
+            'first_name' => null,
+            'last_name' => null,
+            'suffix' => null,
+            'date_of_birth' => null,
+            'officers' => [],
+            'identity_number' => $identityNumber,
+            'vat_number' => $memberState . $number,
+            // a VAT registration says nothing of who holds it in law
+            'legal_status' => null,
+            'address' => $address,
+            // VIES gives the address as one line and no reference to anything
+            'addresses' => [],
+        ];
+    }
+
+    /**
+     * A value VIES actually holds, null where it wrote its placeholder instead.
+     *
+     * @param mixed $value The value as VIES returned it.
+     * @return string|null
+     */
+    private static function readValue(mixed $value): ?string
+    {
+        if (!is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        return $value === '' || trim($value, '-') === '' ? null : $value;
+    }
+}

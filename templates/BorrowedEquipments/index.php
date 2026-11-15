@@ -1,0 +1,95 @@
+<?php
+/**
+ * @var \App\View\AppView $this
+ * @var iterable<\App\Model\Entity\BorrowedEquipment> $borrowedEquipments
+ */
+?>
+<?= $this->Form->create(null, ['type' => 'get', 'valueSources' => ['query', 'context']]) ?>
+<div class="row">
+    <div class="column">
+        <?= $this->Form->control('search', [
+            'label' => __('Search'),
+            'type' => 'search',
+            'onchange' => $this::SUBMIT_ON_CHANGE,
+        ]) ?>
+    </div>
+</div>
+<?= $this->Form->end() ?>
+
+<div class="borrowedEquipments index content">
+    <?= $this->AuthLink->link(
+        __('New Borrowed Equipment'),
+        ['action' => 'add'],
+        ['class' => 'button float-right win-link'],
+    ) ?>
+    <?= $this->heading(__('Borrowed Equipments')) ?>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th><?= $this->Paginator->sort('customer_id') ?></th>
+                    <th><?= $this->Paginator->sort('Customers.nid', __('Customer Number')) ?></th>
+                    <th><?= $this->Paginator->sort('contract_id') ?></th>
+                    <th><?= $this->Paginator->sort('equipment_type_id') ?></th>
+                    <th><?= $this->Paginator->sort('serial_number') ?></th>
+                    <th><?= $this->Paginator->sort('borrowed_from') ?></th>
+                    <th><?= $this->Paginator->sort('borrowed_until') ?></th>
+                    <th class="actions"><?= __('Actions') ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($borrowedEquipments as $borrowedEquipment) : ?>
+                <tr style="<?= $borrowedEquipment->style ?>">
+                    <td>
+                        <?= $borrowedEquipment->customer !== null ? $this->Html->link(
+                            $borrowedEquipment->customer->name ?? '(' . $borrowedEquipment->customer->id . ')',
+                            ['controller' => 'Customers', 'action' => 'view', $borrowedEquipment->customer->id],
+                        ) : '' ?>
+                    </td>
+                    <td><?= $borrowedEquipment->customer !== null ?
+                        h($borrowedEquipment->customer->number) : '' ?></td>
+                    <td>
+                        <?= $borrowedEquipment->contract !== null ? $this->Html->link(
+                            $borrowedEquipment->contract->number ?? '--',
+                            [
+                                'controller' => 'Contracts',
+                                'action' => 'view',
+                                $borrowedEquipment->contract->id,
+                                'customer_id' => $borrowedEquipment->contract->customer_id,
+                            ],
+                        ) : '' ?>
+                    </td>
+                    <td>
+                        <?= $borrowedEquipment->equipment_type !== null ? $this->Html->link(
+                            $borrowedEquipment->equipment_type->name
+                            ?? '(' . $borrowedEquipment->equipment_type->id . ')',
+                            [
+                                'controller' => 'EquipmentTypes',
+                                'action' => 'view',
+                                $borrowedEquipment->equipment_type->id,
+                            ],
+                        ) : '' ?>
+                    </td>
+                    <td><?= h($borrowedEquipment->serial_number) ?></td>
+                    <td><?= h($borrowedEquipment->borrowed_from) ?></td>
+                    <td><?= h($borrowedEquipment->borrowed_until) ?></td>
+                    <td class="actions">
+                        <?= $this->AuthLink->link(__('View'), ['action' => 'view', $borrowedEquipment->id]) ?>
+                        <?= $this->AuthLink->link(
+                            __('Edit'),
+                            ['action' => 'edit', $borrowedEquipment->id],
+                            ['class' => 'win-link'],
+                        ) ?>
+                        <?= $this->AuthLink->postLink(
+                            __('Delete'),
+                            ['action' => 'delete', $borrowedEquipment->id],
+                            ['confirm' => __('Are you sure you want to delete # {0}?', $borrowedEquipment->id)],
+                        ) ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?= $this->element('common/paginator') ?>
+</div>

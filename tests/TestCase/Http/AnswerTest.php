@@ -1,0 +1,189 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Test\TestCase\Http;
+
+use App\Http\Answer;
+use Cake\TestSuite\LogTestTrait;
+use Cake\TestSuite\TestCase;
+use PHPUnit\Framework\Attributes\CoversClass;
+use RuntimeException;
+
+/**
+ * App\Http\Answer Test Case
+ *
+ * The three states are the whole point, so each is asked all three questions. What is being pinned
+ * down is that they do not collapse into each other - an installation that was never given a
+ * service must not read as one that is down, and a service that answered nothing must not read as
+ * one that did not answer.
+ */
+#[CoversClass(Answer::class)]
+class AnswerTest extends TestCase
+{
+    use LogTestTrait;
+
+    /**
+     * An answer is an answer, whatever it says.
+     *
+     * @return void
+     * @link \App\Http\Answer::of()
+     */
+    public function testAnAnswerIsWorkedWith(): void
+    {
+        $answer = Answer::of(['name' => 'Hilltop']);
+
+        $this->assertTrue($answer->ok());
+        $this->assertFalse($answer->unanswered());
+        $this->assertSame(['name' => 'Hilltop'], $answer->data);
+        $this->assertSame(['name' => 'Hilltop'], $answer->orFail());
+    }
+
+    /**
+     * An answer of nothing is still an answer - the other side was asked and said there is
+     * nothing there, which is not the same as its having said nothing.
+     *
+     * @return void
+     * @link \App\Http\Answer::of()
+     */
+    public function testAnAnswerOfNothingIsStillAnAnswer(): void
+    {
+        $answer = Answer::of([]);
+
+        $this->assertTrue($answer->ok());
+        $this->assertFalse($answer->unanswered());
+        $this->assertSame([], $answer->or(['fallback']));
+    }
+
+    /**
+     * A question that went unanswered says so, and says why.
+     *
+     * @return void
+     * @link \App\Http\Answer::failed()
+     */
+    public function testAQuestionThatWentUnansweredSaysSo(): void
+    {
+        $answer = Answer::failed('Watcher NMS answered 500.');
+
+        $this->assertFalse($this->ok($answer));
+        $this->assertTrue($answer->unanswered());
+        $this->assertNull($answer->data);
+        $this->assertSame('Watcher NMS answered 500.', $answer->failure);
+    }
+
+    /**
+     * A caller whose run the failure should end asks for it as an exception, carrying the reason
+     * the client wrote down.
+     *
+     * @return void
+     * @link \App\Http\Answer::orFail()
+     */
+    public function testAFailureIsThrownWhereTheCallerWantsItThrown(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Watcher NMS answered 500.');
+
+        Answer::failed('Watcher NMS answered 500.')->orFail();
+    }
+
+    /**
+     * Nobody asked is its own state: not an answer to work with, and not a failure to remark on.
+     *
+     * @return void
+     * @link \App\Http\Answer::notAsked()
+     */
+    public function testNobodyHavingAskedIsNeitherAnAnswerNorAFailure(): void
+    {
+        $answer = Answer::notAsked();
+
+        $this->assertFalse($this->ok($answer));
+        $this->assertFalse($answer->unanswered());
+        $this->assertNull($answer->failure);
+    }
+
+    /**
+     * A command told to use a service this installation was never given cannot do it, so asking
+     * for the answer outright ends the run there too.
+     *
+     * @return void
+     * @link \App\Http\Answer::orFail()
+     */
+    public function testNobodyHavingAskedStillEndsTheRunOfWhoeverInsists(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Watcher NMS is not configured.');
+
+        Answer::notAsked()->orFail('Watcher NMS is not configured.');
+    }
+
+    /**
+     * Falling back is for whoever can go on without the answer.
+     *
+     * @return void
+     * @link \App\Http\Answer::or()
+     */
+    public function testFallingBackCoversBothWaysOfHavingNoAnswer(): void
+    {
+        $this->assertSame([], Answer::failed('down')->or([]));
+        $this->assertSame([], Answer::notAsked()->or([]));
+    }
+
+    /**
+     * A reading that came to nothing is written down as it goes, because a client reports rather
+     * than throws - the caller may turn the failure into a word to the operator or pass it over
+     * entirely, and either way there would be nothing left of it afterwards.
+     *
+     * @return void
+     * @link \App\Http\WritesDownFailuresTrait::unanswered()
+     */
+    public function testAFailureIsWrittenDownOnTheWayOut(): void
+    {
+        $this->setupLog(['error', 'warning']);
+
+        $answer = FailingClient::readSomething();
+
+        $this->assertTrue($answer->unanswered());
+        $this->assertLogMessageContains('error', 'The other side did not answer.');
+
+        // how loudly is the client's to say: one municipality of forty refusing is a Tuesday
+        FailingClient::readSomethingUnremarkable();
+        $this->assertLogMessageContains('warning', 'Nothing came of that either.');
+    }
+
+    /**
+     * Reading the data into another shape leaves the other two states alone, which is how a client
+     * turns what arrived into what it hands over without writing the three states out every time.
+     *
+     * @return void
+     * @link \App\Http\Answer::map()
+     */
+    public function testReadingTheDataLeavesAFailureAlone(): void
+    {
+        $read = Answer::of(['1', '2'])->map(fn(array $rows): int => count($rows));
+        $this->assertSame(2, $read->data);
+
+        // an answer that came to nothing stands in for one of any shape, which is what lets a
+        // client hand the same failure back whatever it was going to answer with
+        /** @var \App\Http\Answer<list<string>> $down */
+        $down = Answer::failed('down');
+        $failed = $down->map(fn(array $rows): int => count($rows));
+        $this->assertTrue($failed->unanswered());
+        $this->assertSame('down', $failed->failure);
+
+        /** @var \App\Http\Answer<list<string>> $never */
+        $never = Answer::notAsked();
+        $notAsked = $never->map(fn(array $rows): int => count($rows));
+        $this->assertFalse($notAsked->asked);
+    }
+
+    /**
+     * Whether an answer is one to work with, asked of it as the code that receives one asks: not
+     * knowing which kind it is, which the type of an answer that never has data would tell.
+     *
+     * @param \App\Http\Answer<mixed> $answer The answer.
+     * @return bool
+     */
+    private function ok(Answer $answer): bool
+    {
+        return $answer->ok();
+    }
+}

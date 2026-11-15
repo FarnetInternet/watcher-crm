@@ -1,0 +1,105 @@
+<?php
+use Cake\Routing\Router;
+
+/**
+ * @var \App\View\AppView $this
+ * @var iterable<\App\Model\Entity\IpAddress> $ip_addresses
+ * @var bool $contract_column
+ */
+
+$this->Html->script('lazy-load.js', ['block' => true]);
+?>
+<?php if (!empty($ip_addresses)) : ?>
+<div class="table-responsive">
+    <table>
+        <tr>
+            <?php if (!empty($contract_column)) : ?>
+            <th><?= __('Contract') ?></th>
+            <?php endif; ?>
+            <th><?= __('IP Address') ?></th>
+            <th><?= __('Type Of Use') ?></th>
+            <th><?= __('Note') ?></th>
+            <th><?= __('Status') ?></th>
+            <th><?= __('Device') ?></th>
+            <th><?= __('IP Address Range') ?></th>
+            <th class="actions"><?= __('Actions') ?></th>
+        </tr>
+        <?php foreach ($ip_addresses as $ipAddress) : ?>
+        <tr style="<?= $ipAddress->style ?>">
+            <?php if (!empty($contract_column)) : ?>
+            <td><?= $ipAddress->contract !== null ?
+                $this->Html->link(
+                    $ipAddress->contract->number ?? '--',
+                    [
+                        'controller' => 'Contracts',
+                        'action' => 'view',
+                        $ipAddress->contract->id,
+                        'customer_id' => $ipAddress->contract->customer_id,
+                    ],
+                ) : '' ?></td>
+            <?php endif; ?>
+            <td><?= h($ipAddress->ip_address) ?></td>
+            <td><?= h($ipAddress->type_of_use->label()) ?></td>
+            <td><?= h($ipAddress->note) ?></td>
+            <td class="to-center">
+                <div
+                    class="lazy-load"
+                    data-url="<?= Router::url([
+                        'prefix' => 'Api',
+                        'controller' => 'AgentBridge',
+                        'action' => 'ping',
+                        'ip_address' => $ipAddress->ip_address,
+                        '_ext' => 'ajax',
+                    ]) ?>"
+                    data-error="<?= h(__('The status could not be loaded.')) ?>"
+                    data-trigger="load-refresh-click">
+                        <?= $this->Html->image('ping/unknown.png', ['class' => 'ping-status']) ?>
+                </div>
+            </td>
+            <td>
+                <div
+                    class="lazy-load"
+                    data-url="<?= Router::url([
+                        'prefix' => 'Api',
+                        'controller' => 'NetworkManagementSystemBridge',
+                        'action' => 'routerosDevices',
+                        'ip_address' => $ipAddress->ip_address,
+                        '_ext' => 'ajax',
+                    ]) ?>"
+                    data-error="<?= h(__('Data from Watcher NMS could not be loaded.')) ?>"
+                    data-trigger="load"><?= __('Loading...') ?></div>
+            </td>
+            <td>
+                <div
+                    class="lazy-load"
+                    data-url="<?= Router::url([
+                        'prefix' => 'Api',
+                        'controller' => 'NetworkManagementSystemBridge',
+                        'action' => 'ipAddressRanges',
+                        'ip_network' => $ipAddress->ip_address,
+                        '_ext' => 'ajax',
+                    ]) ?>"
+                    data-error="<?= h(__('Data from Watcher NMS could not be loaded.')) ?>"
+                    data-trigger="load"><?= __('Loading...') ?></div>
+            </td>
+            <td class="actions">
+                <?= $this->AuthLink->link(
+                    __('View'),
+                    ['controller' => 'IpAddresses', 'action' => 'view', $ipAddress->id],
+                ) ?>
+                <?= $this->AuthLink->link(
+                    __('Edit'),
+                    ['controller' => 'IpAddresses', 'action' => 'edit', $ipAddress->id],
+                    ['class' => 'win-link'],
+                ) ?>
+                <?= $this->AuthLink->postLink(
+                    __('Delete'),
+                    ['controller' => 'IpAddresses', 'action' => 'delete', $ipAddress->id],
+                    ['confirm' => __('Are you sure you want to delete # {0}?', $ipAddress->ip_address)],
+                ) ?>
+            </td>
+        </tr>
+        <?php endforeach; ?>
+    </table>
+</div>
+<?php endif; ?>

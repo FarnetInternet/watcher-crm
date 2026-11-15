@@ -1,0 +1,280 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Controller\Api;
+
+use App\Addresses\Resolver as AddressesResolver;
+use App\Model\Entity\Contract;
+use App\Model\Entity\IpAddress;
+use App\Model\Table\ContractsTable;
+use Cake\Collection\Collection;
+use Cake\Collection\CollectionInterface;
+use Cake\Routing\Router;
+use RuntimeException;
+
+/**
+ * Customers Controller
+ *
+ * @property \App\Model\Table\CustomersTable $Customers
+ */
+class CustomersController extends AppController
+{
+    /**
+     * Index method
+     *
+     * @return void Renders view
+     */
+    public function index(): void
+    {
+        $customers = $this->Customers
+            ->find('all', contain: [
+                'AccountingProfiles',
+            ])
+            ->all();
+
+        $this->set('customers', $customers);
+        $this->viewBuilder()->setOption('serialize', ['customers']);
+    }
+
+    /**
+     * View method
+     *
+     * @param string|null $id Customer id.
+     * @return void Renders view
+     * @throws \Cake\Datasource\Exception\RecordNotFoundException When record not found.
+     */
+    public function view(?string $id = null): void
+    {
+        $customer = $this->Customers->get($id, contain: [
+            'Addresses' => [
+                'Countries',
+            ],
+            'Billings' => [
+                'Contracts',
+                'Services',
+            ],
+            'BorrowedEquipments' => [
+                'Contracts',
+                'EquipmentTypes',
+            ],
+            'Contracts' => [
+                'InstallationAddresses',
+                'ServiceTypes',
+            ],
+            'CustomerLabels' => [
+                'Labels',
+            ],
+            'Emails',
+            'IpAddresses' => [
+                'Contracts',
+            ],
+            'IpNetworks' => [
+                'Contracts',
+            ],
+            'Logins',
+            'Phones',
+            'RemovedIpAddresses' => [
+                'Contracts',
+            ],
+            'RemovedIpNetworks' => [
+                'Contracts',
+            ],
+            'SoldEquipments' => [
+                'Contracts',
+                'EquipmentTypes',
+            ],
+            'Tasks' => [
+                'TaskTypes',
+                'TaskStates',
+                // the rest of an account has nothing to do with the task
+                'Users' => ['fields' => ['id', 'username', 'first_name', 'last_name']],
+                'Collaborators' => ['fields' => ['id', 'username', 'first_name', 'last_name']],
+            ],
+            'AccountingProfiles',
+        ]);
+
+        $this->set('customer', $customer);
+        $this->viewBuilder()->setOption('serialize', ['customer']);
+    }
+
+    /**
+     * Add method
+     *
+     * @return void Redirects on successful add, renders view otherwise.
+     * @deprecated Nothing in the applications calls this, so it goes in the next major version.
+     */
+    public function add(): void
+    {
+        $this->getRequest()->allowMethod(['post', 'put']);
+        $customer = $this->Customers->newEntity($this->getRequest()->getData());
+        $message = $this->Customers->save($customer) ? 'Saved' : 'Error';
+        $this->set([
+            'message' => $message,
+            'customer' => $customer,
+        ]);
+        $this->viewBuilder()->setOption('serialize', ['customer', 'message']);
+    }
+
+    /**
+     * Edit method
+     *
+     * @param string|null $id Customer id.
+     * @return void Redirects on successful edit, renders view otherwise.
+     * @throws \Cake\Datasource\Exception\RecordNotFoundException When record not found.
+     * @deprecated Nothing in the applications calls this, so it goes in the next major version.
+     */
+    public function edit(?string $id = null): void
+    {
+        $this->getRequest()->allowMethod(['patch', 'post', 'put']);
+        $customer = $this->Customers->get($id);
+        $customer = $this->Customers->patchEntity($customer, $this->getRequest()->getData());
+
+        $message = $this->Customers->save($customer) ? 'Saved' : 'Error';
+        $this->set([
+            'message' => $message,
+            'customer' => $customer,
+        ]);
+        $this->viewBuilder()->setOption('serialize', ['customer', 'message']);
+    }
+
+    /**
+     * Delete method
+     *
+     * @param string|null $id Customer id.
+     * @return void Redirects to index.
+     * @throws \Cake\Datasource\Exception\RecordNotFoundException When record not found.
+     * @deprecated Nothing in the applications calls this, so it goes in the next major version.
+     */
+    public function delete(?string $id = null): void
+    {
+        $this->getRequest()->allowMethod(['delete']);
+        $customer = $this->Customers->get($id);
+        $message = $this->Customers->delete($customer) ? 'Deleted' : 'Error';
+        $this->set('message', $message);
+        $this->viewBuilder()->setOption('serialize', ['message']);
+    }
+
+    /**
+     * Customer points method
+     *
+     * @return void Renders view
+     */
+    public function customerPoints(): void
+    {
+        $customerPoints = $this->fetchTable(ContractsTable::class)->find('withActiveServices')
+            ->contain('InstallationAddresses')
+            ->contain('Customers')
+            ->contain('IpAddresses')
+            ->formatResults(function (CollectionInterface $customerPoints): array {
+                // Materialize once so we can iterate twice (matchMap + groupBy).
+                $contracts = $customerPoints->toList();
+
+                // Resolve all installation addresses with registry refs in one batch.
+                // Failure → empty map; groups will fall back to GPS / unknown branches.
+                try {
+                    $addressRegistryMatches = AddressesResolver::matchMap(
+                        (new Collection($contracts))
+                            ->extract('installation_address')
+                            ->filter()
+                            ->toList(),
+                    );
+                } catch (RuntimeException $e) {
+                    throw new RuntimeException(__(
+                        'Could not retrieve addresses from national address registry: {0}',
+                        $e->getMessage(),
+                    ), $e->getCode(), previous: $e);
+                }
+
+                return (new Collection($contracts))
+                    ->groupBy(function (Contract $contract): string {
+                        $address = $contract->installation_address;
+
+                        if (
+                            !empty($address->address_registry_reference)
+                                && !empty($address->address_registry_source)
+                        ) {
+                            return $address->address_registry_source
+                                . '|' . $address->address_registry_reference;
+                        }
+                        if (!empty($address->gps_x) && !empty($address->gps_y)) {
+                            return 'GPS: ' . $address->gps_y . 'N, ' . $address->gps_x . 'E';
+                        }
+
+                        return 'unknown location';
+                    })
+                    ->map(function (array $contracts, $key) use ($addressRegistryMatches): array {
+                        $addressRegistryMatch = $addressRegistryMatches[$key] ?? null;
+
+                        if ($addressRegistryMatch !== null) {
+                            // Authoritative data from the national address registry.
+                            return [
+                                'name' => $addressRegistryMatch->formattedAddress,
+                                'gps_y' => $addressRegistryMatch->latitude,
+                                'gps_x' => $addressRegistryMatch->longitude,
+                                'note' => sprintf(
+                                    '%s: %s',
+                                    strtoupper($addressRegistryMatch->source),
+                                    $addressRegistryMatch->registryReference,
+                                ),
+                                'CustomerConnections' => $this->buildCustomerConnections($contracts),
+                            ];
+                        }
+
+                        // GPS-only group, or unknown — use whatever the first contract carries.
+                        $first = $contracts[0]->installation_address ?? null;
+
+                        return [
+                            'name' => (string)$key,
+                            'gps_y' => $first->gps_y ?? null,
+                            'gps_x' => $first->gps_x ?? null,
+                            'note' => (string)$key,
+                            'CustomerConnections' => $this->buildCustomerConnections($contracts),
+                        ];
+                    })
+                    ->toList();
+            });
+
+        $this->set('customerPoints', $customerPoints);
+        $this->viewBuilder()->setOption('serialize', 'customerPoints');
+    }
+
+    /**
+     * Builds customer connections data for given contracts.
+     *
+     * @param array<int, \App\Model\Entity\Contract> $contracts
+     * @return \Cake\Collection\CollectionInterface<int, array<string, mixed>>
+     */
+    private function buildCustomerConnections(array $contracts): CollectionInterface
+    {
+        /** @var \Cake\Collection\CollectionInterface<int, array<string, mixed>> */
+        return (new Collection($contracts))->map(
+            fn(Contract $contract): array => [
+                'name' => $contract->installation_address->name ?? $contract->customer->name,
+                'customer_number' => $contract->customer->number,
+                'customer_url' => Router::url([
+                    'prefix' => false,
+                    'controller' => 'Customers',
+                    'action' => 'view',
+                    $contract->customer->id,
+                ]),
+                'contract_number' => $contract->number,
+                'contract_url' => Router::url([
+                    'prefix' => false,
+                    'controller' => 'Contracts',
+                    'action' => 'view',
+                    $contract->id,
+                    'customer_id' => $contract->customer_id,
+                ]),
+                'access_point_id' => $contract->access_point_id,
+                'note' => $contract->note,
+                'CustomerConnectionIps' => (new Collection($contract->ip_addresses))->map(
+                    fn(IpAddress $ipAddress): array => [
+                        'ip_address' => $ipAddress->ip_address,
+                        'name' => $ipAddress->note,
+                        'note' => $ipAddress->note,
+                    ],
+                ),
+            ],
+        );
+    }
+}

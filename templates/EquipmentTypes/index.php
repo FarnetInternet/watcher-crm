@@ -1,0 +1,63 @@
+<?php
+/**
+ * @var \App\View\AppView $this
+ * @var iterable<\App\Model\Entity\EquipmentType> $equipmentTypes
+ */
+?>
+<?= $this->Form->create(null, ['type' => 'get', 'valueSources' => ['query', 'context']]) ?>
+<div class="row">
+    <div class="column">
+        <?= $this->Form->control('search', [
+            'label' => __('Search'),
+            'type' => 'search',
+            'onchange' => $this::SUBMIT_ON_CHANGE,
+        ]) ?>
+    </div>
+</div>
+<?= $this->Form->end() ?>
+
+<div class="equipmentTypes index content">
+    <?= $this->AuthLink->link(
+        __('New Equipment Type'),
+        ['action' => 'add'],
+        ['class' => 'button float-right win-link'],
+    ) ?>
+    <?= $this->heading(__('Equipment Types')) ?>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th><?= $this->Paginator->sort('name') ?></th>
+                    <th><?= $this->Paginator->sort('price') ?></th>
+                    <th><?= $this->Paginator->sort('price_with_obligation') ?></th>
+                    <th class="actions"><?= __('Actions') ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($equipmentTypes as $equipmentType) : ?>
+                <tr>
+                    <td><?= h($equipmentType->name) ?></td>
+                    <td><?= $equipmentType->price === null ?
+                        '' : $this->Number->currency($equipmentType->price->toString()) ?></td>
+                    <td><?= $equipmentType->price_with_obligation === null ?
+                        '' : $this->Number->currency($equipmentType->price_with_obligation->toString()) ?></td>
+                    <td class="actions">
+                        <?= $this->AuthLink->link(__('View'), ['action' => 'view', $equipmentType->id]) ?>
+                        <?= $this->AuthLink->link(
+                            __('Edit'),
+                            ['action' => 'edit', $equipmentType->id],
+                            ['class' => 'win-link'],
+                        ) ?>
+                        <?= $this->AuthLink->postLink(
+                            __('Delete'),
+                            ['action' => 'delete', $equipmentType->id],
+                            ['confirm' => __('Are you sure you want to delete # {0}?', $equipmentType->id)],
+                        ) ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?= $this->element('common/paginator') ?>
+</div>

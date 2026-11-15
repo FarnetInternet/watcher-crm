@@ -1,0 +1,132 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Model\Table;
+
+use App\Model\Entity\Label;
+use App\Model\Entity\User;
+use Cake\ORM\RulesChecker;
+use Cake\Validation\Validator;
+use Override;
+
+/**
+ * Labels Model
+ *
+ * @property \App\Model\Table\CustomerLabelsTable&\Cake\ORM\Association\HasMany $CustomerLabels
+ * @method \App\Model\Entity\Label newEmptyEntity()
+ * @method \App\Model\Entity\Label newEntity(array $data, array $options = [])
+ * @method \App\Model\Entity\Label[] newEntities(array $data, array $options = [])
+ * @method \App\Model\Entity\Label get(mixed $primaryKey, array|string $finder = 'all', null|\Psr\SimpleCache\CacheInterface|string $cache = null, null|\Closure|string $cacheKey = null, mixed ...$args)
+ * @method \App\Model\Entity\Label findOrCreate($search, callable|array|null $callback = null, $options = [])
+ * @method \App\Model\Entity\Label patchEntity(\Cake\Datasource\EntityInterface $entity, array $data, array $options = [])
+ * @method \App\Model\Entity\Label[] patchEntities(iterable $entities, array $data, array $options = [])
+ * @method \App\Model\Entity\Label|false save(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method \App\Model\Entity\Label saveOrFail(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method iterable<\App\Model\Entity\Label>|false saveMany(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\Label> saveManyOrFail(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\Label>|false deleteMany(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\Label> deleteManyOrFail(iterable $entities, $options = [])
+ */
+class LabelsTable extends AppTable
+{
+    /**
+     * Initialize method
+     *
+     * @param array<string, mixed> $config The configuration for the Table.
+     * @return void
+     */
+    #[Override]
+    public function initialize(array $config): void
+    {
+        parent::initialize($config);
+
+        $this->setTable('labels');
+        $this->setDisplayField('name');
+        $this->setPrimaryKey('id');
+
+        $this->addBehavior('Timestamp');
+        $this->addBehavior('Footprint');
+        $this->addBehavior('StringModifications');
+
+        $this->hasMany('CustomerLabels', [
+            'foreignKey' => 'label_id',
+        ]);
+    }
+
+    /**
+     * Default validation rules.
+     *
+     * @param \Cake\Validation\Validator $validator Validator instance.
+     * @return \Cake\Validation\Validator
+     */
+    #[Override]
+    public function validationDefault(Validator $validator): Validator
+    {
+        $validator
+            ->uuid('id')
+            ->allowEmptyString('id', null, 'create')
+            ->add('id', 'unique', ['rule' => 'validateUnique', 'provider' => 'table']);
+
+        $validator
+            ->scalar('name')
+            ->allowEmptyString('name');
+
+        $validator
+            ->scalar('caption')
+            ->allowEmptyString('caption');
+
+        $validator
+            ->scalar('color')
+            ->maxLength('color', 7)
+            ->regex('color', Label::COLOR_PATTERN);
+
+        $validator
+            ->integer('validity')
+            ->allowEmptyString('validity');
+
+        $validator
+            ->boolean('dynamic')
+            ->notEmptyString('dynamic');
+
+        $validator
+            ->scalar('dynamic_sql')
+            ->allowEmptyString('dynamic_sql');
+
+        $validator
+            ->boolean('show_on_dashboard')
+            ->notEmptyString('show_on_dashboard');
+
+        $validator
+            ->allowEmptyArray('dashboard_roles')
+            ->add('dashboard_roles', 'validRoles', [
+                'rule' => function ($value): bool {
+                    if (!is_array($value)) {
+                        return false;
+                    }
+                    $roles = array_keys((new User())->getRoleOptions());
+
+                    return array_diff($value, $roles) === [];
+                },
+                'message' => __('One of the roles named is not a role.'),
+            ]);
+
+        return $validator;
+    }
+
+    /**
+     * Returns a rules checker object that will be used for validating
+     * application integrity.
+     *
+     * @param \Cake\ORM\RulesChecker $rules The rules object to be modified.
+     * @return \Cake\ORM\RulesChecker
+     */
+    #[Override]
+    public function buildRules(RulesChecker $rules): RulesChecker
+    {
+        $rules->add($rules->isUnique(['id']), ['errorField' => 'id']);
+
+        $rules->addDelete($rules->isNotLinkedTo('CustomerLabels'));
+
+        return $rules;
+    }
+}

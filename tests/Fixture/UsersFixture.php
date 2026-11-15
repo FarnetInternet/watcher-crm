@@ -1,0 +1,55 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Test\Fixture;
+
+use Cake\TestSuite\Fixture\TestFixture;
+use Override;
+
+/**
+ * UsersFixture
+ */
+class UsersFixture extends TestFixture
+{
+    /**
+     * Table name
+     */
+    public string $table = 'users';
+
+    /**
+     * Init method
+     *
+     * @return void
+     */
+    #[Override]
+    public function init(): void
+    {
+        $this->records = [
+            [
+                'username' => 'Lorem ipsum dolor sit amet',
+                // a real address rather than filler text: the task notification hands it straight to
+                // a mailer, which refuses anything that is not one
+                'email' => 'operator@example.com',
+                'password' => 'Lorem ipsum dolor sit amet',
+                'first_name' => 'Lorem ipsum dolor sit amet',
+                'last_name' => 'Lorem ipsum dolor sit amet',
+                'token' => 'Lorem ipsum dolor sit amet',
+                'token_expires' => 1698515383,
+                'api_token' => 'Lorem ipsum dolor sit amet',
+                'active' => 1,
+                'holds_tasks' => 1,
+                'is_superuser' => 1,
+                'role' => 'Lorem ipsum dolor sit amet',
+                'created' => 1698515383,
+                'modified' => 1698515383,
+                'secret' => 'Lorem ipsum dolor sit amet',
+                'secret_verified' => 1,
+                'last_granted' => 1698515383,
+                'nid' => 1,
+                'user_settings' => null,
+                'id' => '11edb519-be76-4d66-aea0-34188d31eae1',
+            ],
+        ];
+        parent::init();
+    }
+}

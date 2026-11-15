@@ -1,0 +1,545 @@
+# LANGUAGE translation of CakePHP Application
+# Copyright YEAR NAME <EMAIL@ADDRESS>
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: CakePHP 4.2.4\n"
+"POT-Creation-Date: 2026-11-06 03:09+0100\n"
+"PO-Revision-Date: 2026-08-01 15:17+0200\n"
+"Last-Translator: Martin Patočka <mapik@mapik.net>\n"
+"Language-Team: LANGUAGE <EMAIL@ADDRESS>\n"
+"Language: cs_CZ\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n==1 ? 0 : n>=2 && n<=4 ? 1 : 2);\n"
+"X-Generator: Poedit 3.9\n"
+
+#: templates/Error/error400.php:25 templates/Error/error500.php:39
+msgid "Error"
+msgstr "Chyba"
+
+#: templates/Error/error400.php:26
+msgid "The requested address {0} was not found on this server."
+msgstr "Požadovaná adresa {0} nebyla na tomto serveru nalezena."
+
+#: templates/Error/error500.php:37
+#: vendor/cakephp/cakephp/src/Error/Renderer/WebExceptionRenderer.php:355
+msgid "An Internal Error Has Occurred."
+msgstr "Došlo k vnitřní chybě."
+
+#: vendor/cakephp/cakephp/src/Command/PluginListCommand.php:65
+msgid "No plugins have been found."
+msgstr "Nebyly nalezeny žádné pluginy."
+
+#: vendor/cakephp/cakephp/src/Error/Renderer/WebExceptionRenderer.php:353
+msgid "Not Found"
+msgstr "Nenalezeno"
+
+#: vendor/cakephp/cakephp/src/Http/Middleware/CsrfProtectionMiddleware.php:354
+msgid "Missing or incorrect CSRF cookie type."
+msgstr "Chybí nebo nesprávný typ souboru cookie CSRF."
+
+#: vendor/cakephp/cakephp/src/Http/Middleware/CsrfProtectionMiddleware.php:358
+msgid "Missing or invalid CSRF cookie."
+msgstr "Chybějící nebo neplatný soubor cookie CSRF."
+
+#: vendor/cakephp/cakephp/src/Http/Middleware/CsrfProtectionMiddleware.php:381
+#: vendor/cakephp/cakephp/src/Http/Middleware/SessionCsrfProtectionMiddleware.php:267
+msgid ""
+"CSRF token from either the request body or request headers did not match or "
+"is missing."
+msgstr ""
+"Token CSRF z těla požadavku nebo hlavičky požadavku se neshodoval nebo chybí."
+
+#: vendor/cakephp/cakephp/src/Http/Middleware/SessionCsrfProtectionMiddleware.php:249
+msgid "Missing or incorrect CSRF session key"
+msgstr "Chybějící nebo nesprávný klíč relace CSRF"
+
+#: vendor/cakephp/cakephp/src/Http/Response.php:1269
+msgid "The requested file contains `..` and will not be read."
+msgstr "Požadovaný soubor obsahuje '.. ' a nebude načten."
+
+#: vendor/cakephp/cakephp/src/Http/Response.php:1277
+msgid "The requested file was not found"
+msgstr "Požadovaný soubor nebyl nalezen"
+
+#: vendor/cakephp/cakephp/src/I18n/Number.php:125
+#: vendor/cakephp/cakephp/src/I18n/Number.php:127
+#: vendor/cakephp/cakephp/src/I18n/Number.php:129
+#: vendor/cakephp/cakephp/src/I18n/Number.php:130
+msgid "{0,number,#,###.##} {1}"
+msgstr "{0,number,#,###.##} {1}"
+
+#: vendor/cakephp/cakephp/src/I18n/Number.php:124
+msgid "{0,number,integer} Byte"
+msgid_plural "{0,number,integer} Bytes"
+msgstr[0] "{0,number,integer} bajt"
+msgstr[1] "{0,number,integer} bajty"
+msgstr[2] "{0,number,integer} bajtů"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:95
+msgid "{0} from now"
+msgstr "{0} od teď"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:95
+msgid "{0} ago"
+msgstr "před {0}"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:98
+msgid "{0} after"
+msgstr "po {0}"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:98
+msgid "{0} before"
+msgstr "před {0}"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:131
+msgid "just now"
+msgstr "právě teď"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:168
+msgid "about a second ago"
+msgstr "před vteřinou"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:169
+msgid "about a minute ago"
+msgstr "před minutou"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:170
+msgid "about an hour ago"
+msgstr "před hodinou"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:171
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:389
+msgid "about a day ago"
+msgstr "včera"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:172
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:390
+msgid "about a week ago"
+msgstr "před týdnem"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:173
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:391
+msgid "about a month ago"
+msgstr "před měsícem"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:174
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:392
+msgid "about a year ago"
+msgstr "před rokem"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:185
+msgid "in about a second"
+msgstr "za vteřinu"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:186
+msgid "in about a minute"
+msgstr "za minutu"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:187
+msgid "in about an hour"
+msgstr "asi za hodinu"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:188
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:403
+msgid "in about a day"
+msgstr "asi za den"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:189
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:404
+msgid "in about a week"
+msgstr "asi za týden"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:190
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:405
+msgid "in about a month"
+msgstr "asi za měsíc"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:191
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:406
+msgid "in about a year"
+msgstr "asi za rok"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:361
+msgid "today"
+msgstr "dnes"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:427
+msgid "%s ago"
+msgstr "před %s"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:428
+msgid "on %s"
+msgstr "na %s"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:62
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:143
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:373
+msgid "{0} year"
+msgid_plural "{0} years"
+msgstr[0] "{0} rok"
+msgstr[1] "{0} roky"
+msgstr[2] "{0} roků"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:66
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:146
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:376
+msgid "{0} month"
+msgid_plural "{0} months"
+msgstr[0] "{0} měsíc"
+msgstr[1] "{0} měsíce"
+msgstr[2] "{0} měsíců"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:72
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:149
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:379
+msgid "{0} week"
+msgid_plural "{0} weeks"
+msgstr[0] "{0} týden"
+msgstr[1] "{0} týdny"
+msgstr[2] "{0} týdnů"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:74
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:152
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:382
+msgid "{0} day"
+msgid_plural "{0} days"
+msgstr[0] "{0} den"
+msgstr[1] "{0} dny"
+msgstr[2] "{0} dnů"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:79
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:155
+msgid "{0} hour"
+msgid_plural "{0} hours"
+msgstr[0] "{0} hodina"
+msgstr[1] "{0} hodiny"
+msgstr[2] "{0} hodin"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:83
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:158
+msgid "{0} minute"
+msgid_plural "{0} minutes"
+msgstr[0] "{0} minuta"
+msgstr[1] "{0} minuty"
+msgstr[2] "{0} minut"
+
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:87
+#: vendor/cakephp/cakephp/src/I18n/RelativeTimeFormatter.php:161
+msgid "{0} second"
+msgid_plural "{0} seconds"
+msgstr[0] "{0} vteřina"
+msgstr[1] "{0} vteřiny"
+msgstr[2] "{0} vteřin"
+
+#: vendor/cakephp/cakephp/src/ORM/RulesChecker.php:65
+msgid "This value is already in use"
+msgstr "Tato hodnota se již používá"
+
+#: vendor/cakephp/cakephp/src/ORM/RulesChecker.php:116
+#: vendor/cakephp/cakephp/src/ORM/RulesChecker.php:168
+msgid "This value does not exist"
+msgstr "Tato hodnota neexistuje"
+
+#: vendor/cakephp/cakephp/src/ORM/RulesChecker.php:292
+msgid "Cannot modify row: a constraint for the `{0}` association fails."
+msgstr "Nelze upravit řádek: omezení pro asociaci `{0}` selhalo."
+
+#: vendor/cakephp/cakephp/src/ORM/RulesChecker.php:330
+msgid "The count does not match {0}{1}"
+msgstr "Součet nesedí {0}{1}"
+
+#: vendor/cakephp/cakephp/src/Utility/Text.php:926
+msgid "and"
+msgstr "a"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1080
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:3067
+#: vendor/cakephp/cakephp/src/View/Form/ArrayContext.php:232
+msgid "This field cannot be left empty"
+msgstr "Toto pole nelze ponechat prázdné"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1107
+msgid "The provided value must be alphanumeric"
+msgstr "Zadaná hodnota musí být alfanumerická"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1134
+msgid "The provided value must not be alphanumeric"
+msgstr "Zadaná hodnota nesmí být alfanumerická"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1161
+msgid "The provided value must be ASCII-alphanumeric"
+msgstr "Zadaná hodnota musí být ASCII-alfanumerická"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1188
+msgid "The provided value must not be ASCII-alphanumeric"
+msgstr "Zadaná hodnota nesmí být ASCII-alfanumerická"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1231
+msgid ""
+"The length of the provided value must be between `{0}` and `{1}`, inclusively"
+msgstr "Délka zadané hodnoty musí být mezi `{0}` a `{1}` včetně"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1282
+msgid "The provided value must be a valid credit card number of any type"
+msgstr "Zadaná hodnota musí být platné číslo kreditní karty libovolného typu"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1287
+msgid ""
+"The provided value must be a valid credit card number of these types: `{0}`"
+msgstr "Zadaná hodnota musí být platné číslo kreditní karty těchto typů: `{0}`"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1323
+msgid "The provided value must be greater than `{0}`"
+msgstr "Zadaná hodnota musí být větší než `{0}`"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1355
+msgid "The provided value must be greater than or equal to `{0}`"
+msgstr "Zadaná hodnota musí být větší nebo rovna `{0}`"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1387
+msgid "The provided value must be less than `{0}`"
+msgstr "Zadaná hodnota musí být menší než `{0}`"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1419
+msgid "The provided value must be less than or equal to `{0}`"
+msgstr "Zadaná hodnota musí být menší nebo rovna `{0}`"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1451
+msgid "The provided value must be equal to `{0}`"
+msgstr "Zadaná hodnota se musí rovnat `{0}`"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1483
+msgid "The provided value must not be equal to `{0}`"
+msgstr "Zadaná hodnota se nesmí rovnat `{0}`"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1517
+msgid "The provided value must be same as `{0}`"
+msgstr "Zadaná hodnota musí být stejná jako `{0}`"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1550
+msgid "The provided value must not be same as `{0}`"
+msgstr "Zadaná hodnota nesmí být stejná jako `{0}`"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1583
+msgid "The provided value must be equal to the one of field `{0}`"
+msgstr "Zadaná hodnota se musí rovnat hodnotě pole `{0}`"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1620
+msgid "The provided value must not be equal to the one of field `{0}`"
+msgstr "Zadaná hodnota se nesmí rovnat hodnotě pole `{0}`"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1657
+msgid "The provided value must be greater than the one of field `{0}`"
+msgstr "Zadaná hodnota musí být větší než hodnota pole `{0}`"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1697
+msgid ""
+"The provided value must be greater than or equal to the one of field `{0}`"
+msgstr "Zadaná hodnota musí být větší nebo rovna hodnotě pole `{0}`"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1734
+msgid "The provided value must be less than the one of field `{0}`"
+msgstr "Zadaná hodnota musí být menší než hodnota pole `{0}`"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1774
+msgid "The provided value must be less than or equal to the one of field `{0}`"
+msgstr "Zadaná hodnota musí být menší nebo rovna hodnotě pole `{0}`"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1829
+msgid "The provided value must be a date of one of these formats: `{0}`"
+msgstr "Zadaná hodnota musí být datum v jednom z těchto formátů: `{0}`"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1891
+msgid ""
+"The provided value must be a date and time of one of these formats: `{0}`"
+msgstr "Zadaná hodnota musí být datum a čas v jednom z těchto formátů: `{0}`"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1922
+msgid "The provided value must be a time"
+msgstr "Zadaná hodnota musí být čas"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1954
+msgid "The provided value must be a localized time, date or date and time"
+msgstr "Zadaná hodnota musí být lokalizovaný čas, datum nebo datum a čas"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:1981
+msgid "The provided value must be a boolean"
+msgstr "Zadaná hodnota musí být logická"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2017
+msgid ""
+"The provided value must be decimal with any number of decimal places, "
+"including none"
+msgstr ""
+"Zadaná hodnota musí být desetinná s libovolným počtem desetinných míst, "
+"včetně žádného"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2022
+msgid "The provided value must be decimal with `{0}` decimal places"
+msgstr "Zadaná hodnota musí být desetinná s `{0}` desetinnými místy"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2058
+msgid "The provided value must be an e-mail address"
+msgstr "Zadanou hodnotou musí být e-mailová adresa"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2099
+msgid "The provided value must be one of `{0}`"
+msgstr "Zadaná hodnota musí být jedna z `{0}`"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2128
+msgid "The provided value must be an IP address"
+msgstr "Zadaná hodnota musí být IP adresa"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2155
+msgid "The provided value must be an IPv4 address"
+msgstr "Zadaná hodnota musí být adresa IPv4"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2182
+msgid "The provided value must be an IPv6 address"
+msgstr "Zadaná hodnota musí být adresa IPv6"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2210
+msgid "The provided value must be at least `{0}` characters long"
+msgstr "Zadaná hodnota musí být dlouhá alespoň `{0}` znaků"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2238
+msgid "The provided value must be at least `{0}` bytes long"
+msgstr "Zadaná hodnota musí být dlouhá alespoň `{0}` bajtů"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2266
+msgid "The provided value must be at most `{0}` characters long"
+msgstr "Zadaná hodnota musí být dlouhá maximálně `{0}` znaků"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2294
+msgid "The provided value must be at most `{0}` bytes long"
+msgstr "Zadaná hodnota musí být dlouhá maximálně `{0}` bajtů"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2321
+msgid "The provided value must be numeric"
+msgstr "Zadaná hodnota musí být číselná"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2348
+msgid "The provided value must be a natural number"
+msgstr "Zadaná hodnota musí být přirozené číslo"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2375
+msgid "The provided value must be a non-negative integer"
+msgstr "Zadaná hodnota musí být nezáporné celé číslo"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2414
+msgid "The provided value must be between `{0}` and `{1}`, inclusively"
+msgstr "Zadaná hodnota musí být mezi `{0}` a `{1}` včetně"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2448
+msgid "The provided value must be a URL"
+msgstr "Zadanou hodnotou musí být adresa URL"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2477
+msgid "The provided value must be a URL with protocol"
+msgstr "Zadaná hodnota musí být URL s protokolem"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2507
+msgid "The provided value must be one of: `{0}`"
+msgstr "Zadaná hodnota musí být jedna z následujících: `{0}`"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2538
+msgid "The provided value must be a UUID"
+msgstr "Zadaná hodnota musí být UUID"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2570
+msgid "The provided value must be an uploaded file"
+msgstr "Zadaná hodnota musí být nahraný soubor"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2599
+msgid "The provided value must be a latitude/longitude coordinate"
+msgstr "Zadaná hodnota musí být souřadnice zeměpisné šířky a délky"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2626
+msgid "The provided value must be a latitude"
+msgstr "Zadaná hodnota musí být zeměpisná šířka"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2653
+msgid "The provided value must be a longitude"
+msgstr "Zadaná hodnota musí být zeměpisná délka"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2680
+msgid "The provided value must be ASCII bytes only"
+msgstr "Zadaná hodnota musí být pouze bajty ASCII"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2707
+msgid "The provided value must be UTF-8 bytes only"
+msgstr "Zadaná hodnota musí být pouze bajty UTF-8"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2736
+msgid "The provided value must be 3 and 4 byte UTF-8 sequences only"
+msgstr "Zadaná hodnota musí být pouze 3 a 4 bajtové sekvence UTF-8"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2763
+msgid "The provided value must be an integer"
+msgstr "Zadaná hodnota musí být celé číslo"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2790
+msgid "The provided value must be an array"
+msgstr "Zadaná hodnota musí být pole"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2816
+msgid "The provided value must be scalar"
+msgstr "Zadaná hodnota musí být skalární"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2842
+msgid "The provided value must be a hex color"
+msgstr "Zadaná hodnota musí být hexadecimální barva"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2874
+msgid "The provided value must be a set of multiple options"
+msgstr "Zadaná hodnota musí být souborem více voleb"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2905
+msgid "The provided value must have at least `{0}` elements"
+msgstr "Zadaná hodnota musí mít alespoň `{0}` prvků"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:2940
+msgid "The provided value must have at most `{0}` elements"
+msgstr "Zadaná hodnota musí mít nejvýše `{0}` prvků"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:3007
+msgid "The provided value must match against the pattern `{0}`"
+msgstr "Zadaná hodnota musí odpovídat vzoru `{0}`"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:3038
+msgid "This field is required"
+msgstr "Toto pole je povinné"
+
+#: vendor/cakephp/cakephp/src/Validation/Validator.php:3196
+msgid "The provided value is invalid"
+msgstr "Zadaná hodnota je neplatná"
+
+#: vendor/cakephp/cakephp/src/View/Helper/FormHelper.php:1037
+msgid "Edit {0}"
+msgstr "Upravit {0}"
+
+#: vendor/cakephp/cakephp/src/View/Helper/FormHelper.php:1039
+msgid "New {0}"
+msgstr "Nový {0}"
+
+#: vendor/cakephp/cakephp/src/View/Helper/FormHelper.php:2073
+msgid "Submit"
+msgstr "Potvrdit"
+
+#~ msgid "{0,number,#,###.##} MB"
+#~ msgstr "{0,number,#,###.##} MB"
+
+#~ msgid "{0,number,#,###.##} GB"
+#~ msgstr "{0,number,#,###.##} GB"
+
+#~ msgid "{0,number,#,###.##} TB"
+#~ msgstr "{0,number,#,###.##} TB"
+
+#~ msgid "An Internal Error Has Occurred"
+#~ msgstr "Došlo k vnitřní chybě"
+
+#~ msgid "You are not authorized to access that location."
+#~ msgstr "Nemáte oprávnění pro přístup k této sekci."

@@ -1,0 +1,35 @@
+<?php
+/**
+ * Names the proposal: what the papers are for, and where they stand.
+ *
+ * Which contract it belongs to is not said here. The bar across the top of the page already
+ * carries it, and every page about a proposal is reached under the contract, so opening with the
+ * number said twice what the page had said once and pushed the papers themselves into second
+ * place.
+ *
+ * Every page that acts on a proposal opens with this, so that the heading says which record is
+ * being looked at rather than which button was pressed to get there - and says which of those
+ * pages it is, in front of it. What follows draws its own line, so the heading only wants
+ * the room.
+ *
+ * Papers that go out in a proposal put to the customer are a part of it rather than a proposal of
+ * their own, and are named so - the way back up to it is in the menu, where the ways out live.
+ *
+ * @var \App\View\AppView $this
+ * @var \App\Model\Entity\ContractProposal $contractProposal
+ * @var string|null $doing What the page holding this is about the proposal, if not the proposal.
+ */
+
+$inARound = $contractProposal->customer_proposal_id !== null;
+?>
+<?= $this->record(
+    $inARound ? __('Contract in a Proposal') : __('Contract Proposal'),
+    __(
+        '{0} from {1}',
+        $contractProposal->purpose->label(),
+        $contractProposal->effective_from,
+    ),
+    (string)$contractProposal->getState(),
+    $doing ?? null,
+) ?>
+<br>

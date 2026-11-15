@@ -1,0 +1,174 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Service\ContractPrint;
+
+use App\Model\Entity\Billing;
+use App\Model\Entity\ContractVersion;
+use App\Model\Enum\ContractDocumentType;
+use Cake\Collection\Collection;
+use Cake\Database\Exception\MissingConnectionException;
+use Cake\I18n\Date;
+use Cake\ORM\Locator\LocatorAwareTrait;
+use Radius\Model\Table\AccountsTable;
+
+/**
+ * Enriches validated ContractPrintData with derived and auxiliary information
+ * required for contract-related print outputs.
+ *
+ * This class:
+ *  - does NOT perform validation (handled by ContractPrintValidator)
+ *  - does NOT render PDFs or views
+ *  - does NOT perform redirects or Flash messaging
+ *
+ * It operates purely on already prepared ContractPrintData and
+ * mutates it by adding context-dependent data needed for printing,
+ * such as technical connection details and time-relevant billings.
+ */
+final class ContractPrintDataEnricher
+{
+    use LocatorAwareTrait;
+
+    /**
+     * Enriches the given ContractPrintData instance with all
+     * additional information required for printing.
+     *
+     * This method is intended to be called only after successful validation.
+     * It mutates the provided DTO by filling optional properties
+     * based on document type and contract context.
+     *
+     * @return void
+     */
+    public function enrich(
+        ContractPrintData $data,
+    ): void {
+        $this->enrichTechnicalDetails($data);
+        $this->enrichBillings($data);
+    }
+
+    /**
+     * Enriches technical connection details for handover protocol documents.
+     *
+     * This includes:
+     *  - access point name
+     *  - RADIUS username
+     *  - RADIUS password
+     *
+     * The access point comes off the contract and the RADIUS pair off the account, where there is
+     * one to read. Only the pair is printed today; the access point is kept because the protocol
+     * is a template somebody may want to put it back into.
+     *
+     * For non-handover document types, this method does nothing.
+     *
+     * @return void
+     */
+    private function enrichTechnicalDetails(
+        ContractPrintData $data,
+    ): void {
+        // Technical details are only relevant for handover protocol documents
+        if (!$data->type->isHandoverProtocol()) {
+            return;
+        }
+
+        $technicalData = new ContractPrintTechnicalData();
+
+        try {
+            /** @var \Radius\Model\Entity\Account|null $radiusAccount */
+            $radiusAccount = $this->fetchTable(AccountsTable::class)
+                ->find()
+                ->where([
+                    'contract_id' => $data->contract->id,
+                    'active' => true,
+                ])
+                ->orderBy(['id' => 'DESC'])
+                ->limit(1)
+                ->first();
+
+            $radiusConnected = true;
+        } catch (MissingConnectionException) {
+            $radiusAccount = null;
+            $radiusConnected = false;
+        }
+
+        if ($data->contract->access_point->data?->name !== null) {
+            $technicalData->accessPoint = $data->contract->access_point->data->name;
+        }
+
+        if ($radiusConnected && isset($radiusAccount->username)) {
+            $technicalData->radiusUsername = (string)$radiusAccount->username;
+        }
+
+        if ($radiusConnected && isset($radiusAccount->password)) {
+            $technicalData->radiusPassword = (string)$radiusAccount->password;
+        }
+
+        $data->technicalDetails = $technicalData;
+    }
+
+    /**
+     * Enriches billing collections relevant for the printed document.
+     *
+     * Billings are split only by time relevance:
+     *  - active billings applicable at the document reference date
+     *  - future billings starting after the document reference date
+     *
+     * The reference date is determined as follows:
+     *  - contract version start date for standard contract documents
+     *  - amendment effective date for contract amendment documents
+     *
+     * Further semantic splitting (e.g. individual vs standard billings)
+     * is intentionally deferred to DTO getters.
+     *
+     * If no contract version is selected, no billing data is enriched.
+     *
+     * @return void
+     */
+    private function enrichBillings(
+        ContractPrintData $data,
+    ): void {
+        // Billing enrichment only makes sense if we have a specific contract version context
+        if (!$data->contractVersionToBeExecuted instanceof ContractVersion) {
+            return;
+        }
+
+        // Determine the reference date for billing relevance based on document type
+        $referenceDate = $data->contractVersionToBeExecuted->valid_from;
+        if (
+            $data->type === ContractDocumentType::ContractAmendment
+            && $data->effectiveDateOfAmendment instanceof Date
+        ) {
+            $referenceDate = $data->effectiveDateOfAmendment;
+        }
+
+        // Use CakePHP's Collection to filter billings based on their relevance to the reference date
+        // What the proposal would leave behind, where there is one; the live records otherwise,
+        // which is what the summary of an older contract still falls back on.
+        $billings = new Collection($data->projectedBillings ?? $data->contract->billings);
+
+        // Active billings are those that are applicable at the reference date
+        $data->activeBillings = $billings->reject(
+            function (Billing $billing) use ($referenceDate): bool {
+                return (
+                        $billing->billing_from !== null
+                        && $billing->billing_from > $referenceDate
+                    ) || (
+                        $billing->billing_until !== null
+                        && $billing->billing_until < $referenceDate
+                    );
+            },
+        );
+
+        // Future billings are those that start after the reference date
+        $data->futureBillings = $billings->reject(
+            function (Billing $billing) use ($referenceDate): bool {
+                return (
+                        $billing->billing_from !== null
+                        && $billing->billing_from <= $referenceDate
+                    ) || (
+                        $billing->billing_until !== null
+                        && $billing->billing_until < $referenceDate
+                    );
+            },
+        );
+    }
+}

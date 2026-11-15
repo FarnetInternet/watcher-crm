@@ -1,0 +1,828 @@
+# LANGUAGE translation of CakePHP Application
+# Copyright YEAR NAME <EMAIL@ADDRESS>
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"POT-Creation-Date: 2026-11-14 16:06+0100\n"
+"PO-Revision-Date: 2026-10-13 23:30+0200\n"
+"Last-Translator: Martin Patočka <mapik@mapik.net>\n"
+"Language-Team: LANGUAGE <EMAIL@ADDRESS>\n"
+"Language: cs_CZ\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n==1 ? 0 : n>=2 && n<=4 ? 1 : 2);\n"
+
+#: plugins/Access/config/settings.php:17
+msgid "Roles held to the stricter rules, together with superusers."
+msgstr "Role, na které platí přísnější pravidla, spolu se superuživateli."
+
+#: plugins/Access/config/settings.php:21
+msgid "The shortest password an account may be given."
+msgstr "Nejkratší heslo, které účet může mít."
+
+#: plugins/Access/config/settings.php:25
+msgid "The shortest password of an account held to the stricter rules."
+msgstr "Nejkratší heslo účtu, na který platí přísnější pravidla."
+
+#: plugins/Access/config/settings.php:29
+msgid ""
+"Refuse passwords containing the username or e-mail, repeated or running "
+"characters, and the most common passwords."
+msgstr ""
+"Odmítat hesla s uživatelským jménem nebo e-mailem, s opakujícími se znaky "
+"nebo jejich řadou a nejběžnější hesla."
+
+#: plugins/Access/config/settings.php:37
+msgid "Everybody signs in with two-step verification."
+msgstr "Všichni se přihlašují s dvoufázovým ověřením."
+
+#: plugins/Access/config/settings.php:41
+msgid "Accounts held to the stricter rules sign in with two-step verification."
+msgstr ""
+"Účty, na které platí přísnější pravidla, se přihlašují s dvoufázovým "
+"ověřením."
+
+#: plugins/Access/config/settings.php:45
+msgid ""
+"The hash function offered first when one-time codes are set up; whoever sets "
+"them up may choose the best one their app understands. Microsoft "
+"Authenticator understands SHA-1 alone."
+msgstr ""
+"Hašovací funkce nabízená jako první při nastavení jednorázových kódů; kdo je "
+"nastavuje, může zvolit tu nejlepší, kterou jeho aplikace umí. Microsoft "
+"Authenticator umí jen SHA-1."
+
+#: plugins/Access/config/settings.php:53
+msgid ""
+"Failed sign-ins of one account from one address before more are refused for "
+"a while."
+msgstr ""
+"Počet neúspěšných přihlášení jednoho účtu z jedné adresy, po kterém se další "
+"na čas odmítají."
+
+#: plugins/Access/config/settings.php:60
+msgid ""
+"Failed sign-ins from one address, whatever the account, before more are "
+"refused."
+msgstr ""
+"Počet neúspěšných přihlášení z jedné adresy k jakýmkoli účtům, po kterém se "
+"další odmítají."
+
+#: plugins/Access/config/settings.php:64
+msgid "How long failed sign-ins are remembered and refusals last."
+msgstr ""
+"Jak dlouho se neúspěšná přihlášení pamatují a jak dlouho odmítání trvá."
+
+#: plugins/Access/src/Authentication/OneTimePasswordAlgorithm.php:75
+msgid "SHA-1, which every authenticator app understands"
+msgstr "SHA-1, kterou umí každá ověřovací aplikace"
+
+#: plugins/Access/src/Authentication/OneTimePasswordAlgorithm.php:76
+msgid "SHA-256, which not every authenticator app understands"
+msgstr "SHA-256, kterou neumí každá ověřovací aplikace"
+
+#: plugins/Access/src/Authentication/OneTimePasswordAlgorithm.php:77
+msgid "SHA-512, which not every authenticator app understands"
+msgstr "SHA-512, kterou neumí každá ověřovací aplikace"
+
+#: plugins/Access/src/Authentication/PasswordRules.php:61
+msgid "The password has to have at least {0} characters."
+msgstr "Heslo musí mít alespoň {0} znaků."
+
+#: plugins/Access/src/Authentication/PasswordRules.php:70
+msgid "The password must not contain the username or the e-mail."
+msgstr "Heslo nesmí obsahovat uživatelské jméno ani e-mail."
+
+#: plugins/Access/src/Authentication/PasswordRules.php:75
+msgid "The password must not be a repeated piece or a run of characters."
+msgstr "Heslo nesmí být opakující se úsek ani řada znaků."
+
+#: plugins/Access/src/Authentication/PasswordRules.php:78
+msgid "The password is one of the most common ones."
+msgstr "Heslo patří mezi nejběžnější."
+
+#: plugins/Access/src/Controller/Trait/ApiTokenTrait.php:64
+msgid "The API key of {0} is removed."
+msgstr "API klíč účtu {0} byl odebrán."
+
+#: plugins/Access/src/Controller/Trait/OneTimePasswordTrait.php:87
+#: plugins/Access/src/Controller/Trait/OneTimePasswordTrait.php:306
+#: plugins/Access/src/Controller/UsersController.php:112
+#: plugins/Access/src/Controller/UsersController.php:313
+msgid "Too many failed sign-ins. Try again in a few minutes."
+msgstr "Příliš mnoho neúspěšných přihlášení. Zkuste to znovu za několik minut."
+
+#: plugins/Access/src/Controller/Trait/OneTimePasswordTrait.php:88
+msgid "The code is not right. Please sign in again."
+msgstr "Kód je nesprávný. Přihlaste se prosím znovu."
+
+#: plugins/Access/src/Controller/Trait/OneTimePasswordTrait.php:134
+#: plugins/Access/src/Controller/Trait/OneTimePasswordTrait.php:319
+msgid "The code is not right. Please try again."
+msgstr "Kód je nesprávný. Zkuste to prosím znovu."
+
+#: plugins/Access/src/Controller/Trait/OneTimePasswordTrait.php:155
+msgid "Your account has to use two-step verification."
+msgstr "Váš účet musí používat dvoufázové ověření."
+
+#: plugins/Access/src/Controller/Trait/OneTimePasswordTrait.php:166
+msgid "Two-step verification is turned off."
+msgstr "Dvoufázové ověření je vypnuté."
+
+#: plugins/Access/src/Controller/Trait/OneTimePasswordTrait.php:241
+msgid "The two-step verification of {0} is reset."
+msgstr "Dvoufázové ověření účtu {0} je resetované."
+
+#: plugins/Access/src/Controller/Trait/PasswordResetTrait.php:64
+msgid ""
+"If the username or the e-mail belongs to an active account, a link for "
+"setting a new password is on its way to its e-mail."
+msgstr ""
+"Pokud uživatelské jméno nebo e-mail patří aktivnímu účtu, odkaz pro "
+"nastavení nového hesla je na cestě na jeho e-mail."
+
+#: plugins/Access/src/Controller/Trait/PasswordResetTrait.php:85
+msgid ""
+"The link for setting a new password does not work any more. Ask for a new "
+"one."
+msgstr "Odkaz pro nastavení nového hesla už neplatí. Požádejte o nový."
+
+#: plugins/Access/src/Controller/Trait/PasswordResetTrait.php:109
+msgid "The new password is set. Sign in with it."
+msgstr "Nové heslo je nastavené. Přihlaste se s ním."
+
+#: plugins/Access/src/Controller/Trait/PasswordResetTrait.php:113
+msgid "The password could not be set."
+msgstr "Heslo se nepodařilo nastavit."
+
+#: plugins/Access/src/Controller/Trait/SocialAccountsTrait.php:49
+msgid "The identity could not be linked. Please try again."
+msgstr "Sociální účet se nepodařilo propojit. Zkuste to prosím znovu."
+
+#: plugins/Access/src/Controller/Trait/SocialAccountsTrait.php:85
+msgid "The identity at {0} is linked."
+msgstr "Sociální účet {0} byl propojen."
+
+#: plugins/Access/src/Controller/Trait/SocialAccountsTrait.php:111
+#: plugins/Access/src/Controller/Trait/SocialAccountsTrait.php:141
+msgid "The identity is unlinked."
+msgstr "Propojení sociálního účtu bylo zrušeno."
+
+#: plugins/Access/src/Controller/Trait/SocialAccountsTrait.php:113
+#: plugins/Access/src/Controller/Trait/SocialAccountsTrait.php:143
+msgid "The identity could not be unlinked."
+msgstr "Propojení sociálního účtu se nepodařilo zrušit."
+
+#: plugins/Access/src/Controller/UsersController.php:130
+msgid "The username or the password is not right."
+msgstr "Uživatelské jméno nebo heslo je nesprávné."
+
+#: plugins/Access/src/Controller/UsersController.php:136
+msgid "An account without a password signs in with {0}."
+msgstr "Účet bez hesla se přihlašuje přes {0}."
+
+#: plugins/Access/src/Controller/UsersController.php:139
+msgid "or"
+msgstr "nebo"
+
+#: plugins/Access/src/Controller/UsersController.php:159
+msgid "Signing in with {0} did not finish. Please try again."
+msgstr "Přihlášení přes {0} se nedokončilo. Zkuste to prosím znovu."
+
+#: plugins/Access/src/Controller/UsersController.php:160
+msgid ""
+"No account here is linked to that identity. Sign in with your password and "
+"link it in your profile."
+msgstr ""
+"S tímto sociálním účtem tu není propojený žádný účet. Přihlaste se heslem a "
+"propojte ho ve svém profilu."
+
+#: plugins/Access/src/Controller/UsersController.php:196
+msgid "You have signed out."
+msgstr "Úspěšně jste se odhlásili."
+
+#: plugins/Access/src/Controller/UsersController.php:240
+msgid "Only a superuser changes the password of somebody else."
+msgstr "Heslo jiného uživatele může změnit jen superuživatel."
+
+#: plugins/Access/src/Controller/UsersController.php:264
+msgid "The new password has to differ from the current one."
+msgstr "Nové heslo se musí lišit od současného."
+
+#: plugins/Access/src/Controller/UsersController.php:281
+msgid "The password has been changed."
+msgstr "Heslo bylo úspěšně změněno."
+
+#: plugins/Access/src/Controller/UsersController.php:285
+msgid "The password could not be changed."
+msgstr "Heslo se nepodařilo změnit."
+
+#: plugins/Access/src/Controller/UsersController.php:322
+msgid "This is not the current password."
+msgstr "Současné heslo je nesprávné."
+
+#: plugins/Access/src/Controller/UsersController.php:339
+msgid "Only a superuser turns off signing in with a password."
+msgstr "Přihlášení heslem vypíná jen superuživatel."
+
+#: plugins/Access/src/Controller/UsersController.php:341
+msgid "Signing in to your own account with a password stays on."
+msgstr "Přihlášení heslem k vlastnímu účtu vypnout nelze."
+
+#: plugins/Access/src/Controller/UsersController.php:349
+msgid "Signing in with a password is off. Setting a password turns it on."
+msgstr "Přihlášení heslem je vypnuté. Nastavením hesla se zase zapne."
+
+#: plugins/Access/src/Controller/UsersController.php:416
+#: plugins/Access/src/Controller/UsersController.php:442
+msgid "The account has been saved."
+msgstr "Účet byl uložen."
+
+#: plugins/Access/src/Controller/UsersController.php:420
+#: plugins/Access/src/Controller/UsersController.php:446
+msgid "The account could not be saved."
+msgstr "Účet se nepodařilo uložit."
+
+#: plugins/Access/src/Controller/UsersController.php:465
+msgid "The account has been deleted."
+msgstr "Účet byl smazán."
+
+#: plugins/Access/src/Controller/UsersController.php:468
+msgid "The account could not be deleted."
+msgstr "Účet se nepodařilo smazat."
+
+#: plugins/Access/src/Mailer/UsersMailer.php:25
+#: plugins/Access/templates/Users/reset_password.php:11
+msgid "A new password for {0}"
+msgstr "Nové heslo pro {0}"
+
+#: plugins/Access/src/Middleware/UnauthorizedHandler/RedirectHandler.php:70
+msgid "You are not allowed to open that page."
+msgstr "Nemáte oprávnění pro přístup k této stránce."
+
+#: plugins/Access/src/Model/Table/SocialAccountsTable.php:58
+msgid "This identity is already linked to another account."
+msgstr "Sociální účet je již propojený s jiným uživatelem."
+
+#: plugins/Access/src/Model/Table/UsersTable.php:219
+msgid "The two passwords are not the same."
+msgstr "Zadaná hesla se neshodují."
+
+#: plugins/Access/src/Model/Table/UsersTable.php:249
+msgid "This username is already taken."
+msgstr "Toto uživatelské jméno už existuje."
+
+#: plugins/Access/src/Model/Table/UsersTable.php:259
+msgid "Records still refer to this account. Deactivate it instead."
+msgstr "Na účet stále odkazují jiné záznamy. Místo smazání ho deaktivujte."
+
+#: plugins/Access/src/Social/Providers.php:51
+msgid "Single Sign-On"
+msgstr "SSO"
+
+#: plugins/Access/templates/Users/add.php:10
+#: plugins/Access/templates/Users/api_token.php:10
+#: plugins/Access/templates/Users/change_password.php:13
+#: plugins/Access/templates/Users/disable_one_time_password.php:9
+#: plugins/Access/templates/Users/edit.php:10
+#: plugins/Access/templates/Users/index.php:43
+#: plugins/Access/templates/Users/new_recovery_codes.php:9
+#: plugins/Access/templates/Users/one_time_password.php:12
+#: plugins/Access/templates/Users/profile.php:11
+#: plugins/Access/templates/Users/recovery_codes.php:11
+#: plugins/Access/templates/Users/view.php:17
+#: plugins/Access/templates/Users/view.php:150
+#: plugins/Access/templates/element/social_accounts.php:31
+#: plugins/Access/templates/element/two_step_verification.php:26
+msgid "Actions"
+msgstr "Akce"
+
+#: plugins/Access/templates/Users/add.php:12
+#: plugins/Access/templates/Users/change_password.php:15
+#: plugins/Access/templates/Users/edit.php:20
+#: plugins/Access/templates/Users/view.php:71
+msgid "List Users"
+msgstr "Seznam uživatelů"
+
+#: plugins/Access/templates/Users/add.php:22
+msgid "Add User"
+msgstr "Přidat uživatele"
+
+#: plugins/Access/templates/Users/add.php:34
+#: plugins/Access/templates/Users/change_password.php:64
+#: plugins/Access/templates/Users/edit.php:45
+#: plugins/Access/templates/Users/request_reset_password.php:15
+msgid "Submit"
+msgstr "Odeslat"
+
+#: plugins/Access/templates/Users/api_token.php:12
+msgid "View User"
+msgstr "Zobrazit uživatele"
+
+#: plugins/Access/templates/Users/api_token.php:20
+msgid "API Key"
+msgstr "API klíč"
+
+#: plugins/Access/templates/Users/api_token.php:22
+msgid ""
+"The client signs in with this key in the Authorization header, as a Bearer "
+"token. It is shown only now. The key the account had before no longer works."
+msgstr ""
+"Klient se tímto klíčem přihlašuje v hlavičce Authorization jako Bearer "
+"token. Zobrazuje se jen teď. Klíč, který účet měl dosud, už nefunguje."
+
+#: plugins/Access/templates/Users/change_password.php:20
+#: plugins/Access/templates/Users/disable_one_time_password.php:11
+#: plugins/Access/templates/Users/new_recovery_codes.php:11
+#: plugins/Access/templates/Users/one_time_password.php:14
+#: plugins/Access/templates/Users/profile.php:26
+#: plugins/Access/templates/Users/recovery_codes.php:13
+msgid "User Profile"
+msgstr "Uživatelský profil"
+
+#: plugins/Access/templates/Users/change_password.php:31
+msgid "Please enter the new password"
+msgstr "Zadejte prosím nové heslo"
+
+#: plugins/Access/templates/Users/change_password.php:38
+msgid "Current password"
+msgstr "Současné heslo"
+
+#: plugins/Access/templates/Users/change_password.php:48
+#: plugins/Access/templates/Users/reset_password.php:17
+msgid "New password"
+msgstr "Nové heslo"
+
+#: plugins/Access/templates/Users/change_password.php:49
+#: plugins/Access/templates/Users/reset_password.php:18
+msgid ""
+"At least {0} characters, not the username or the e-mail and not a common "
+"password."
+msgstr "Alespoň {0} znaků, ne uživatelské jméno ani e-mail a ne běžné heslo."
+
+#: plugins/Access/templates/Users/change_password.php:60
+#: plugins/Access/templates/Users/reset_password.php:29
+msgid "Confirm password"
+msgstr "Potvrďte heslo"
+
+#: plugins/Access/templates/Users/disable_one_time_password.php:21
+msgid "Turn Two-Step Verification Off"
+msgstr "Vypnutí dvoufázového ověření"
+
+#: plugins/Access/templates/Users/disable_one_time_password.php:23
+#: plugins/Access/templates/Users/new_recovery_codes.php:23
+#: plugins/Access/templates/Users/one_time_password.php:27
+#: plugins/Access/templates/Users/verify.php:32
+msgid "Verification Code (TOTP)"
+msgstr "Ověřovací kód (TOTP)"
+
+#: plugins/Access/templates/Users/disable_one_time_password.php:28
+msgid ""
+"Signing in then asks for the password alone, and the recovery codes stop "
+"working."
+msgstr ""
+"Přihlášení pak bude chtít jen heslo a kódy pro obnovení přestanou platit."
+
+#: plugins/Access/templates/Users/disable_one_time_password.php:34
+#: plugins/Access/templates/element/two_step_verification.php:39
+msgid "Turn Off"
+msgstr "Vypnout"
+
+#: plugins/Access/templates/Users/edit.php:12
+#: plugins/Access/templates/Users/index.php:73
+msgid "Delete"
+msgstr "Odstranit"
+
+#: plugins/Access/templates/Users/edit.php:15
+#: plugins/Access/templates/Users/index.php:75
+#: plugins/Access/templates/Users/view.php:27
+msgid "Are you sure you want to delete # {0}?"
+msgstr "Opravdu chcete odstranit # {0}?"
+
+#: plugins/Access/templates/Users/edit.php:30
+#: plugins/Access/templates/Users/view.php:19
+msgid "Edit User"
+msgstr "Upravit uživatele"
+
+#: plugins/Access/templates/Users/index.php:11
+msgid "Search"
+msgstr "Hledat"
+
+#: plugins/Access/templates/Users/index.php:21
+#: plugins/Access/templates/Users/view.php:76
+msgid "New User"
+msgstr "Nový uživatel"
+
+#: plugins/Access/templates/Users/index.php:25
+msgid "Users"
+msgstr "Uživatelé"
+
+#: plugins/Access/templates/Users/index.php:38
+#: plugins/Access/templates/element/sign_ins.php:11
+msgid "Password Sign-In"
+msgstr "Přihlášení heslem"
+
+#: plugins/Access/templates/Users/index.php:39
+#: plugins/Access/templates/element/two_step_verification.php:19
+msgid "Two-Step Verification"
+msgstr "Dvoufázové ověření"
+
+#: plugins/Access/templates/Users/index.php:40
+#: plugins/Access/templates/element/sign_ins.php:19
+msgid "Last Granted"
+msgstr "Naposledy povoleno"
+
+#: plugins/Access/templates/Users/index.php:53
+#: plugins/Access/templates/Users/index.php:55
+#: plugins/Access/templates/Users/profile.php:52
+#: plugins/Access/templates/Users/profile.php:56
+#: plugins/Access/templates/Users/view.php:110
+#: plugins/Access/templates/Users/view.php:114
+#: plugins/Access/templates/Users/view.php:157
+msgid "Yes"
+msgstr "Ano"
+
+#: plugins/Access/templates/Users/index.php:53
+#: plugins/Access/templates/Users/index.php:55
+#: plugins/Access/templates/Users/profile.php:52
+#: plugins/Access/templates/Users/profile.php:56
+#: plugins/Access/templates/Users/view.php:110
+#: plugins/Access/templates/Users/view.php:114
+#: plugins/Access/templates/Users/view.php:157
+msgid "No"
+msgstr "Ne"
+
+#: plugins/Access/templates/Users/index.php:57
+#: plugins/Access/templates/Users/index.php:58
+#: plugins/Access/templates/element/sign_ins.php:12
+#: plugins/Access/templates/element/sign_ins.php:16
+#: plugins/Access/templates/element/two_step_verification.php:30
+msgid "On"
+msgstr "Zapnuté"
+
+#: plugins/Access/templates/Users/index.php:57
+#: plugins/Access/templates/Users/index.php:58
+#: plugins/Access/templates/element/sign_ins.php:12
+#: plugins/Access/templates/element/sign_ins.php:16
+#: plugins/Access/templates/element/two_step_verification.php:30
+msgid "Off"
+msgstr "Vypnuté"
+
+#: plugins/Access/templates/Users/index.php:64
+msgid "View"
+msgstr "Zobrazit"
+
+#: plugins/Access/templates/Users/index.php:68
+msgid "Edit"
+msgstr "Upravit"
+
+#: plugins/Access/templates/Users/index.php:78
+#: plugins/Access/templates/Users/profile.php:13
+#: plugins/Access/templates/Users/view.php:51
+msgid "Change Password"
+msgstr "Změnit heslo"
+
+#: plugins/Access/templates/Users/index.php:83
+#: plugins/Access/templates/Users/profile.php:18
+msgid "User Settings"
+msgstr "Uživatelské nastavení"
+
+#: plugins/Access/templates/Users/login.php:10
+msgid "Please enter your username and password"
+msgstr "Zadejte prosím své uživatelské jméno a heslo"
+
+#: plugins/Access/templates/Users/login.php:11
+#: plugins/Access/templates/Users/profile.php:31
+#: plugins/Access/templates/Users/view.php:89
+#: plugins/Access/templates/Users/view.php:146
+#: plugins/Access/templates/element/social_accounts.php:30
+msgid "Username"
+msgstr "Uživatelské jméno"
+
+#: plugins/Access/templates/Users/login.php:12
+msgid "Password"
+msgstr "Heslo"
+
+#: plugins/Access/templates/Users/login.php:13
+msgid "Reset Password"
+msgstr "Obnovit heslo"
+
+#: plugins/Access/templates/Users/login.php:15
+msgid "Login"
+msgstr "Přihlásit se"
+
+#: plugins/Access/templates/Users/new_recovery_codes.php:21
+#: plugins/Access/templates/Users/new_recovery_codes.php:34
+#: plugins/Access/templates/element/two_step_verification.php:37
+msgid "New Recovery Codes"
+msgstr "Nové kódy pro obnovení"
+
+#: plugins/Access/templates/Users/new_recovery_codes.php:28
+msgid ""
+"The recovery codes you have now stop working, and the new ones are shown "
+"once."
+msgstr ""
+"Kódy pro obnovení, které máte teď, přestanou platit a nové se zobrazí jen "
+"jednou."
+
+#: plugins/Access/templates/Users/one_time_password.php:24
+#: plugins/Access/templates/Users/verify.php:17
+msgid "Set Up Two-Step Verification"
+msgstr "Nastavení dvoufázového ověření"
+
+#: plugins/Access/templates/Users/one_time_password.php:34
+msgid "Turn On"
+msgstr "Zapnout"
+
+#: plugins/Access/templates/Users/profile.php:35
+#: plugins/Access/templates/Users/view.php:93
+msgid "First Name"
+msgstr "Jméno"
+
+#: plugins/Access/templates/Users/profile.php:39
+#: plugins/Access/templates/Users/view.php:97
+msgid "Last Name"
+msgstr "Příjmení"
+
+#: plugins/Access/templates/Users/profile.php:43
+#: plugins/Access/templates/Users/view.php:101
+msgid "Email"
+msgstr "E-mail"
+
+#: plugins/Access/templates/Users/profile.php:47
+#: plugins/Access/templates/Users/view.php:105
+msgid "Role"
+msgstr "Role"
+
+#: plugins/Access/templates/Users/profile.php:51
+#: plugins/Access/templates/Users/view.php:109
+msgid "Is Superuser"
+msgstr "Je superuživatel"
+
+#: plugins/Access/templates/Users/profile.php:55
+#: plugins/Access/templates/Users/view.php:113
+#: plugins/Access/templates/Users/view.php:148
+msgid "Active"
+msgstr "Aktivní"
+
+#: plugins/Access/templates/Users/profile.php:65
+#: plugins/Access/templates/Users/view.php:123
+#: plugins/Access/templates/Users/view.php:149
+msgid "Created"
+msgstr "Vytvořeno"
+
+#: plugins/Access/templates/Users/profile.php:69
+#: plugins/Access/templates/Users/view.php:127
+msgid "Modified"
+msgstr "Upraveno"
+
+#: plugins/Access/templates/Users/recovery_codes.php:21
+msgid "Recovery Codes"
+msgstr "Kódy pro obnovení"
+
+#: plugins/Access/templates/Users/recovery_codes.php:23
+msgid ""
+"Each of these codes signs you in once in place of a verification code "
+"(TOTP), should you lose your phone. Keep them somewhere safe, away from the "
+"phone. They are shown only now."
+msgstr ""
+"Každým z těchto kódů se jednou přihlásíte místo ověřovacího kódu (TOTP), "
+"kdybyste ztratili telefon. Uložte je na bezpečné místo, mimo telefon. "
+"Zobrazují se jen teď."
+
+#: plugins/Access/templates/Users/recovery_codes.php:42
+msgid "New codes can be made in your profile, which makes these ones useless."
+msgstr "Nové kódy můžete vytvořit ve svém profilu, tyto tím přestanou platit."
+
+#: plugins/Access/templates/Users/recovery_codes.php:43
+msgid "Continue"
+msgstr "Pokračovat"
+
+#: plugins/Access/templates/Users/request_reset_password.php:12
+msgid "Please enter your email or username to reset your password"
+msgstr "Pro obnovení hesla zadejte svůj e-mail nebo uživatelské jméno"
+
+#: plugins/Access/templates/Users/reset_password.php:32
+msgid "Set the password"
+msgstr "Nastavit heslo"
+
+#: plugins/Access/templates/Users/verify.php:19
+msgid ""
+"Your account signs in with the password and a verification code (TOTP) from "
+"an authenticator application on your phone."
+msgstr ""
+"Váš účet se přihlašuje heslem a ověřovacím kódem (TOTP) z ověřovací aplikace "
+"v telefonu."
+
+#: plugins/Access/templates/Users/verify.php:28
+msgid "Enter the verification code (TOTP) from your authenticator application"
+msgstr "Zadejte ověřovací kód (TOTP) z ověřovací aplikace"
+
+#: plugins/Access/templates/Users/verify.php:36
+msgid "Lost your phone? Enter one of your recovery codes instead."
+msgstr "Ztratili jste telefon? Zadejte místo toho jeden z kódů pro obnovení."
+
+#: plugins/Access/templates/Users/verify.php:39
+msgid "Verify"
+msgstr "Ověřit"
+
+#: plugins/Access/templates/Users/view.php:24
+msgid "Delete User"
+msgstr "Odstranit uživatele"
+
+#: plugins/Access/templates/Users/view.php:32
+msgid "New API Key"
+msgstr "Nový API klíč"
+
+#: plugins/Access/templates/Users/view.php:35
+msgid "The key the account has now will stop working. Make a new one?"
+msgstr "Klíč, který účet teď má, přestane fungovat. Vytvořit nový?"
+
+#: plugins/Access/templates/Users/view.php:41
+msgid "Remove API Key"
+msgstr "Odebrat API klíč"
+
+#: plugins/Access/templates/Users/view.php:44
+msgid "No client will sign in with the key any more. Remove it?"
+msgstr "Žádný klient se už tímto klíčem nepřihlásí. Odebrat?"
+
+#: plugins/Access/templates/Users/view.php:51
+msgid "Set Password"
+msgstr "Nastavit heslo"
+
+#: plugins/Access/templates/Users/view.php:57
+msgid "Turn Off Password Sign-In"
+msgstr "Vypnout přihlášení heslem"
+
+#: plugins/Access/templates/Users/view.php:60
+msgid ""
+"The account will sign in only with a key or through an identity provider. "
+"Turn off its password?"
+msgstr ""
+"Účet se pak přihlásí jen klíčem API nebo přes poskytovatele identity. "
+"Vypnout přihlášení heslem?"
+
+#: plugins/Access/templates/Users/view.php:84
+msgid "User"
+msgstr "Uživatel"
+
+#: plugins/Access/templates/Users/view.php:140
+#: plugins/Access/templates/element/social_accounts.php:25
+msgid "Social Accounts"
+msgstr "Sociální účty"
+
+#: plugins/Access/templates/Users/view.php:145
+#: plugins/Access/templates/element/social_accounts.php:29
+msgid "Provider"
+msgstr "Poskytovatel"
+
+#: plugins/Access/templates/Users/view.php:147
+msgid "Reference"
+msgstr "Reference"
+
+#: plugins/Access/templates/Users/view.php:161
+#: plugins/Access/templates/element/social_accounts.php:39
+msgid "Unlink"
+msgstr "Zrušit propojení"
+
+#: plugins/Access/templates/Users/view.php:164
+#: plugins/Access/templates/element/social_accounts.php:41
+msgid "Are you sure you want to unlink {0}?"
+msgstr "Opravdu chcete zrušit propojení s účtem {0}?"
+
+#: plugins/Access/templates/element/one_time_password_setup.php:17
+msgid ""
+"Scan the QR code with an authenticator application on your phone, such as "
+"Google Authenticator, Microsoft Authenticator or Bitwarden Authenticator, "
+"and enter the six-digit verification code (TOTP) it shows."
+msgstr ""
+"Naskenujte QR kód ověřovací aplikací v telefonu, například Google "
+"Authenticator, Microsoft Authenticator nebo Bitwarden Authenticator, a "
+"zadejte šestimístný ověřovací kód (TOTP), který zobrazí."
+
+#: plugins/Access/templates/element/one_time_password_setup.php:23
+msgid ""
+"Scan the QR code with an authenticator application on your phone that "
+"understands {0}, such as Google Authenticator or Bitwarden Authenticator, "
+"and enter the six-digit verification code (TOTP) it shows. Microsoft "
+"Authenticator does not understand it and shows codes that are not right."
+msgstr ""
+"Naskenujte QR kód ověřovací aplikací v telefonu, která umí {0}, například "
+"Google Authenticator nebo Bitwarden Authenticator, a zadejte šestimístný "
+"ověřovací kód (TOTP), který zobrazí. Microsoft Authenticator ji neumí a "
+"ukazuje kódy, které nejsou správné."
+
+#: plugins/Access/templates/element/one_time_password_setup.php:33
+#: plugins/Access/templates/element/two_step_verification.php:24
+msgid "Algorithm"
+msgstr "Algoritmus"
+
+#: plugins/Access/templates/element/one_time_password_setup.php:40
+msgid "QR code for the authenticator application"
+msgstr "QR kód pro ověřovací aplikaci"
+
+#: plugins/Access/templates/element/one_time_password_setup.php:45
+msgid ""
+"Where the QR code cannot be scanned, enter this authenticator application "
+"key (TOTP) instead:"
+msgstr ""
+"Pokud QR kód nejde naskenovat, zadejte místo něj tento klíč ověřovací "
+"aplikace (TOTP):"
+
+#: plugins/Access/templates/element/sign_ins.php:15
+msgid "API Key Sign-In"
+msgstr "Přihlášení API klíčem"
+
+#: plugins/Access/templates/element/sign_ins.php:23
+msgid "Last Granted IP Address"
+msgstr "Poslední povolená IP adresa"
+
+#: plugins/Access/templates/element/sign_ins.php:27
+msgid "Last Denied"
+msgstr "Naposledy odepřeno"
+
+#: plugins/Access/templates/element/sign_ins.php:31
+msgid "Last Denied IP Address"
+msgstr "Poslední odepřená IP adresa"
+
+#: plugins/Access/templates/element/social_accounts.php:20
+msgid "Link an account at {0}"
+msgstr "Propojit účet {0}"
+
+#: plugins/Access/templates/element/social_sign_in.php:16
+msgid "Sign in with {0}"
+msgstr "Přihlásit se přes {0}"
+
+#: plugins/Access/templates/element/two_step_verification.php:22
+msgid "Method"
+msgstr "Metoda"
+
+#: plugins/Access/templates/element/two_step_verification.php:23
+msgid "State"
+msgstr "Stav"
+
+#: plugins/Access/templates/element/two_step_verification.php:25
+msgid "Recovery Codes Left"
+msgstr "Zbývající kódy pro obnovení"
+
+#: plugins/Access/templates/element/two_step_verification.php:29
+msgid "Authenticator Application (TOTP)"
+msgstr "Ověřovací aplikace (TOTP)"
+
+#: plugins/Access/templates/element/two_step_verification.php:35
+msgid "Set Up"
+msgstr "Nastavit"
+
+#: plugins/Access/templates/element/two_step_verification.php:43
+msgid "Reset"
+msgstr "Resetovat"
+
+#: plugins/Access/templates/element/two_step_verification.php:46
+msgid ""
+"The account will have to set its authenticator application up again. Reset?"
+msgstr "Účet si bude muset ověřovací aplikaci nastavit znovu. Resetovat?"
+
+#: plugins/Access/templates/element/two_step_verification.php:60
+msgid "Your account has to use it, so you set it up the next time you sign in."
+msgstr ""
+"Váš účet ho musí používat, takže si ho nastavíte při příštím přihlášení."
+
+#: plugins/Access/templates/element/two_step_verification.php:61
+msgid ""
+"Once it is on, signing in also asks for a verification code (TOTP) from an "
+"authenticator application on your phone."
+msgstr ""
+"Po zapnutí bude přihlášení chtít i ověřovací kód (TOTP) z ověřovací aplikace "
+"v telefonu."
+
+#: plugins/Access/templates/element/two_step_verification.php:69
+msgid ""
+"The account has to use it, so it is set up the next time the account signs "
+"in."
+msgstr "Účet ho musí používat, takže si ho nastaví při příštím přihlášení."
+
+#: plugins/Access/templates/email/text/reset_password.php:9
+msgid "Hello {0},"
+msgstr "Dobrý den,"
+
+#: plugins/Access/templates/email/text/reset_password.php:9
+msgid "Hello,"
+msgstr "Dobrý den,"
+
+#: plugins/Access/templates/email/text/reset_password.php:12
+msgid ""
+"somebody asked for a new password for the account {0}. If it was you, set it "
+"here:"
+msgstr ""
+"někdo požádal o nové heslo k účtu {0}. Pokud jste to byli vy, nastavte ho "
+"zde:"
+
+#: plugins/Access/templates/email/text/reset_password.php:18
+msgid ""
+"The link works for an hour, and once. If it was not you, there is nothing to "
+"do: the password stays as it is."
+msgstr ""
+"Odkaz platí hodinu a jen jednou. Pokud jste to nebyli vy, nemusíte nic "
+"dělat, heslo zůstává beze změny."

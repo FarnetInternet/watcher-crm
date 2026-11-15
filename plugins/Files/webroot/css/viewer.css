@@ -1,0 +1,244 @@
+/**
+ * The name of a page sits on the dark, not in a white slab.
+ *
+ * The line naming the document is a caption, and a caption does not need a sheet of its own. Left
+ * white it took a share of the room and a share of the attention from the thing being read, so it
+ * loses the sheet and keeps the text.
+ *
+ * Below the page rather than over it. Over it is what the viewer does on a narrow screen, and it
+ * reads well there - but the box is laid out against the slide and not against the page inside
+ * it, so on a wide screen it hangs out past the edge of what it is naming.
+ *
+ * And holding the line to the size of its own text is what keeps the page itself whole. A slide
+ * is laid out as a column, and as long as both may grow the line takes what it likes while the
+ * page, which asks for the whole height and may be shrunk, is squeezed away to nothing.
+ */
+.ginner-container.desc-bottom .gslide-description {
+    flex: 0 0 auto;
+    background: transparent;
+}
+
+/**
+ * Two short lines, spaced for what they are. What is there is a name and a filename, where the
+ * spacing was built for a title with a paragraph under it.
+ *
+ * The skin names Arial outright, which is the one thing here that is nobody's choice but the
+ * library's. Unset hands the lines back to whatever the page is set in.
+ */
+.glightbox-clean .gdesc-inner {
+    padding: 10px 20px;
+}
+
+.glightbox-clean .gslide-title {
+    color: #fff;
+    margin-bottom: 2px;
+    font-family: unset;
+}
+
+/**
+ * The filename, and at the far end of the same line which page of how many this is. Beside the
+ * filename it would read as part of it, which is the one thing it is not.
+ */
+.glightbox-clean .gslide-desc {
+    display: flex;
+    justify-content: space-between;
+    gap: 2em;
+    color: #d7d7d7;
+    font-family: unset;
+}
+
+.glightbox-clean .gslide-desc .files-page {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+/**
+ * The other pages of the same document, under the one being read.
+ *
+ * Laid over the container rather than inside the slide: a slide is one page and the strip is
+ * about all of them, and the library lays a slide out without knowing anything is below it. The
+ * panel is built shorter when there is a strip, which is what leaves this its room.
+ */
+/*
+ * What the strip stands on, taken off the page rather than out of it.
+ *
+ * A slide is centred in what it is given, so the room for the strip has to be given away before
+ * the centring happens - making the page smaller alone would leave it centred where it was, with
+ * its foot under the strip. The picture is capped against the window for the same reason: that is
+ * what the library measures it against, and the window does not know about the strip.
+ */
+.glightbox-container.has-files-strip .gslide {
+    box-sizing: border-box;
+    padding-bottom: 128px;
+}
+
+.glightbox-container.has-files-strip .gslide-image img,
+.glightbox-container.has-files-strip .gslide-external {
+    max-height: calc(100vh - 240px) !important;
+}
+
+.files-strip {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 99999;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    /*
+     * Centred while they fit, and from the left once they do not. Plain centring puts the
+     * overflow on both sides, and what hangs off the left cannot be scrolled to at all - with
+     * fifty pages the first of them was simply unreachable.
+     */
+    justify-content: center;
+    justify-content: safe center;
+    overflow-x: auto;
+    padding: 10px 16px;
+}
+
+.files-strip-page {
+    flex: 0 0 auto;
+    width: 80px;
+    height: 108px;
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.45);
+    cursor: pointer;
+    opacity: 0.6;
+}
+
+/* A page with no picture of its own still says which one it is. */
+.files-strip-page.is-blank {
+    color: #d7d7d7;
+    font-family: inherit;
+    font-size: 15px;
+    line-height: 108px;
+    text-align: center;
+}
+
+/*
+ * The whole page rather than as much of it as fills the box. A strip is for telling one page from
+ * another, and a cropped one throws away the part that usually says which it is.
+ */
+.files-strip-page img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.files-strip-page:hover,
+.files-strip-page:focus-visible {
+    opacity: 1;
+}
+
+.files-strip-page.is-here {
+    border-color: #fff;
+    opacity: 1;
+}
+
+/**
+ * A page of a document in a listing that shows what each one looks like.
+ *
+ * Held to a height rather than a width, so that a column of them lines up whether the pages are
+ * portrait or landscape.
+ */
+/*
+ * Rows that line up at the top rather than on the last line of their tallest cell.
+ *
+ * A table cell sits on its baseline by default, and a cell holding a picture has its baseline at
+ * the foot of that picture - so the filename, the size and the day beside it were dragged down
+ * to the bottom of the row. The cells standing for several rows were already aligned this way,
+ * so this is the rest of the row catching up with them.
+ */
+.files-documents td {
+    vertical-align: top;
+}
+
+/* Centred in its column, whichever way round the page it is of happens to be. */
+.files-thumb-link {
+    display: block;
+}
+
+.files-thumb {
+    display: block;
+    height: 90px;
+    width: auto;
+    margin-inline: auto;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    border-radius: 2px;
+}
+
+/**
+ * A folder's contents, as a wall of what each of them looks like.
+ *
+ * A grid that fills whatever width it is given rather than a fixed number of columns, so that
+ * fifty photographs from an installation read the same on a laptop and on a phone.
+ */
+.files-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.files-tile {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.files-tile .files-thumb {
+    height: 240px;
+    max-width: 100%;
+    object-fit: contain;
+}
+
+/*
+ * What stands in for a picture of something nothing can draw. The same size as one, so that a
+ * drawing or an archive keeps its place in the wall instead of leaving a hole in it.
+ */
+.files-kind {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 240px;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    border-radius: 2px;
+    background: rgba(0, 0, 0, 0.04);
+    font-size: 1.1rem;
+    letter-spacing: 0.05em;
+    color: rgba(0, 0, 0, 0.55);
+}
+
+/* The name is what somebody reads to find the one they want, so it wraps rather than being cut. */
+.files-tile-name {
+    overflow-wrap: anywhere;
+    font-size: 1.1rem;
+    line-height: 1.3;
+}
+
+.files-tile-size {
+    font-size: 1rem;
+    color: rgba(0, 0, 0, 0.55);
+}
+
+/* The same reason the table of documents lines up at the top: a picture drags its row down. */
+.files-documentations td,
+.files-listing td {
+    vertical-align: top;
+}
+
+/* An action that cannot be taken, set like the ones that can. */
+.files-stopped {
+    font-family: "Exo 2", sans-serif;
+    font-size: 1.05em;
+    font-weight: bold;
+    padding: 0 0.4rem;
+    cursor: help;
+}

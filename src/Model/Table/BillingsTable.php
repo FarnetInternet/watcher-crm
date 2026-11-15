@@ -1,0 +1,603 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Model\Table;
+
+use App\Contracts\MinimumConnectionPrice;
+use App\Model\Entity\Billing;
+use Bookkeeping\Model\Enum\InvoicingSchedule;
+use Cake\I18n\Date;
+use Cake\ORM\Query\SelectQuery;
+use Cake\ORM\RulesChecker;
+use Cake\Utility\Inflector;
+use Cake\Validation\Validator;
+use Override;
+use PhpCollective\DecimalObject\Decimal;
+use Settings\Utility\Settings;
+
+/**
+ * Billings Model
+ *
+ * @property \App\Model\Table\CustomersTable&\Cake\ORM\Association\BelongsTo $Customers
+ * @property \App\Model\Table\ServicesTable&\Cake\ORM\Association\BelongsTo $Services
+ * @property \App\Model\Table\ContractsTable&\Cake\ORM\Association\BelongsTo $Contracts
+ * @method \App\Model\Entity\Billing newEmptyEntity()
+ * @method \App\Model\Entity\Billing newEntity(array $data, array $options = [])
+ * @method \App\Model\Entity\Billing[] newEntities(array $data, array $options = [])
+ * @method \App\Model\Entity\Billing get(mixed $primaryKey, array|string $finder = 'all', null|\Psr\SimpleCache\CacheInterface|string $cache = null, null|\Closure|string $cacheKey = null, mixed ...$args)
+ * @method \App\Model\Entity\Billing findOrCreate($search, callable|array|null $callback = null, $options = [])
+ * @method \App\Model\Entity\Billing patchEntity(\Cake\Datasource\EntityInterface $entity, array $data, array $options = [])
+ * @method \App\Model\Entity\Billing[] patchEntities(iterable $entities, array $data, array $options = [])
+ * @method \App\Model\Entity\Billing|false save(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method \App\Model\Entity\Billing saveOrFail(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method iterable<\App\Model\Entity\Billing>|false saveMany(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\Billing> saveManyOrFail(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\Billing>|false deleteMany(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\Billing> deleteManyOrFail(iterable $entities, $options = [])
+ * @mixin \Cake\ORM\Behavior\TimestampBehavior
+ */
+class BillingsTable extends AppTable
+{
+    /**
+     * Where the installation says whether the day invoicing runs on is still open.
+     *
+     * @var string
+     */
+    public const DAY_STAYS_OPEN = 'bookkeeping.invoices.issuing.day_stays_open';
+
+    /**
+     * The save option that lets a write reach into a period that has already been invoiced.
+     *
+     * @var string
+     */
+    public const ALLOW_CLOSED_PERIODS = 'allow_closed_periods';
+
+    /**
+     * The save option that lets the connection go below the minimum set on the contract.
+     *
+     * @var string
+     */
+    public const ALLOW_BELOW_MINIMUM = 'allow_below_minimum';
+
+    /**
+     * The fields saying what is being charged for and how much, as against over what period.
+     *
+     * @var list<string>
+     */
+    public const SETTLED_TERMS = [
+        'service_id',
+        'quantity',
+        'price',
+        'fixed_discount',
+        'percentage_discount',
+    ];
+
+    /**
+     * Initialize method
+     *
+     * @param array<string, mixed> $config The configuration for the Table.
+     * @return void
+     */
+    #[Override]
+    public function initialize(array $config): void
+    {
+        parent::initialize($config);
+
+        $this->setTable('billings');
+        $this->setDisplayField('id');
+        $this->setPrimaryKey('id');
+
+        $this->addBehavior('Timestamp');
+        $this->addBehavior('Footprint');
+        $this->addBehavior('StringModifications');
+
+        $this->belongsTo('Customers', [
+            'foreignKey' => 'customer_id',
+        ]);
+        $this->belongsTo('Services', [
+            'foreignKey' => 'service_id',
+        ]);
+        $this->belongsTo('Contracts', [
+            'foreignKey' => 'contract_id',
+            'joinType' => 'INNER',
+        ]);
+    }
+
+    /**
+     * Restrict a billings query to the non-historical ones: still open
+     * (`billing_until IS NULL`) or ending in the current month or later.
+     *
+     * This is the "active or future" scope the contract and customer views show
+     * by default, shared so the bulk message wizard reads services the same way.
+     *
+     * @param \Cake\ORM\Query\SelectQuery<\App\Model\Entity\Billing> $query Query to restrict.
+     * @return \Cake\ORM\Query\SelectQuery<\App\Model\Entity\Billing>
+     */
+    public function findActiveOrFuture(SelectQuery $query): SelectQuery
+    {
+        return $query->where([
+            'OR' => [
+                'Billings.billing_until IS' => null,
+                'Billings.billing_until >=' => Date::now()->firstOfMonth(),
+            ],
+        ]);
+    }
+
+    /**
+     * Billings running on the given day: begun on it or before, and not ended before it.
+     *
+     * Asked of the last day of a month, it is the state a regulator wants reported.
+     *
+     * @param \Cake\ORM\Query\SelectQuery<\App\Model\Entity\Billing> $query Query to restrict.
+     * @param \Cake\I18n\Date $on The day.
+     * @return \Cake\ORM\Query\SelectQuery<\App\Model\Entity\Billing>
+     */
+    public function findActiveOn(SelectQuery $query, Date $on): SelectQuery
+    {
+        return $query
+            ->where(['Billings.billing_from <=' => $on])
+            ->andWhere([
+                'OR' => [
+                    'Billings.billing_until IS NULL',
+                    'Billings.billing_until >=' => $on,
+                ],
+            ]);
+    }
+
+    /**
+     * The last day invoicing has settled.
+     *
+     * Nothing in the data says which months were invoiced - invoicing reads the billings for a
+     * month and writes nothing back - so it is derived from when the run happens, which is the
+     * one thing the installation does say.
+     *
+     * @return \Cake\I18n\Date
+     */
+    public function lastInvoicedPeriodEnd(): Date
+    {
+        $today = Date::now();
+        $endOfLastMonth = $today->firstOfMonth()->subDays(1);
+
+        return match ($this->invoicingSchedule()) {
+            // invoiced on its own last day, so from that day the month itself is behind us
+            InvoicingSchedule::CURRENT_MONTH_ON_LAST =>
+                $today->equals($today->lastOfMonth()) ? $today : $endOfLastMonth,
+
+            // invoiced on the first day of the month that follows, so the current one never is
+            InvoicingSchedule::PREV_MONTH_ON_FIRST => $endOfLastMonth,
+        };
+    }
+
+    /**
+     * The last day a billing may no longer be moved behind.
+     *
+     * What invoicing settled, less one concession: on the day of the run itself the period being
+     * invoiced is usually still being put right - the check against the control file fails and the
+     * corrections are made that same day - so an installation may keep it open.
+     *
+     * @return \Cake\I18n\Date
+     */
+    public function lastClosedPeriodEnd(): Date
+    {
+        $invoiced = $this->lastInvoicedPeriodEnd();
+
+        if ($this->invoicingRunsToday() && (bool)Settings::get(self::DAY_STAYS_OPEN, true)) {
+            // the period being invoiced is a whole month, so stepping over it steps a month
+            return $invoiced->firstOfMonth()->subDays(1);
+        }
+
+        return $invoiced;
+    }
+
+    /**
+     * The earliest day a billing may still be given.
+     *
+     * @return \Cake\I18n\Date
+     */
+    public function firstOpenPeriodStart(): Date
+    {
+        return $this->lastClosedPeriodEnd()->addDays(1);
+    }
+
+    /**
+     * Whether a billing may still be taken back.
+     *
+     * Only one invoicing has not reached: what somebody has been charged for stays, because
+     * removing it takes the ground out from under an invoice that has gone out.
+     *
+     * @param \App\Model\Entity\Billing $billing The billing being asked about.
+     * @return bool
+     */
+    public function mayBeDeleted(Billing $billing): bool
+    {
+        return $billing->billing_from >= $this->firstOpenPeriodStart();
+    }
+
+    /**
+     * Whether a billing ending on a day is one whose end may still be moved.
+     *
+     * An end already lying in a period that has been invoiced is not moved at all - not even
+     * later, which would charge for months whose invoices went out without them. An end nobody
+     * has been invoiced past, or none at all, is still the operator's to set.
+     *
+     * @param \Cake\I18n\Date|null $ends The day the billing ends, or null where it runs on.
+     * @return bool
+     */
+    public function endIsStillOpen(?Date $ends): bool
+    {
+        return $ends === null || $ends >= $this->lastClosedPeriodEnd();
+    }
+
+    /**
+     * The minimum the contract puts on its connection, if it puts one.
+     *
+     * @param string|null $contract_id The contract.
+     * @return \PhpCollective\DecimalObject\Decimal|null
+     */
+    public function minimumConnectionPriceOf(?string $contract_id): ?Decimal
+    {
+        if ($contract_id === null) {
+            return null;
+        }
+
+        /** @var \App\Model\Entity\Contract|null $contract */
+        $contract = $this->Contracts->find()
+            ->select(['Contracts.id', 'Contracts.minimum_connection_price'])
+            ->where(['Contracts.id' => $contract_id])
+            ->first();
+
+        return $contract?->minimum_connection_price;
+    }
+
+    /**
+     * A copy of the billing carrying the service it names now.
+     *
+     * A copy, so that the service loaded here is not saved along with the billing.
+     *
+     * @param \App\Model\Entity\Billing $billing The billing.
+     * @param string|int|null $service_id The service to carry; the billing's own when not given.
+     * @return \App\Model\Entity\Billing
+     */
+    private function withItsService(Billing $billing, string|int|null $service_id = null): Billing
+    {
+        $service_id ??= $billing->service_id;
+        $probe = clone $billing;
+
+        if ($service_id === null) {
+            $probe->unset('service');
+
+            return $probe;
+        }
+
+        if (($billing->service->id ?? null) != $service_id) {
+            $probe->set('service', $this->Services->find()->where(['Services.id' => $service_id])->first());
+        }
+
+        return $probe;
+    }
+
+    /**
+     * Whether the save may leave the connection priced as it is.
+     *
+     * @param \App\Model\Entity\Billing $entity The billing being saved.
+     * @return string|bool True where it may, what to tell the operator where it may not.
+     */
+    private function keepsTheMinimumConnectionPrice(Billing $entity): string|bool
+    {
+        $minimum = $this->minimumConnectionPriceOf($entity->contract_id);
+
+        if ($minimum === null) {
+            return true;
+        }
+
+        $billing = $this->withItsService($entity);
+
+        if (MinimumConnectionPrice::fallsBelow($billing, $minimum)) {
+            return MinimumConnectionPrice::refusal($minimum);
+        }
+
+        // moving the connection onto a service that is not one takes the connection away
+        if (
+            !$entity->isNew()
+            && $entity->isDirty('service_id')
+            && !MinimumConnectionPrice::isConnection($billing)
+            && MinimumConnectionPrice::isConnection(
+                $this->withItsService($entity, $entity->getOriginal('service_id')),
+            )
+        ) {
+            return MinimumConnectionPrice::refusal($minimum);
+        }
+
+        return true;
+    }
+
+    /**
+     * Whether deleting the billing leaves the connection above the minimum.
+     *
+     * It does where another connection meeting the minimum covers the first day the deleted one
+     * still counts for.
+     *
+     * @param \App\Model\Entity\Billing $entity The billing being deleted.
+     * @return string|bool True where it does, what to tell the operator where it does not.
+     */
+    private function deletionKeepsTheMinimumConnectionPrice(Billing $entity): string|bool
+    {
+        $minimum = $this->minimumConnectionPriceOf($entity->contract_id);
+
+        if ($minimum === null || !MinimumConnectionPrice::isConnection($this->withItsService($entity))) {
+            return true;
+        }
+
+        $day = max($entity->billing_from, $this->firstOpenPeriodStart());
+
+        if ($entity->billing_until !== null && $entity->billing_until < $day) {
+            return true;
+        }
+
+        $covering = $this->find()
+            ->contain(['Services'])
+            ->where([
+                'Billings.contract_id' => $entity->contract_id,
+                'Billings.id !=' => $entity->id,
+                'Billings.billing_from <=' => $day,
+                'OR' => [
+                    'Billings.billing_until IS' => null,
+                    'Billings.billing_until >=' => $day,
+                ],
+            ])
+            ->all();
+
+        foreach ($covering as $other) {
+            /** @var \App\Model\Entity\Billing $other */
+            if (MinimumConnectionPrice::isConnection($other) && !$other->total_price->lessThan($minimum)) {
+                return true;
+            }
+        }
+
+        return MinimumConnectionPrice::refusal($minimum);
+    }
+
+    /**
+     * What the installation says about when it invoices.
+     *
+     * A value outside the list cannot be stored - the setting is declared as a choice and refuses
+     * one - so the only thing left to catch here is a row written before it was declared.
+     *
+     * @return \Bookkeeping\Model\Enum\InvoicingSchedule
+     */
+    private function invoicingSchedule(): InvoicingSchedule
+    {
+        return InvoicingSchedule::tryFrom(Settings::getString(
+            InvoicingSchedule::SETTINGS_PATH,
+            InvoicingSchedule::CURRENT_MONTH_ON_LAST->value,
+        )) ?? InvoicingSchedule::CURRENT_MONTH_ON_LAST;
+    }
+
+    /**
+     * Whether invoicing is running today.
+     *
+     * @return bool
+     */
+    private function invoicingRunsToday(): bool
+    {
+        $today = Date::now();
+
+        return match ($this->invoicingSchedule()) {
+            InvoicingSchedule::CURRENT_MONTH_ON_LAST => $today->equals($today->lastOfMonth()),
+            InvoicingSchedule::PREV_MONTH_ON_FIRST => $today->equals($today->firstOfMonth()),
+        };
+    }
+
+    /**
+     * Default validation rules.
+     *
+     * @param \Cake\Validation\Validator $validator Validator instance.
+     * @return \Cake\Validation\Validator
+     */
+    #[Override]
+    public function validationDefault(Validator $validator): Validator
+    {
+        $validator
+            ->uuid('id')
+            ->allowEmptyString('id', null, 'create');
+
+        $validator
+            ->uuid('customer_id')
+            ->requirePresence('customer_id', 'create')
+            ->notEmptyString('customer_id');
+
+        $validator
+            ->uuid('contract_id')
+            ->requirePresence('contract_id', 'create')
+            ->notEmptyString('contract_id');
+
+        $validator
+            ->scalar('text')
+            ->allowEmptyString('text');
+
+        $validator
+            ->decimal('price')
+            ->allowEmptyString('price');
+
+        $validator
+            ->decimal('fixed_discount')
+            ->allowEmptyString('fixed_discount');
+
+        $validator
+            ->integer('percentage_discount')
+            ->allowEmptyString('percentage_discount');
+
+        $validator
+            ->date('billing_from')
+            ->requirePresence('billing_from', 'create')
+            ->notEmptyDate('billing_from');
+
+        $validator
+            ->scalar('note')
+            ->allowEmptyString('note');
+
+        $validator
+            ->date('billing_until')
+            ->allowEmptyDate('billing_until');
+
+        $validator
+            ->boolean('separate_invoice')
+            ->notEmptyString('separate_invoice');
+
+        $validator
+            ->integer('quantity')
+            ->notEmptyString('quantity');
+
+        return $validator;
+    }
+
+    /**
+     * Returns a rules checker object that will be used for validating
+     * application integrity.
+     *
+     * @param \Cake\ORM\RulesChecker $rules The rules object to be modified.
+     * @return \Cake\ORM\RulesChecker
+     */
+    #[Override]
+    public function buildRules(RulesChecker $rules): RulesChecker
+    {
+        $rules->add($rules->existsIn(['customer_id'], 'Customers'), ['errorField' => 'customer_id']);
+        $rules->add($rules->existsIn(['service_id'], 'Services'), ['errorField' => 'service_id']);
+        $rules->add($rules->existsIn(['contract_id'], 'Contracts'), ['errorField' => 'contract_id']);
+
+        // Held here rather than in the validator, because a billing is also written by callers that
+        // send one field and nothing else - a contract being wound up, a service being changed -
+        // and because what the date used to be is a question only the entity can answer.
+        $rules->add(
+            function (Billing $entity): bool {
+                if ($entity->billing_from === null || $entity->billing_until === null) {
+                    return true;
+                }
+
+                // a billing of a single day is a real one, and is what the finding asks for too
+                return $entity->billing_until >= $entity->billing_from;
+            },
+            'billingPeriodIsPossible',
+            [
+                'errorField' => 'billing_until',
+                'message' => __('The billing cannot end before it starts.'),
+            ],
+        );
+
+        $rules->add(
+            function (Billing $entity, array $options): bool {
+                if (!empty($options[self::ALLOW_CLOSED_PERIODS]) || !$entity->isDirty('billing_from')) {
+                    return true;
+                }
+
+                $open = $this->firstOpenPeriodStart();
+                $was = $entity->isNew() ? null : $entity->getOriginal('billing_from');
+
+                // both ways round: a start already invoiced for cannot be taken away, and none
+                // may be put back into months whose invoices have gone out
+                return $entity->billing_from >= $open && ($was === null || $was >= $open);
+            },
+            'billingStartsInAnOpenPeriod',
+            [
+                'errorField' => 'billing_from',
+                'message' => __('The billing may not start in a period that has already been invoiced.'),
+            ],
+        );
+
+        $rules->add(
+            function (Billing $entity, array $options): bool {
+                if (!empty($options[self::ALLOW_CLOSED_PERIODS]) || !$entity->isDirty('billing_until')) {
+                    return true;
+                }
+
+                // neither where the end was nor where it is being taken may lie behind what has
+                // been invoiced: the first would charge for months whose invoices went out
+                // without them, the second would take back months that were charged
+                return $this->endIsStillOpen($entity->isNew() ? null : $entity->getOriginal('billing_until'))
+                    && $this->endIsStillOpen($entity->billing_until);
+            },
+            'billingEndsAfterWhatWasInvoiced',
+            [
+                'errorField' => 'billing_until',
+                'message' => __(
+                    'The billing may not end before {0}, the last day that has been invoiced.',
+                    $this->lastClosedPeriodEnd()->i18nFormat(),
+                ),
+            ],
+        );
+
+        // One rule per field rather than one for all of them: a rule carries a single field to
+        // hang its message on, and the operator has to see it under the box they changed. What is
+        // new is passed over - there is nothing to rewrite yet, and a start laid in a closed
+        // period is refused by the rule above instead.
+        foreach (self::SETTLED_TERMS as $term) {
+            $rules->add(
+                function (Billing $entity, array $options) use ($term): bool {
+                    if (!empty($options[self::ALLOW_CLOSED_PERIODS]) || $entity->isNew()) {
+                        return true;
+                    }
+
+                    return !$entity->isDirty($term) || $this->mayBeDeleted($entity);
+                },
+                'settled' . Inflector::camelize($term),
+                [
+                    'errorField' => $term,
+                    'message' => __(
+                        'What has already been invoiced for is not changed here. End this billing'
+                        . ' and start a new one from the day the change takes effect.',
+                    ),
+                ],
+            );
+        }
+
+        // Only a change is measured, so a contract already below its minimum is not stuck. Ending
+        // a billing is not a change of price and is left alone.
+        $rules->add(
+            function (Billing $entity, array $options): string|bool {
+                if (!empty($options[self::ALLOW_BELOW_MINIMUM])) {
+                    return true;
+                }
+
+                if (!$entity->isNew() && array_filter(self::SETTLED_TERMS, $entity->isDirty(...)) === []) {
+                    return true;
+                }
+
+                return $this->keepsTheMinimumConnectionPrice($entity);
+            },
+            'connectionKeepsTheMinimum',
+            ['errorField' => 'price'],
+        );
+
+        $rules->addDelete(
+            function (Billing $entity, array $options): string|bool {
+                if (!empty($options[self::ALLOW_BELOW_MINIMUM])) {
+                    return true;
+                }
+
+                return $this->deletionKeepsTheMinimumConnectionPrice($entity);
+            },
+            'connectionIsNotLeftBelowMinimum',
+            ['errorField' => 'price'],
+        );
+
+        // The counterpart of the rule above that will not let a start be moved into an invoiced
+        // period: removing the billing altogether takes the ground out from under an invoice that
+        // has gone out, which is the same fault done more thoroughly. A billing that is over is
+        // ended rather than deleted, and that is what the message says.
+        $rules->addDelete(
+            function (Billing $entity, array $options): bool {
+                return !empty($options[self::ALLOW_CLOSED_PERIODS]) || $this->mayBeDeleted($entity);
+            },
+            'billingHasNotBeenInvoicedFor',
+            [
+                'errorField' => 'billing_from',
+                'message' => __(
+                    'The billing has been invoiced for and may not be deleted. Give it an end date'
+                    . ' instead, or ask an administrator.',
+                ),
+            ],
+        );
+
+        return $rules;
+    }
+}

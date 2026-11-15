@@ -1,0 +1,214 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Test\TestCase\Controller\Api;
+
+use App\Controller\Api\CustomersController;
+use App\Test\Traits\ControllerTestTrait;
+use Cake\TestSuite\IntegrationTestTrait;
+use Cake\TestSuite\TestCase;
+use PHPUnit\Framework\Attributes\UsesClass;
+
+/**
+ * App\Controller\Api\CustomersController Test Case
+ *
+ * Smoke tests: each endpoint is called once and has to answer with the JSON it promises. The write
+ * endpoints report their outcome in a `message` rather than in the status code, so what is asserted
+ * is that they answered at all - whether the record itself went through is the model's business.
+ */
+#[UsesClass(CustomersController::class)]
+class CustomersControllerTest extends TestCase
+{
+    use ControllerTestTrait;
+    use IntegrationTestTrait;
+
+    /**
+     * Fixtures
+     *
+     * @var array<string>
+     */
+    protected array $fixtures = [
+        'app.Users',
+        'app.AccountingProfiles',
+        'app.Customers',
+        'app.Countries',
+        'app.Addresses',
+        'app.Commissions',
+        'app.ContractStates',
+        'app.ServiceTypes',
+        'app.Contracts',
+        'app.ConnectionProfiles',
+        'app.Services',
+        'app.Billings',
+        'app.EquipmentTypes',
+        'app.BorrowedEquipments',
+        'app.Emails',
+        'app.Labels',
+        'app.CustomerLabels',
+        'app.Logins',
+        'app.Phones',
+        'app.SoldEquipments',
+        'app.IpAddresses',
+        'app.RemovedIpAddresses',
+        'app.IpNetworks',
+        'app.RemovedIpNetworks',
+        'app.TaskStates',
+        'app.TaskTypes',
+        'app.Tasks',
+        'app.TaskCollaborators',
+        'app.DealerCommissions',
+    ];
+
+    /**
+     * The collection serializes.
+     *
+     * @return void
+     * @link \App\Controller\Api\CustomersController::index()
+     */
+    public function testIndex(): void
+    {
+        $this->login();
+        $this->configRequest(['headers' => ['Accept' => 'application/json']]);
+        $this->get('/api/customers.json');
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('"customers"');
+    }
+
+    /**
+     * The customers are handed to the role `api`. The network management system with a role of its
+     * own and the customer portal ask for less, and are not handed them all.
+     *
+     * @return void
+     * @link \App\Controller\Api\CustomersController::index()
+     */
+    public function testTheOtherMachineRolesAreNotHandedTheCustomers(): void
+    {
+        $this->configRequest(['headers' => ['Accept' => 'application/json']]);
+
+        $this->login('api');
+        $this->get('/api/customers.json');
+        $this->assertResponseOk();
+
+        foreach (['watcher-nms', 'customer-portal', 'customer-identification'] as $role) {
+            $this->login($role);
+            $this->get('/api/customers.json');
+            $this->assertResponseCode(403, 'The ' . $role . ' role was handed the customers.');
+        }
+    }
+
+    /**
+     * A single customer serializes with everything that hangs off them.
+     *
+     * @return void
+     * @link \App\Controller\Api\CustomersController::view()
+     */
+    public function testView(): void
+    {
+        $this->login();
+        $this->configRequest(['headers' => ['Accept' => 'application/json']]);
+        $this->get('/api/customers/' . $this->firstId('Customers') . '.json');
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('"customer"');
+    }
+
+    /**
+     * A task names who holds it and who else is on it, and says nothing more about their accounts.
+     *
+     * @return void
+     * @link \App\Controller\Api\CustomersController::view()
+     */
+    public function testATaskOfACustomerOnlyNamesThePeopleOnIt(): void
+    {
+        $task = $this->getTableLocator()->get('Tasks')->find()->firstOrFail();
+
+        $links = $this->getTableLocator()->get('TaskCollaborators');
+        $links->saveOrFail($links->newEntity([
+            'task_id' => $task->get('id'),
+            'user_id' => $task->get('user_id'),
+        ]));
+
+        $this->login();
+        $this->configRequest(['headers' => ['Accept' => 'application/json']]);
+        $this->get('/api/customers/' . $task->get('customer_id') . '.json');
+
+        $this->assertResponseOk();
+
+        $answered = json_decode((string)$this->_response?->getBody(), true);
+        $handed_over = $answered['customer']['tasks'][0] ?? [];
+        $names = ['id', 'username', 'first_name', 'last_name'];
+
+        $this->assertSame($names, array_keys($handed_over['user'] ?? []));
+        $this->assertCount(1, $handed_over['collaborators'] ?? []);
+        $this->assertSame($names, array_keys($handed_over['collaborators'][0]));
+    }
+
+    /**
+     * The endpoint takes a new customer and reports the outcome.
+     *
+     * @return void
+     * @link \App\Controller\Api\CustomersController::add()
+     */
+    public function testAdd(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->advanceIdentity('customers', 'nid');
+        $this->configRequest(['headers' => ['Accept' => 'application/json']]);
+        $this->post('/api/customers.json', [
+            'first_name' => 'Jan',
+            'last_name' => 'Novak',
+            // the column is not nullable and nothing fills it in for the caller, so leaving it out
+            // reaches the database rather than the validation
+            'accounting_profile_id' => $this->firstId('AccountingProfiles'),
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('"message"');
+    }
+
+    /**
+     * The endpoint takes a change to an existing customer and reports the outcome.
+     *
+     * @return void
+     * @link \App\Controller\Api\CustomersController::edit()
+     */
+    public function testEdit(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->configRequest(['headers' => ['Accept' => 'application/json']]);
+        $this->patch('/api/customers/' . $this->firstId('Customers') . '.json', [
+            'last_name' => 'Novak',
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('"message"');
+    }
+
+    /**
+     * The endpoint runs the delete and reports the outcome. Whether the customer really goes
+     * depends on what else still references them.
+     *
+     * @return void
+     * @link \App\Controller\Api\CustomersController::delete()
+     */
+    public function testDelete(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->configRequest(['headers' => ['Accept' => 'application/json']]);
+        $this->delete('/api/customers/' . $this->firstId('Customers') . '.json');
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('"message"');
+    }
+
+    // customerPoints() is left out on purpose: it resolves the addresses through the national
+    // address registry over the network, so a test of it would only be as reliable as that service
+    // and the fixture would have to carry registry ids the registry actually knows.
+}

@@ -1,0 +1,122 @@
+<?php
+/**
+ * @var \App\View\AppView $this
+ * @var \App\Model\Entity\User $user
+ * @var \Cake\Collection\CollectionInterface<string, string>|array<string> $taskTypes
+ * @var \Cake\Collection\CollectionInterface<string, string>|array<string> $taskStates
+ * @var array<string, string> $landingPages
+ */
+
+use Cake\I18n\I18n;
+
+?>
+<div class="row">
+    <aside class="column">
+        <div class="side-nav">
+            <h4 class="heading"><?= __d('app_users', 'Actions') ?></h4>
+            <?= $this->AuthLink->link(
+                __d('app_users', 'List Users'),
+                ['action' => 'index'],
+                ['class' => 'side-nav-item'],
+            ) ?>
+            <?= $this->Html->link(
+                __d('app_users', 'User Profile'),
+                ['action' => 'profile'],
+                ['class' => 'side-nav-item'],
+            ) ?>
+        </div>
+    </aside>
+    <div class="column column-90">
+        <div class="users form content">
+            <?= $this->Form->create($user) ?>
+            <fieldset>
+                <?= $this->legend(__d('app_users', 'Edit User Settings')) ?>
+                <?php
+                echo $this->Form->control('user_settings.language', [
+                    'label' => __d('app_users', 'Language'),
+                    'default' => I18n::getDefaultLocale(),
+                    'options' => [
+                        'cs_CZ' => 'Čeština',
+                        'en_US' => 'English',
+                        'hr_HR' => 'Hrvatski',
+                    ],
+                ]);
+                echo $this->Form->control('user_settings.number_of_rows_per_page', [
+                    'label' => __d('app_users', 'Number of Rows per Page'),
+                    'options' => [
+                        20 => 20,
+                        50 => 50,
+                        100 => 100,
+                        500 => 500,
+                        1000 => 1000,
+                        5000 => 5000,
+                        10000 => 10000,
+                    ],
+                ]);
+                echo $this->Form->control('user_settings.theme', [
+                    'label' => __d('app_users', 'Theme'),
+                    'options' => [
+                        'light' => __('Light'),
+                        'dark' => __('Dark'),
+                        'contrast' => __('Contrast'),
+                    ],
+                ]);
+                echo $this->Form->control('user_settings.landing_page', [
+                    'label' => __d('app_users', 'Landing Page'),
+                    'options' => $landingPages,
+                ]);
+                echo $this->Form->control('user_settings.customers.advanced_search', [
+                    'label' =>
+                        __d('app_users', 'Customers') . ' - '
+                        . __d('app_users', 'Advanced Search by Default'),
+                    'type' => 'checkbox',
+                ]);
+                echo $this->Form->control('user_settings.customers.show_historical_records', [
+                    'label' =>
+                        __d('app_users', 'Customers') . ' - '
+                        . __d('app_users', 'Show Historical Records by Default'),
+                    'type' => 'checkbox',
+                ]);
+                echo $this->Form->control('user_settings.tasks.all_by_default', [
+                    'label' =>
+                        __d('app_users', 'Tasks')
+                        . ' - '
+                        . __d('app_users', 'Show Tasks for All Users by Default')
+                    ,
+                    'type' => 'checkbox',
+                ]);
+                echo $this->Form->control('user_settings.tasks.expandable_text', [
+                    'label' =>
+                        __d('app_users', 'Tasks')
+                        . ' - '
+                        . __d('app_users', 'Use Expandable Text by Default')
+                    ,
+                    'type' => 'checkbox',
+                ]);
+                echo $this->Form->control('user_settings.tasks.task_type_ids', [
+                    'label' =>
+                        __d('app_users', 'Tasks')
+                        . ' - '
+                        . __d('app_users', 'Show Only These Task Types by Default')
+                    ,
+                    'options' => $taskTypes,
+                    'multiple' => 'multiple',
+                    'style' => 'height: 100px;',
+                ]);
+                echo $this->Form->control('user_settings.tasks.task_state_ids', [
+                    'label' =>
+                        __d('app_users', 'Tasks')
+                        . ' - '
+                        . __d('app_users', 'Show Only These Task States by Default')
+                    ,
+                    'options' => $taskStates,
+                    'multiple' => 'multiple',
+                    'style' => 'height: 100px;',
+                ]);
+                ?>
+            </fieldset>
+            <?= $this->Form->button(__d('app_users', 'Submit')) ?>
+            <?= $this->Form->end() ?>
+        </div>
+    </div>
+</div>

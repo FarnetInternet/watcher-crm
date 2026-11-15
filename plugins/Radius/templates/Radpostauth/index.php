@@ -1,0 +1,55 @@
+<?php
+/**
+ * @var \App\View\AppView $this
+ * @var iterable<\Radius\Model\Entity\Radpostauth> $radpostauths
+ */
+?>
+<div class="radpostauth index content">
+    <?= $this->AuthLink->link(
+        __d('radius', 'New RADIUS Post Authentication'),
+        ['action' => 'add'],
+        ['class' => 'button float-right win-link'],
+    ) ?>
+    <?= $this->heading(__d('radius', 'RADIUS Post Authentications')) ?>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th><?= $this->Paginator->sort('username') ?></th>
+                    <th><?= $this->Paginator->sort('pass') ?></th>
+                    <th><?= $this->Paginator->sort('reply') ?></th>
+                    <th><?= $this->Paginator->sort('calledstationid') ?></th>
+                    <th><?= $this->Paginator->sort('callingstationid') ?></th>
+                    <th><?= $this->Paginator->sort('authdate') ?></th>
+                    <th class="actions"><?= __d('radius', 'Actions') ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($radpostauths as $radpostauth) : ?>
+                <tr>
+                    <td><?= h($radpostauth->username) ?></td>
+                    <td><?= h($radpostauth->pass) ?></td>
+                    <td><?= h($radpostauth->reply) ?></td>
+                    <td><?= h($radpostauth->calledstationid) ?></td>
+                    <td><?= h($radpostauth->callingstationid) ?></td>
+                    <td><?= h($radpostauth->authdate) ?></td>
+                    <td class="actions">
+                        <?= $this->AuthLink->link(__d('radius', 'View'), ['action' => 'view', $radpostauth->id]) ?>
+                        <?= $this->AuthLink->link(
+                            __d('radius', 'Edit'),
+                            ['action' => 'edit', $radpostauth->id],
+                            ['class' => 'win-link'],
+                        ) ?>
+                        <?= $this->AuthLink->postLink(
+                            __d('radius', 'Delete'),
+                            ['action' => 'delete', $radpostauth->id],
+                            ['confirm' => __d('radius', 'Are you sure you want to delete # {0}?', $radpostauth->id)],
+                        ) ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?= $this->element('Radius.common/paginator') ?>
+</div>

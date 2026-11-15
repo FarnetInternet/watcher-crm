@@ -1,0 +1,48 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Model\Entity;
+
+/**
+ * AccountingProfile Entity
+ *
+ * @property string $id
+ * @property int $nid
+ * @property string $name
+ * @property float $vat_rate
+ * @property bool $reverse_charge
+ * @property bool $invoice_with_items
+ * @property string|null $accounting_assignment_code
+ * @property string|null $bank_account_code
+ * @property string|null $activity_code
+ *
+ * @property \App\Model\Entity\Customer[] $customers
+ */
+class AccountingProfile extends AppEntity
+{
+    /**
+     * Fields that can be mass assigned using newEntity() or patchEntity().
+     *
+     * Note that when '*' is set to true, this allows all unspecified fields to
+     * be mass assigned. For security purposes, it is advised to set '*' to false
+     * (or remove it), and explicitly make individual fields accessible as needed.
+     *
+     * @var array<string, bool>
+     */
+    protected array $_accessible = [
+        'name' => true,
+        'vat_rate' => true,
+        'reverse_charge' => true,
+        'invoice_with_items' => true,
+        'created' => true,
+        'created_by' => true,
+        'modified' => true,
+        'modified_by' => true,
+        'accounting_assignment_code' => true,
+        'bank_account_code' => true,
+        'activity_code' => true,
+        'creator' => true,
+        'modifier' => true,
+        'customers' => true,
+    ];
+}

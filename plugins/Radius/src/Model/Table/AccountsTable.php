@@ -1,0 +1,192 @@
+<?php
+declare(strict_types=1);
+
+namespace Radius\Model\Table;
+
+use App\Model\Table\AppTable;
+use Cake\Database\Type\EnumType;
+use Cake\ORM\Association;
+use Cake\ORM\RulesChecker;
+use Cake\Validation\Validator;
+use Override;
+use Radius\Model\Entity\Account;
+use Radius\Model\Enum\AccountType;
+
+/**
+ * Accounts Model
+ *
+ * @property \App\Model\Table\CustomersTable&\Cake\ORM\Association\BelongsTo $Customers
+ * @property \App\Model\Table\ContractsTable&\Cake\ORM\Association\BelongsTo $Contracts
+ * @property \Radius\Model\Table\RadcheckTable&\Cake\ORM\Association\HasMany $Radcheck
+ * @property \Radius\Model\Table\RadreplyTable&\Cake\ORM\Association\HasMany $Radpreply
+ * @property \Radius\Model\Table\RadusergroupTable&\Cake\ORM\Association\HasMany $Radusergroup
+ * @property \Radius\Model\Table\RadacctTable&\Cake\ORM\Association\HasMany $Radacct
+ * @property \Radius\Model\Table\RadpostauthTable&\Cake\ORM\Association\HasMany $Radpostauth
+ * @method \Radius\Model\Entity\Account newEmptyEntity()
+ * @method \Radius\Model\Entity\Account newEntity(array $data, array $options = [])
+ * @method \Radius\Model\Entity\Account[] newEntities(array $data, array $options = [])
+ * @method \Radius\Model\Entity\Account get(mixed $primaryKey, array|string $finder = 'all', null|\Psr\SimpleCache\CacheInterface|string $cache = null, null|\Closure|string $cacheKey = null, mixed ...$args)
+ * @method \Radius\Model\Entity\Account findOrCreate($search, callable|array|null $callback = null, $options = [])
+ * @method \Radius\Model\Entity\Account patchEntity(\Cake\Datasource\EntityInterface $entity, array $data, array $options = [])
+ * @method \Radius\Model\Entity\Account[] patchEntities(iterable $entities, array $data, array $options = [])
+ * @method \Radius\Model\Entity\Account|false save(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method \Radius\Model\Entity\Account saveOrFail(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method iterable<\Radius\Model\Entity\Account>|false saveMany(iterable $entities, $options = [])
+ * @method iterable<\Radius\Model\Entity\Account> saveManyOrFail(iterable $entities, $options = [])
+ * @method iterable<\Radius\Model\Entity\Account>|false deleteMany(iterable $entities, $options = [])
+ * @method iterable<\Radius\Model\Entity\Account> deleteManyOrFail(iterable $entities, $options = [])
+ * @mixin \Cake\ORM\Behavior\TimestampBehavior
+ */
+class AccountsTable extends AppTable
+{
+    /**
+     * Initialize method
+     *
+     * @param array<string, mixed> $config The configuration for the Table.
+     * @return void
+     */
+    #[Override]
+    public function initialize(array $config): void
+    {
+        parent::initialize($config);
+
+        $this->setTable('accounts');
+        $this->setDisplayField('username');
+        $this->setPrimaryKey('id');
+
+        // the audit log says that a password changed, never what it is now
+        $this->getBehavior('AuditLog')->setConfig('sensitive', ['password']);
+
+        $this->getSchema()->setColumnType(
+            'type',
+            EnumType::from(AccountType::class),
+        );
+
+        $this->addBehavior('Timestamp');
+        $this->addBehavior('Footprint');
+        $this->addBehavior('StringModifications');
+
+        $this->belongsTo('Customers', [
+            'strategy' => Association::STRATEGY_SELECT,
+            'foreignKey' => 'customer_id',
+        ]);
+        $this->belongsTo('Contracts', [
+            'strategy' => Association::STRATEGY_SELECT,
+            'foreignKey' => 'contract_id',
+        ]);
+        $this->hasMany('Radius.Radcheck', [
+            'foreignKey' => 'username',
+            'bindingKey' => 'username',
+            'dependent' => true,
+            'saveStrategy' => 'replace',
+            'cascadeCallbacks' => true,
+        ]);
+        $this->hasMany('Radius.Radreply', [
+            'foreignKey' => 'username',
+            'bindingKey' => 'username',
+            'dependent' => true,
+            'saveStrategy' => 'replace',
+            'cascadeCallbacks' => true,
+        ]);
+        $this->HasMany('Radius.Radusergroup', [
+            'foreignKey' => 'username',
+            'bindingKey' => 'username',
+            'dependent' => true,
+            'saveStrategy' => 'replace',
+            'cascadeCallbacks' => true,
+        ]);
+        $this->hasMany('Radius.Radacct', [
+            'foreignKey' => 'username',
+            'bindingKey' => 'username',
+        ]);
+        $this->hasMany('Radius.Radpostauth', [
+            'foreignKey' => 'username',
+            'bindingKey' => 'username',
+        ]);
+
+        // set the association strategy to "select" for Creators/Modifiers
+        $this->getAssociation('Creators')->setStrategy(Association::STRATEGY_SELECT);
+        $this->getAssociation('Modifiers')->setStrategy(Association::STRATEGY_SELECT);
+    }
+
+    /**
+     * Default validation rules.
+     *
+     * @param \Cake\Validation\Validator $validator Validator instance.
+     * @return \Cake\Validation\Validator
+     */
+    #[Override]
+    public function validationDefault(Validator $validator): Validator
+    {
+        $validator
+            ->uuid('id')
+            ->allowEmptyString('id', null, 'create');
+
+        $validator
+            ->scalar('username')
+            ->notEmptyString('username')
+            ->add('username', 'unique', ['rule' => 'validateUnique', 'provider' => 'table']);
+
+        $validator
+            ->scalar('password')
+            ->notEmptyString('password');
+
+        $validator
+            ->enum('type', AccountType::class)
+            ->notEmptyString('type');
+
+        $validator
+            ->boolean('active')
+            ->notEmptyString('active');
+
+        $validator
+            ->uuid('customer_id')
+            ->notEmptyString('customer_id');
+
+        $validator
+            ->uuid('contract_id')
+            ->notEmptyString('contract_id');
+
+        return $validator;
+    }
+
+    /**
+     * Returns a rules checker object that will be used for validating
+     * application integrity.
+     *
+     * @param \Cake\ORM\RulesChecker $rules The rules object to be modified.
+     * @return \Cake\ORM\RulesChecker
+     */
+    #[Override]
+    public function buildRules(RulesChecker $rules): RulesChecker
+    {
+        $rules->add($rules->isUnique(['username']), ['errorField' => 'username']);
+        $rules->add($rules->existsIn(['customer_id'], 'Customers'), ['errorField' => 'customer_id']);
+        $rules->add($rules->existsIn(['contract_id'], 'Contracts'), ['errorField' => 'contract_id']);
+
+        // deactivating is where the access point gets cleaned up, so it has to come first
+        $rules->addDelete(
+            fn(Account $account): bool => !$account->active,
+            'isNotActive',
+            [
+                'errorField' => 'active',
+                'message' => __d('radius', 'An active RADIUS account cannot be deleted. Deactivate it first.'),
+            ],
+        );
+        $rules->addDelete($rules->isNotLinkedTo('Radacct'));
+        $rules->addDelete($rules->isNotLinkedTo('Radpostauth'));
+
+        return $rules;
+    }
+
+    /**
+     * Returns the database connection name to use by default.
+     *
+     * @return string
+     */
+    #[Override]
+    public static function defaultConnectionName(): string
+    {
+        return 'radius';
+    }
+}

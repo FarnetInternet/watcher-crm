@@ -1,0 +1,51 @@
+<?php
+/**
+ * @var \App\View\AppView $this
+ * @var iterable<\Radius\Model\Entity\Radgroupcheck> $radgroupchecks
+ */
+?>
+<div class="radgroupcheck index content">
+    <?= $this->AuthLink->link(
+        __d('radius', 'New RADIUS Group Check'),
+        ['action' => 'add'],
+        ['class' => 'button float-right win-link'],
+    ) ?>
+    <?= $this->heading(__d('radius', 'RADIUS Group Checks')) ?>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th><?= $this->Paginator->sort('groupname') ?></th>
+                    <th><?= $this->Paginator->sort('attribute') ?></th>
+                    <th><?= $this->Paginator->sort('op') ?></th>
+                    <th><?= $this->Paginator->sort('value') ?></th>
+                    <th class="actions"><?= __d('radius', 'Actions') ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($radgroupchecks as $radgroupcheck) : ?>
+                <tr>
+                    <td><?= h($radgroupcheck->groupname) ?></td>
+                    <td><?= h($radgroupcheck->attribute) ?></td>
+                    <td><?= h($radgroupcheck->op) ?></td>
+                    <td><?= h($radgroupcheck->value) ?></td>
+                    <td class="actions">
+                        <?= $this->AuthLink->link(__d('radius', 'View'), ['action' => 'view', $radgroupcheck->id]) ?>
+                        <?= $this->AuthLink->link(
+                            __d('radius', 'Edit'),
+                            ['action' => 'edit', $radgroupcheck->id],
+                            ['class' => 'win-link'],
+                        ) ?>
+                        <?= $this->AuthLink->postLink(
+                            __d('radius', 'Delete'),
+                            ['action' => 'delete', $radgroupcheck->id],
+                            ['confirm' => __d('radius', 'Are you sure you want to delete # {0}?', $radgroupcheck->id)],
+                        ) ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?= $this->element('Radius.common/paginator') ?>
+</div>

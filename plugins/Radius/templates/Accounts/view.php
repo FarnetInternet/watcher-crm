@@ -1,0 +1,259 @@
+<?php
+/**
+ * @var \App\View\AppView $this
+ * @var \Radius\Model\Entity\Account $account
+ */
+?>
+<div class="row">
+    <aside class="column">
+        <div class="side-nav">
+            <h4 class="heading"><?= __d('radius', 'Actions') ?></h4>
+            <?= $this->AuthLink->link(
+                __d('radius', 'Edit RADIUS Account'),
+                ['action' => 'edit', $account->id],
+                ['class' => 'side-nav-item'],
+            ) ?>
+            <?= $this->AuthLink->postLink(
+                __d('radius', 'Delete RADIUS Account'),
+                ['action' => 'delete', $account->id],
+                [
+                    'confirm' => __d('radius', 'Are you sure you want to delete # {0}?', $account->id),
+                    'class' => 'side-nav-item',
+                ],
+            ) ?>
+            <?= $this->AuthLink->link(
+                __d('radius', 'List RADIUS Accounts'),
+                ['action' => 'index'],
+                ['class' => 'side-nav-item'],
+            ) ?>
+            <?= $this->AuthLink->link(
+                __d('radius', 'New RADIUS Account'),
+                ['action' => 'add'],
+                ['class' => 'side-nav-item'],
+            ) ?>
+            <br>
+            <?php // the filter has to be a query parameter, a bare key is swallowed by the route ?>
+            <?= $this->AuthLink->link(
+                __d('radius', 'List Historical Connections'),
+                [
+                    'plugin' => null,
+                    'controller' => 'HistoricalConnections',
+                    'action' => 'index',
+                    '?' => ['source_reference' => $account->username],
+                ],
+                ['class' => 'side-nav-item'],
+            ) ?>
+        </div>
+    </aside>
+    <div class="column column-90">
+        <div class="accounts view content">
+            <?= $this->AuthLink->link(
+                __d('radius', 'RADIUS Account Monitoring'),
+                ['action' => 'monitoring', $account->id],
+                ['class' => 'button float-right'],
+            ) ?>
+            <?= $this->AuthLink->postLink(
+                __d('radius', 'Update Related Records'),
+                ['action' => 'updateRelatedRecords', $account->id],
+                [
+                    'confirm' => __d('radius', 'Are you sure you want to update related records?'),
+                    'class' => 'button float-right',
+                ],
+            ) ?>
+            <?= $this->record(__d('radius', 'RADIUS Account'), (string)$account->username) ?>
+            <div class="row">
+                <div class="column">
+                    <table>
+                        <tr>
+                            <th><?= __d('radius', 'Customer') ?></th>
+                            <td><?= $account->customer !== null ? $this->Html->link(
+                                $account->customer->name,
+                                [
+                                    'plugin' => null,
+                                    'controller' => 'Customers',
+                                    'action' => 'view',
+                                    $account->customer->id,
+                                ],
+                            ) : '' ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __d('radius', 'Customer Number') ?></th>
+                            <td><?= $account->customer !== null ? h($account->customer->number) : '' ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __d('radius', 'Contract') ?></th>
+                            <td><?= $account->contract !== null ? $this->Html->link(
+                                $account->contract->number ?? '--',
+                                [
+                                    'plugin' => null,
+                                    'controller' => 'Contracts',
+                                    'action' => 'view',
+                                    $account->contract->id,
+                                    'customer_id' => $account->contract->customer_id,
+                                ],
+                            ) : '' ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __d('radius', 'Username') ?></th>
+                            <td><?= h($account->username) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __d('radius', 'Password') ?></th>
+                            <td><?= h($account->password) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __d('radius', 'Type') ?></th>
+                            <td><?= h($account->type->label()) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __d('radius', 'Active') ?></th>
+                            <td><?= $account->active ? __d('radius', 'Yes') : __d('radius', 'No'); ?></td>
+                        </tr>
+                    </table>
+                </div>
+                <div class="column">
+                    <?= $this->element('common/audit', ['entity' => $account]) ?>
+                </div>
+            </div>
+            <div class="related">
+                <?= $this->AuthLink->link(
+                    __d('radius', 'New RADIUS Check'),
+                    ['controller' => 'Radcheck', 'action' => 'add', '?' => ['username' => $account->username]],
+                    ['class' => 'button button-small float-right win-link'],
+                ) ?>
+                <h4><?= __d('radius', 'Related RADIUS Checks') ?></h4>
+                <?php if (!empty($account->radcheck)) : ?>
+                <div class="table-responsive">
+                    <table>
+                        <tr>
+                            <th><?= __d('radius', 'Attribute') ?></th>
+                            <th><?= __d('radius', 'Op') ?></th>
+                            <th><?= __d('radius', 'Value') ?></th>
+                            <th class="actions"><?= __d('radius', 'Actions') ?></th>
+                        </tr>
+                        <?php foreach ($account->radcheck as $radcheck) : ?>
+                        <tr>
+                            <td><?= h($radcheck->attribute) ?></td>
+                            <td><?= h($radcheck->op) ?></td>
+                            <td><?= h($radcheck->value) ?></td>
+                            <td class="actions">
+                                <?= $this->AuthLink->link(
+                                    __d('radius', 'View'),
+                                    ['controller' => 'Radcheck', 'action' => 'view', $radcheck->id],
+                                ) ?>
+                                <?= $this->AuthLink->link(
+                                    __d('radius', 'Edit'),
+                                    ['controller' => 'Radcheck', 'action' => 'edit', $radcheck->id],
+                                    ['class' => 'win-link'],
+                                ) ?>
+                                <?= $this->AuthLink->postLink(
+                                    __d('radius', 'Delete'),
+                                    ['controller' => 'Radcheck', 'action' => 'delete', $radcheck->id],
+                                    ['confirm' => __d(
+                                        'radius',
+                                        'Are you sure you want to delete # {0}?',
+                                        $radcheck->id,
+                                    )],
+                                ) ?>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </table>
+                </div>
+                <?php endif; ?>
+            </div>
+            <div class="related">
+                <?= $this->AuthLink->link(
+                    __d('radius', 'New RADIUS Reply'),
+                    ['controller' => 'Radreply', 'action' => 'add', '?' => ['username' => $account->username]],
+                    ['class' => 'button button-small float-right win-link'],
+                ) ?>
+                <h4><?= __d('radius', 'Related RADIUS Replies') ?></h4>
+                <?php if (!empty($account->radreply)) : ?>
+                <div class="table-responsive">
+                    <table>
+                        <tr>
+                            <th><?= __d('radius', 'Attribute') ?></th>
+                            <th><?= __d('radius', 'Op') ?></th>
+                            <th><?= __d('radius', 'Value') ?></th>
+                            <th class="actions"><?= __d('radius', 'Actions') ?></th>
+                        </tr>
+                        <?php foreach ($account->radreply as $radreply) : ?>
+                        <tr>
+                            <td><?= h($radreply->attribute) ?></td>
+                            <td><?= h($radreply->op) ?></td>
+                            <td><?= h($radreply->value) ?></td>
+                            <td class="actions">
+                                <?= $this->AuthLink->link(
+                                    __d('radius', 'View'),
+                                    ['controller' => 'Radreply', 'action' => 'view', $radreply->id],
+                                ) ?>
+                                <?= $this->AuthLink->link(
+                                    __d('radius', 'Edit'),
+                                    ['controller' => 'Radreply', 'action' => 'edit', $radreply->id],
+                                    ['class' => 'win-link'],
+                                ) ?>
+                                <?= $this->AuthLink->postLink(
+                                    __d('radius', 'Delete'),
+                                    ['controller' => 'Radreply', 'action' => 'delete', $radreply->id],
+                                    ['confirm' => __d(
+                                        'radius',
+                                        'Are you sure you want to delete # {0}?',
+                                        $radreply->id,
+                                    )],
+                                ) ?>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </table>
+                </div>
+                <?php endif; ?>
+            </div>
+            <div class="related">
+                <?= $this->AuthLink->link(
+                    __d('radius', 'New RADIUS User Group'),
+                    ['controller' => 'Radusergroup', 'action' => 'add', '?' => ['username' => $account->username]],
+                    ['class' => 'button button-small float-right win-link'],
+                ) ?>
+                <h4><?= __d('radius', 'Related RADIUS User Groups') ?></h4>
+                <?php if (!empty($account->radusergroup)) : ?>
+                <div class="table-responsive">
+                    <table>
+                        <tr>
+                            <th><?= __d('radius', 'Groupname') ?></th>
+                            <th><?= __d('radius', 'Priority') ?></th>
+                            <th class="actions"><?= __d('radius', 'Actions') ?></th>
+                        </tr>
+                        <?php foreach ($account->radusergroup as $radusergroup) : ?>
+                        <tr>
+                            <td><?= h($radusergroup->groupname) ?></td>
+                            <td><?= h($radusergroup->priority) ?></td>
+                            <td class="actions">
+                                <?= $this->AuthLink->link(
+                                    __d('radius', 'View'),
+                                    ['controller' => 'Radusergroup', 'action' => 'view', $radusergroup->id],
+                                ) ?>
+                                <?= $this->AuthLink->link(
+                                    __d('radius', 'Edit'),
+                                    ['controller' => 'Radusergroup', 'action' => 'edit', $radusergroup->id],
+                                    ['class' => 'win-link'],
+                                ) ?>
+                                <?= $this->AuthLink->postLink(
+                                    __d('radius', 'Delete'),
+                                    ['controller' => 'Radusergroup', 'action' => 'delete', $radusergroup->id],
+                                    ['confirm' => __d(
+                                        'radius',
+                                        'Are you sure you want to delete # {0}?',
+                                        $radusergroup->id,
+                                    )],
+                                ) ?>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </table>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+</div>

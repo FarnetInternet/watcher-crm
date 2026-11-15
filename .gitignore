@@ -1,0 +1,76 @@
+# CakePHP specific files #
+##########################
+/config/app_local.php
+/config/permissions_local.php
+/config/.env
+/data/*
+/logs/*
+/tmp/*
+/vendor/*
+
+# Written from git by the build of the image, for the version in the footer
+/VERSION
+/CHANGELOG
+
+# Plugin assets, linked into the webroot by `bin/cake plugin assets symlink` so the web
+# server serves them itself. They are made from the plugins and belong to nobody's history.
+/webroot/bookkeeping
+/webroot/cake_d_c
+/webroot/dashboard
+/webroot/debug_kit
+/webroot/files
+/webroot/maps
+/webroot/radius
+/webroot/settings
+
+# OS generated files #
+######################
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+# Icon must end with two \r
+Icon
+ehthumbs.db
+Thumbs.db
+.directory
+
+# Tool specific files #
+#######################
+# Docker Compose
+docker-compose.yml
+compose.yaml
+# PHPUnit
+.phpunit.cache
+.phpunit.result.cache
+tests.sqlite
+coverage.txt
+coverage-html/
+# vim
+*~
+*.swp
+*.swo
+# sublime text & textmate
+*.sublime-*
+*.stTheme.cache
+*.tmlanguage.cache
+*.tmPreferences.cache
+# Eclipse
+.settings/*
+# JetBrains, aka PHPStorm, IntelliJ IDEA
+.idea/*
+# NetBeans
+nbproject/*
+# Visual Studio Code
+.vscode
+# nova
+.nova
+# Sass preprocessor
+.sass-cache/
+# node
+/node_modules/*
+# yarn
+yarn-debug.log
+yarn-error.log
+.codegpt

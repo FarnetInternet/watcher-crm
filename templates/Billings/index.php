@@ -1,0 +1,102 @@
+<?php
+/**
+ * @var \App\View\AppView $this
+ * @var iterable<\App\Model\Entity\Billing> $billings
+ */
+?>
+<?= $this->Form->create(null, ['type' => 'get', 'valueSources' => ['query', 'context']]) ?>
+<div class="row">
+    <div class="column">
+        <?= $this->Form->control('search', [
+            'label' => __('Search'),
+            'type' => 'search',
+            'onchange' => $this::SUBMIT_ON_CHANGE,
+        ]) ?>
+    </div>
+</div>
+<?= $this->Form->end() ?>
+
+<div class="billings index content">
+    <?= $this->AuthLink->link(__('New Billing'), ['action' => 'add'], ['class' => 'button float-right win-link']) ?>
+    <?= $this->heading(__('Billings')) ?>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th><?= $this->Paginator->sort('customer_id') ?></th>
+                    <th><?= $this->Paginator->sort('Customers.nid', __('Customer Number')) ?></th>
+                    <th><?= $this->Paginator->sort('contract_id') ?></th>
+                    <th><?= $this->Paginator->sort('service_id') ?></th>
+                    <th><?= $this->Paginator->sort('text') ?></th>
+                    <th><?= $this->Paginator->sort('quantity') ?></th>
+                    <th><?= $this->Paginator->sort('price') ?></th>
+                    <th><?= $this->Paginator->sort('fixed_discount') ?></th>
+                    <th><?= $this->Paginator->sort('percentage_discount') ?></th>
+                    <th><?= __('Total Price') ?></th>
+                    <th><?= $this->Paginator->sort('billing_from') ?></th>
+                    <th><?= $this->Paginator->sort('billing_until') ?></th>
+                    <th><?= __('Active') ?></th>
+                    <th><?= $this->Paginator->sort('separate_invoice') ?></th>
+                    <th class="actions"><?= __('Actions') ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($billings as $billing) : ?>
+                <tr style="<?= $billing->style ?>">
+                    <td>
+                        <?= $billing->customer !== null ? $this->Html->link(
+                            $billing->customer->name ?? '(' . $billing->customer->id . ')',
+                            ['controller' => 'Customers', 'action' => 'view', $billing->customer->id],
+                        ) : '' ?>
+                    </td>
+                    <td><?= $billing->customer !== null ? h($billing->customer->number) : '' ?></td>
+                    <td>
+                        <?= $billing->contract !== null ? $this->Html->link(
+                            $billing->contract->number ?? '--',
+                            [
+                                'controller' => 'Contracts',
+                                'action' => 'view',
+                                $billing->contract->id,
+                                'customer_id' => $billing->contract->customer_id,
+                            ],
+                        ) : '' ?>
+                    </td>
+                    <td>
+                        <?= $billing->service !== null ? $this->Html->link(
+                            $billing->service->name ?? '(' . $billing->service->id . ')',
+                            ['controller' => 'Services', 'action' => 'view', $billing->service->id],
+                        ) : '' ?>
+                    </td>
+                    <td><?= h($billing->text) ?></td>
+                    <td><?= $this->Number->format($billing->quantity) ?></td>
+                    <td>
+                        <?= h($billing->price) ?>
+                        <?= $billing->service !== null ? '(' . h($billing->service->price) . ')' : '' ?>
+                    </td>
+                    <td><?= h($billing->fixed_discount) ?></td>
+                    <td><?= h($billing->percentage_discount) ?></td>
+                    <td><?= $this->Number->currency($billing->total_price->toString()) ?></td>
+                    <td><?= h($billing->billing_from) ?></td>
+                    <td><?= h($billing->billing_until) ?></td>
+                    <td><?= $billing->active ? __('Yes') : __('No'); ?></td>
+                    <td><?= $billing->separate_invoice ? __('Yes') : __('No'); ?></td>
+                    <td class="actions">
+                        <?= $this->AuthLink->link(__('View'), ['action' => 'view', $billing->id]) ?>
+                        <?= $this->AuthLink->link(
+                            __('Edit'),
+                            ['action' => 'edit', $billing->id],
+                            ['class' => 'win-link'],
+                        ) ?>
+                        <?= $this->AuthLink->postLink(
+                            __('Delete'),
+                            ['action' => 'delete', $billing->id],
+                            ['confirm' => $this->Billing->deleteConfirmation($billing)],
+                        ) ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?= $this->element('common/paginator') ?>
+</div>

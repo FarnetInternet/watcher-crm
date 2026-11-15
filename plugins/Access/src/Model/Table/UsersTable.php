@@ -1,0 +1,504 @@
+<?php
+declare(strict_types=1);
+
+namespace Access\Model\Table;
+
+use Access\Authentication\PasswordRules;
+use Access\Database\Type\EncryptedType;
+use Access\Model\Entity\User;
+use ArrayObject;
+use AuditStash\Persister\TablePersister;
+use Cake\Collection\CollectionInterface;
+use Cake\Database\Schema\TableSchema;
+use Cake\Database\TypeFactory;
+use Cake\Datasource\EntityInterface;
+use Cake\Event\EventInterface;
+use Cake\I18n\DateTime;
+use Cake\ORM\Query\SelectQuery;
+use Cake\ORM\RulesChecker;
+use Cake\ORM\Table;
+use Cake\Validation\Validator;
+use Override;
+
+/**
+ * The accounts people sign in with, shared by the applications.
+ *
+ * Each application extends this as its `UsersTable` and adds what accounts are named on there.
+ *
+ * @method \Access\Model\Entity\User get(mixed $primaryKey, array|string $finder = 'all', null|\Psr\SimpleCache\CacheInterface|string $cache = null, null|\Closure|string $cacheKey = null, mixed ...$args)
+ * @method \Access\Model\Entity\User newEmptyEntity()
+ * @method \Access\Model\Entity\User newEntity(array $data, array $options = [])
+ * @method \Access\Model\Entity\User patchEntity(\Cake\Datasource\EntityInterface $entity, array $data, array $options = [])
+ * @method \Access\Model\Entity\User|false save(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method \Access\Model\Entity\User saveOrFail(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @property \Access\Model\Table\SocialAccountsTable&\Cake\ORM\Association\HasMany $SocialAccounts
+ */
+class UsersTable extends Table
+{
+    /**
+     * The fields of an account that decide which rules its password is held to.
+     *
+     * @var list<string>
+     */
+    private const PASSWORD_CONTEXT = ['username', 'email', 'role', 'is_superuser'];
+
+    /**
+     * How long a link for setting a new password works.
+     */
+    public const PASSWORD_TOKEN_LIFETIME = '+1 hour';
+
+    /**
+     * How long after one link for setting a new password the next is sent, so that asking again
+     * and again neither fills the mailbox nor spoils the link on its way.
+     */
+    public const PASSWORD_TOKEN_INTERVAL = '5 minutes';
+
+    /**
+     * What an account keeps that no page, form or session needs. A query reads it only when it
+     * asks for it with the finder `withSecrets`.
+     *
+     * @var list<string>
+     */
+    public const SECRETS = ['password', 'secret'];
+
+    /**
+     * Read with an account in place of its password: whether it signs in with one at all.
+     */
+    public const PASSWORD_SIGN_IN = 'password_sign_in';
+
+    /**
+     * Initialize method
+     *
+     * @param array<array-key, mixed> $config The configuration for the Table.
+     * @return void
+     */
+    #[Override]
+    public function initialize(array $config): void
+    {
+        parent::initialize($config);
+
+        $this->setTable('users');
+        $this->setDisplayField('username');
+        $this->setPrimaryKey('id');
+        $this->addBehavior('Timestamp');
+
+        // the key of the one-time codes is kept encrypted
+        TypeFactory::map(EncryptedType::NAME, EncryptedType::class);
+        $this->getSchema()->setColumnType('secret', EncryptedType::NAME);
+
+        // Persisting audit log
+        $this->addBehavior('AuditStash.AuditLog');
+        /** @var \AuditStash\Model\Behavior\AuditLogBehavior $auditLog */
+        $auditLog = $this->getBehavior('AuditLog');
+        /** @var \AuditStash\Persister\TablePersister $auditLogPersister */
+        $auditLogPersister = $auditLog->persister();
+        $auditLogPersister->setConfig([
+            'serializeFields' => false,
+            'primaryKeyExtractionStrategy' => TablePersister::STRATEGY_RAW,
+        ]);
+        // that these changed is worth keeping, what they changed to is not
+        $auditLog->setConfig('sensitive', ['password', 'secret', 'api_token', 'token']);
+
+        $this->hasMany('SocialAccounts', [
+            'className' => 'Access.SocialAccounts',
+            'foreignKey' => 'user_id',
+            'dependent' => true,
+        ]);
+    }
+
+    /**
+     * Leaves the secrets out of every query that does not ask for them, as an account and as an
+     * account joined to another record alike.
+     *
+     * A joined account loses them only once read. Its columns would otherwise go into the query
+     * even where the join only filters, a subquery of ids among them.
+     *
+     * @param \Cake\Event\EventInterface<\Cake\ORM\Table> $event The event.
+     * @param \Cake\ORM\Query\SelectQuery<\Access\Model\Entity\User> $query The query.
+     * @param \ArrayObject<string, mixed> $options The options of the query.
+     * @param bool $primary Whether this is the root query or an association.
+     * @return void
+     */
+    public function beforeFind(EventInterface $event, SelectQuery $query, ArrayObject $options, bool $primary): void
+    {
+        if (!empty($options['secrets'])) {
+            return;
+        }
+
+        if ($primary) {
+            if ($query->clause('select') === []) {
+                // whether there is a password, never the password
+                $query->selectAllExcept($this, self::SECRETS)
+                    ->select([self::PASSWORD_SIGN_IN => $query->expr()->isNotNull($this->aliasField('password'))]);
+                $query->getSelectTypeMap()->addDefaults([self::PASSWORD_SIGN_IN => 'boolean']);
+            }
+
+            return;
+        }
+
+        $query->formatResults(fn(CollectionInterface $accounts): CollectionInterface => $accounts->map(
+            function (mixed $account): mixed {
+                if ($account instanceof EntityInterface) {
+                    return $account->unset(self::SECRETS);
+                }
+
+                return is_array($account) ? array_diff_key($account, array_flip(self::SECRETS)) : $account;
+            },
+        ));
+    }
+
+    /**
+     * Accounts with their secrets, for checking a password or a one-time code.
+     *
+     * @param \Cake\ORM\Query\SelectQuery<\Access\Model\Entity\User> $query The query.
+     * @return \Cake\ORM\Query\SelectQuery<\Access\Model\Entity\User>
+     */
+    public function findWithSecrets(SelectQuery $query): SelectQuery
+    {
+        return $query->applyOptions(['secrets' => true]);
+    }
+
+    /**
+     * Accounts that may sign in with a password, with what signing in checks.
+     *
+     * @param \Cake\ORM\Query\SelectQuery<\Access\Model\Entity\User> $query The query.
+     * @return \Cake\ORM\Query\SelectQuery<\Access\Model\Entity\User>
+     */
+    public function findSignIn(SelectQuery $query): SelectQuery
+    {
+        return $this->findWithSecrets($this->findActive($query))
+            ->where([$this->aliasField('password') . ' IS NOT' => null]);
+    }
+
+    /**
+     * Accounts that may sign in.
+     *
+     * @param \Cake\ORM\Query\SelectQuery<\Access\Model\Entity\User> $query The query.
+     * @return \Cake\ORM\Query\SelectQuery<\Access\Model\Entity\User>
+     */
+    public function findActive(SelectQuery $query): SelectQuery
+    {
+        return $query->where([$this->aliasField('active') => true]);
+    }
+
+    /**
+     * Default validation rules.
+     *
+     * @param \Cake\Validation\Validator $validator Validator instance.
+     * @return \Cake\Validation\Validator
+     */
+    #[Override]
+    public function validationDefault(Validator $validator): Validator
+    {
+        $validator
+            ->requirePresence('username', 'create')
+            ->notEmptyString('username');
+
+        $validator
+            ->requirePresence('password', 'create')
+            ->notEmptyString('password');
+
+        return $validator;
+    }
+
+    /**
+     * A new password, typed twice.
+     *
+     * @param \Cake\Validation\Validator $validator Validator instance.
+     * @return \Cake\Validation\Validator
+     */
+    public function validationPasswordConfirm(Validator $validator): Validator
+    {
+        $validator
+            ->requirePresence('password')
+            ->notEmptyString('password')
+            ->requirePresence('password_confirm')
+            ->notEmptyString('password_confirm')
+            ->add('password', 'confirmed', [
+                'rule' => ['compareWith', 'password_confirm'],
+                'message' => __d('access', 'The two passwords are not the same.'),
+            ]);
+
+        return $validator;
+    }
+
+    /**
+     * A new password, typed twice, with the current one as proof of who is changing it.
+     *
+     * @param \Cake\Validation\Validator $validator Validator instance.
+     * @return \Cake\Validation\Validator
+     */
+    public function validationPasswordChange(Validator $validator): Validator
+    {
+        return $this->validationPasswordConfirm($validator)
+            ->requirePresence('current_password')
+            ->notEmptyString('current_password');
+    }
+
+    /**
+     * Returns a rules checker object that will be used for validating application integrity.
+     *
+     * @param \Cake\ORM\RulesChecker $rules The rules object to be modified.
+     * @return \Cake\ORM\RulesChecker
+     */
+    #[Override]
+    public function buildRules(RulesChecker $rules): RulesChecker
+    {
+        $rules->add($rules->isUnique(['username']), 'uniqueUsername', [
+            'errorField' => 'username',
+            'message' => __d('access', 'This username is already taken.'),
+        ]);
+
+        // The database refuses this too, but by raising, which reaches the operator as an error
+        // page rather than as an answer.
+        $rules->addDelete(
+            fn(EntityInterface $entity): bool => !$this->isReferred((string)$entity->get('id')),
+            'notReferred',
+            [
+                'errorField' => 'id',
+                'message' => __d('access', 'Records still refer to this account. Deactivate it instead.'),
+            ],
+        );
+
+        return $rules;
+    }
+
+    /**
+     * Whether a record refers to the account by a foreign key that keeps it from being deleted.
+     *
+     * Every table and user column (author, editor, holder) would otherwise need its own rule, so
+     * the foreign keys are read from the schema, which is cached in production. Keys that delete
+     * or clear what refers to the account do not count.
+     *
+     * @param string $id The account.
+     * @return bool
+     */
+    public function isReferred(string $id): bool
+    {
+        $connection = $this->getConnection();
+        $schemas = $connection->getSchemaCollection();
+        foreach ($schemas->listTables() as $table) {
+            $schema = $schemas->describe($table);
+            foreach ($schema->constraints() as $name) {
+                $constraint = (array)$schema->getConstraint($name);
+                if (
+                    ($constraint['type'] ?? null) !== TableSchema::CONSTRAINT_FOREIGN
+                    || ($constraint['references'][0] ?? null) !== $this->getTable()
+                    || in_array($constraint['delete'] ?? null, [
+                        TableSchema::ACTION_CASCADE,
+                        TableSchema::ACTION_SET_NULL,
+                        TableSchema::ACTION_SET_DEFAULT,
+                    ], true)
+                ) {
+                    continue;
+                }
+                $referred = $connection->selectQuery(['1'], $table)
+                    ->where([$constraint['columns'][0] => $id])
+                    ->limit(1)
+                    ->execute()
+                    ->fetch();
+                if ($referred !== false) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Holds a new password to the rules of the account it is for.
+     *
+     * This is checked here rather than by a validator, as the rules depend on the account and a
+     * validator is not told which account it checks. It also has to happen before the entity
+     * hashes the password, which it does as soon as the password is set. A password set without
+     * the form, such as one hashed again on signing in, is not checked, so the passwords people
+     * already have keep working.
+     *
+     * @param \Cake\Event\EventInterface<\Cake\ORM\Table> $event The event.
+     * @param \Cake\Datasource\EntityInterface $entity The account, with the password already hashed.
+     * @param \ArrayObject<string, mixed> $data What was submitted.
+     * @param \ArrayObject<string, mixed> $options The options.
+     * @return void
+     */
+    public function afterMarshal(
+        EventInterface $event,
+        EntityInterface $entity,
+        ArrayObject $data,
+        ArrayObject $options,
+    ): void {
+        $password = $data['password'] ?? null;
+        if (!is_string($password) || $password === '' || !$entity->isDirty('password')) {
+            return;
+        }
+
+        $account = $this->passwordContext($entity);
+        $problems = PasswordRules::forAccount($account)->problems(
+            $password,
+            isset($account['username']) ? (string)$account['username'] : null,
+            isset($account['email']) ? (string)$account['email'] : null,
+        );
+        if ($problems !== []) {
+            $entity->setError('password', $problems);
+        }
+    }
+
+    /**
+     * Makes a link for setting a new password, for the active account that a username or an
+     * e-mail names alone, where it has an e-mail to send the link to.
+     *
+     * Only the hash of the token is kept, and a new one replaces the last - though not sooner than
+     * `PASSWORD_TOKEN_INTERVAL` after it.
+     *
+     * @param string $reference A username or an e-mail.
+     * @return array{0: \Access\Model\Entity\User, 1: string}|null The account and the token.
+     */
+    public function newPasswordToken(string $reference): ?array
+    {
+        $reference = trim($reference);
+        if ($reference === '') {
+            return null;
+        }
+
+        // an e-mail several accounts share names none of them; an account that does not sign in
+        // with a password gets none by e-mail either
+        $accounts = $this->find('active')
+            ->where(['OR' => [$this->aliasField('username') => $reference, $this->aliasField('email') => $reference]])
+            ->where([$this->aliasField('password') . ' IS NOT' => null])
+            ->limit(2)
+            ->all();
+        $user = $accounts->first();
+        if ($accounts->count() !== 1 || !$user instanceof User || (string)$user->email === '') {
+            return null;
+        }
+        // the last link was sent less than an interval ago where it expires later than a new one
+        // sent an interval ago would
+        $sentAnIntervalAgo = DateTime::now()
+            ->modify(self::PASSWORD_TOKEN_LIFETIME)
+            ->modify('-' . self::PASSWORD_TOKEN_INTERVAL);
+        if ($user->token_expires?->greaterThan($sentAnIntervalAgo)) {
+            return null;
+        }
+
+        $token = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+        $this->updateQuery()
+            ->set([
+                'token' => hash('sha256', $token),
+                'token_expires' => DateTime::now()->modify(self::PASSWORD_TOKEN_LIFETIME),
+            ])
+            ->where(['id' => $user->id])
+            ->execute();
+
+        return [$user, $token];
+    }
+
+    /**
+     * The active account a link for setting a new password is for, while it works.
+     *
+     * @param string $token The token from the link.
+     * @return \Access\Model\Entity\User|null
+     */
+    public function findByPasswordToken(string $token): ?User
+    {
+        if ($token === '') {
+            return null;
+        }
+
+        /** @var \Access\Model\Entity\User|null */
+        return $this->find('active')
+            ->where([
+                $this->aliasField('token') => hash('sha256', $token),
+                $this->aliasField('token_expires') . ' >' => DateTime::now(),
+            ])
+            ->first();
+    }
+
+    /**
+     * Turns off signing in to an account with a password: it keeps none, and no link to set one
+     * is sent. A key and an identity provider still sign it in. Setting a password turns it on.
+     *
+     * @param string $id The account.
+     * @return void
+     */
+    public function turnOffPasswordSignIn(string $id): void
+    {
+        $this->updateQuery()
+            ->set(['password' => null, 'token' => null, 'token_expires' => null])
+            ->where(['id' => $id])
+            ->execute();
+    }
+
+    /**
+     * Notes when and from where the account last signed in.
+     *
+     * @param string $id The account.
+     * @param string $ip The address it signed in from.
+     * @return void
+     */
+    public function noteGranted(string $id, string $ip): void
+    {
+        $this->updateQuery()
+            ->set(['last_granted' => DateTime::now(), 'last_granted_ip' => self::address($ip)])
+            ->where(['id' => $id])
+            ->execute();
+    }
+
+    /**
+     * Notes when and from where somebody last failed to sign in to the account that a username or
+     * an e-mail names, with a wrong password or a wrong code.
+     *
+     * @param string $reference A username or an e-mail.
+     * @param string $ip The address of the attempt.
+     * @return void
+     */
+    public function noteDenied(string $reference, string $ip): void
+    {
+        $reference = trim($reference);
+        if ($reference === '') {
+            return;
+        }
+
+        $this->updateQuery()
+            ->set(['last_denied' => DateTime::now(), 'last_denied_ip' => self::address($ip)])
+            ->where(['OR' => ['username' => $reference, 'email' => $reference]])
+            ->execute();
+    }
+
+    /**
+     * An address as the database keeps it, or nothing where it is not one.
+     *
+     * @param string $ip The address.
+     * @return string|null
+     */
+    private static function address(string $ip): ?string
+    {
+        return filter_var($ip, FILTER_VALIDATE_IP) !== false ? $ip : null;
+    }
+
+    /**
+     * What decides the rules for a password: the account as stored, with whatever the same form
+     * changes on it.
+     *
+     * @param \Cake\Datasource\EntityInterface $entity The account.
+     * @return array<string, mixed>
+     */
+    private function passwordContext(EntityInterface $entity): array
+    {
+        $account = [];
+        if (!$entity->isNew() && $entity->get('id') !== null) {
+            /** @var array<string, mixed> $account */
+            $account = $this->find()
+                ->select(self::PASSWORD_CONTEXT)
+                ->where([$this->aliasField('id') => $entity->get('id')])
+                ->disableHydration()
+                ->first() ?? [];
+        }
+        foreach (self::PASSWORD_CONTEXT as $field) {
+            if ($entity->has($field)) {
+                $account[$field] = $entity->get($field);
+            }
+        }
+
+        return $account;
+    }
+}

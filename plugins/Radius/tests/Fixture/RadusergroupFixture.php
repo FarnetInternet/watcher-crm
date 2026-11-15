@@ -1,0 +1,42 @@
+<?php
+declare(strict_types=1);
+
+namespace Radius\Test\Fixture;
+
+use Cake\TestSuite\Fixture\TestFixture;
+use Override;
+
+/**
+ * RadusergroupFixture
+ */
+class RadusergroupFixture extends TestFixture
+{
+    /**
+     * RADIUS keeps its own database, and so does the test suite.
+     */
+    public string $connection = 'test_radius';
+
+    /**
+     * Table alias
+     */
+    public string $tableAlias = 'Radius.Radusergroup';
+
+    /**
+     * Init method
+     *
+     * @return void
+     */
+    #[Override]
+    public function init(): void
+    {
+        $this->records = [
+            [
+                'id' => 1,
+                'username' => 'Lorem ipsum dolor sit amet, aliquet feugiat. Convallis morbi fringilla gravida, phasellus feugiat dapibus velit nunc, pulvinar eget sollicitudin venenatis cum nullam, vivamus ut a sed, mollitia lectus. Nulla vestibulum massa neque ut et, id hendrerit sit, feugiat in taciti enim proin nibh, tempor dignissim, rhoncus duis vestibulum nunc mattis convallis.',
+                'groupname' => 'Lorem ipsum dolor sit amet, aliquet feugiat. Convallis morbi fringilla gravida, phasellus feugiat dapibus velit nunc, pulvinar eget sollicitudin venenatis cum nullam, vivamus ut a sed, mollitia lectus. Nulla vestibulum massa neque ut et, id hendrerit sit, feugiat in taciti enim proin nibh, tempor dignissim, rhoncus duis vestibulum nunc mattis convallis.',
+                'priority' => 1,
+            ],
+        ];
+        parent::init();
+    }
+}

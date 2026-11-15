@@ -1,0 +1,285 @@
+<?php
+/**
+ * @var \App\View\AppView $this
+ * @var \App\Model\Entity\ContractProposal $contractProposal
+ * @var \App\Contracts\Proposal\ProposalConfirmations $confirmations
+ * @var bool $mayBeEdited
+ * @var bool $mayBeRecreated
+ * @var \App\Model\Enum\ProposalLinesLock|null $linesLock Why the lines cannot be changed now.
+ * @var bool $mayBeDeleted
+ * @var array<array{billing: \App\Model\Entity\Billing, line: \App\Contracts\Proposal\ProposedBilling|null, ending: bool, stopped: bool}> $rows
+ * @var array<string, array<string, array<\Files\Model\Entity\FileLink>>> $filed
+ * @var array<string, string> $documentTypes
+ * @var list<\App\Contracts\Proposal\PlannedChange> $planned
+ */
+
+use App\Model\Enum\DocumentVariant;
+
+$ourPages = 0;
+$theirPages = 0;
+foreach ($filed as $byVariant) {
+    foreach ($byVariant as $variant => $links) {
+        if (DocumentVariant::tryFrom((string)$variant)?->isGeneratedByUs() ?? false) {
+            $ourPages += count($links);
+        } else {
+            $theirPages += count($links);
+        }
+    }
+}
+
+?>
+<div class="row">
+    <aside class="column">
+        <div class="side-nav">
+            <h4 class="heading"><?= __('Actions') ?></h4>
+            <?php
+            // One page rather than two. Taking the snapshot again and putting right what may be
+            // put right were always halves of one gesture, and what may not be put right at all
+            // is what the papers are about - for that there is Delete.
+            ?>
+            <?php if ($mayBeRecreated) : ?>
+                <?= $this->AuthLink->link(
+                    __('Recreate Contract Proposal'),
+                    ['action' => 'recreate', $contractProposal->id],
+                    ['class' => 'side-nav-item'],
+                ) ?>
+            <?php endif; ?>
+            <?php if ($contractProposal->isOpen()) : ?>
+                <?= $this->AuthLink->postLink(
+                    __('Revoke'),
+                    ['action' => 'revoke', $contractProposal->id],
+                    [
+                        'class' => 'side-nav-item',
+                        'confirm' => __('Revoke this proposal? Nothing has been changed on the'
+                            . ' contract yet.'),
+                    ],
+                ) ?>
+            <?php endif; ?>
+            <?php if ($contractProposal->isWaitingOnWhatWasLeftOut()) : ?>
+                <?= $this->AuthLink->postLink(
+                    __('Mark What Was Left Out as Settled'),
+                    ['action' => 'settleWhatWasLeftOut', $contractProposal->id],
+                    [
+                        'class' => 'side-nav-item',
+                        'confirm' => __('Has what this proposal could not write been dealt with on'
+                            . ' the contract by hand?'),
+                    ],
+                ) ?>
+            <?php endif; ?>
+            <?php if ($mayBeDeleted) : ?>
+                <?= $this->AuthLink->postLink(
+                    __('Delete'),
+                    ['action' => 'delete', $contractProposal->id],
+                    ['class' => 'side-nav-item', 'confirm' => __('Are you sure?')],
+                ) ?>
+            <?php endif; ?>
+            <br>
+            <?php
+            // What leads elsewhere sits apart from what is done here. Sending, signing and
+            // applying the changes happen on the proposal and reach everything in it, so they are not
+            // offered here - the way up to them is.
+            ?>
+            <?= $this->AuthLink->link(
+                __('View Customer Proposal'),
+                [
+                    'plugin' => null,
+                    'controller' => 'CustomerProposals',
+                    'action' => 'view',
+                    $contractProposal->customer_proposal_id,
+                ],
+                ['class' => 'side-nav-item'],
+            ) ?>
+            <?= $this->AuthLink->link(
+                __('Documents'),
+                [
+                    'plugin' => null,
+                    'controller' => 'Documents',
+                    'action' => 'manage',
+                    '?' => ['proposal_id' => $contractProposal->id, 'agenda' => 'ContractProposals'],
+                ],
+                ['class' => 'side-nav-item'],
+            ) ?>
+        </div>
+    </aside>
+    <div class="column column-90">
+        <div class="contractProposals view content">
+            <?= $this->AuthLink->link(
+                __('Documents'),
+                [
+                    'plugin' => null,
+                    'controller' => 'Documents',
+                    'action' => 'manage',
+                    '?' => ['proposal_id' => $contractProposal->id, 'agenda' => 'ContractProposals'],
+                ],
+                ['class' => 'button float-right'],
+            ) ?>
+            <?= $this->element('ContractProposals/heading') ?>
+            <?= $this->element('ContractProposals/lines_locked') ?>
+            <?php if ($contractProposal->customer_proposal !== null) : ?>
+                <?php
+                // Papers of a contract are a part of a proposal put to the customer, and the way
+                // back up to it is said where the papers are read rather than only in the menu.
+                $proposal = $contractProposal->customer_proposal;
+                $itGoesOutIn = $this->Html->link(
+                    __('{0} from {1}', [$proposal->whatItIsFor(), $proposal->effective_from]),
+                    ['controller' => 'CustomerProposals', 'action' => 'view', $proposal->id],
+                );
+                ?>
+                <p><?= __('This contract proposal is part of the customer proposal: {0}', $itGoesOutIn) ?></p>
+                <br>
+            <?php endif; ?>
+            <div class="row">
+                <div class="column">
+                    <table>
+                        <tr>
+                            <th><?= __('Contract') ?></th>
+                            <td><?= $this->Html->link(
+                                $contractProposal->contract->number ?? '',
+                                [
+                                    'controller' => 'Contracts',
+                                    'action' => 'view',
+                                    $contractProposal->contract_id,
+                                ],
+                            ) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Contract Version') ?></th>
+                            <td><?= $contractProposal->contract_version !== null
+                                ? $this->Html->link(
+                                    $contractProposal->contract_version->name,
+                                    [
+                                        'controller' => 'ContractVersions',
+                                        'action' => 'view',
+                                        $contractProposal->contract_version_id,
+                                    ],
+                                ) : '' ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Effective From') ?></th>
+                            <td><?= h($contractProposal->effective_from) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Purpose') ?></th>
+                            <td><?= h($contractProposal->purpose->label()) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Snapshot Taken') ?></th>
+                            <td><?= h($contractProposal->snapshot_taken) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Sent To The Customer') ?></th>
+                            <td><?= h($contractProposal->getSending()) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Conclusion Date') ?></th>
+                            <td><?= h($contractProposal->conclusion_date) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Stored Documents') ?></th>
+                            <td><?=
+                                $this->Html->link(
+                                    $ourPages + $theirPages === 0
+                                        ? __('None')
+                                        : __(
+                                            '{0} generated, {1} received',
+                                            $ourPages,
+                                            $theirPages,
+                                        ),
+                                    [
+                                        'plugin' => null,
+                                        'controller' => 'Documents',
+                                        'action' => 'manage',
+                                        '?' => [
+                                            'proposal_id' => $contractProposal->id,
+                                            'agenda' => 'ContractProposals',
+                                        ],
+                                    ],
+                                )
+                                ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Changes Applied') ?></th>
+                            <td><?= h($contractProposal->applied) ?></td>
+                        </tr>
+                        <?php if (!$contractProposal->wasAppliedInFull()) : ?>
+                        <tr>
+                            <th><?= __('Left Out') ?></th>
+                            <td><?php
+                            // What applying it could not write. Said here rather than only in the
+                            // log, because somebody has to see to it.
+                            echo implode('<br>', array_map(
+                                fn(string $why): string => h($why),
+                                $contractProposal->whatWasLeftOut(),
+                            ));
+                                ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Left Out Settled') ?></th>
+                            <td><?= $contractProposal->whatWasLeftOutHasBeenSettled()
+                                ? h($contractProposal->left_out_settled)
+                                : h(__('Not yet')) ?></td>
+                        </tr>
+                            <?php if ($contractProposal->whatWasLeftOutHasBeenSettled()) : ?>
+                        <tr>
+                            <th><?= __('Left Out Settled By') ?></th>
+                            <td><?php
+                            // Named where we know the name, as the audit block does - whoever
+                            // closed this is the one to ask what they did about it.
+                            $settler = $contractProposal->left_out_settler ?? null;
+                            echo $settler !== null
+                                ? $this->Html->link(
+                                    $settler->username ?? '(' . $settler->id . ')',
+                                    [
+                                        'plugin' => null,
+                                        'controller' => 'Users',
+                                        'action' => 'view',
+                                        $settler->id,
+                                    ],
+                                )
+                                : h($contractProposal->left_out_settled_by);
+                                ?></td>
+                        </tr>
+                            <?php endif; ?>
+                        <?php endif; ?>
+                        <tr>
+                            <th><?= __('Revoked') ?></th>
+                            <td><?= h($contractProposal->revoked) ?></td>
+                        </tr>
+                        <?php if ($contractProposal->terminatesAnotherVersion()) : ?>
+                        <tr>
+                            <th><?= __('Terminates Contract Version') ?></th>
+                            <td><?= $contractProposal->terminated_contract_version !== null
+                                ? $this->Html->link(
+                                    $contractProposal->terminated_contract_version->name,
+                                    [
+                                        'controller' => 'ContractVersions',
+                                        'action' => 'view',
+                                        $contractProposal->terminates_contract_version_id,
+                                    ],
+                                ) : '' ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Number of the contract being terminated') ?></th>
+                            <td><?= h($contractProposal->terminated_contract_number) ?></td>
+                        </tr>
+                        <tr>
+                            <th><?= __('Activation Fee Charged') ?></th>
+                            <td><?= $contractProposal->activatesTheService() ? __('Yes') : __('No') ?></td>
+                        </tr>
+                        <?php endif; ?>
+                    </table>
+                </div>
+                <div class="column">
+                    <?= $this->element('common/audit', ['entity' => $contractProposal]) ?>
+                </div>
+            </div>
+
+            <?= $this->element('ContractProposals/what_it_says', ['linesLockSaidAbove' => true]) ?>
+
+            <?php if (!empty($contractProposal->note)) : ?>
+                <h4><?= __('Note') ?></h4>
+                <blockquote><?= $this->Text->autoParagraph(h($contractProposal->note)) ?></blockquote>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>

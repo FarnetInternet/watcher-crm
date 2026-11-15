@@ -1,0 +1,315 @@
+<?php
+declare(strict_types=1);
+
+namespace Files\Command;
+
+use App\Service\ErrorReport;
+use Cake\Command\Command;
+use Cake\Console\Arguments;
+use Cake\Console\ConsoleIo;
+use Cake\Console\ConsoleOptionParser;
+use Cake\I18n\DateTime;
+use Cake\Log\Log;
+use Files\Model\Entity\File;
+use Files\Service\FileStorage;
+use Files\Service\Previews;
+use League\Flysystem\StorageAttributes;
+use Override;
+
+/**
+ * CheckFiles command.
+ *
+ * The store and the records are two halves of one thing, and nothing keeps them together but the
+ * order they are written in. This asks what the two have to say about each other.
+ *
+ * Only one of the answers is repairable. Bytes nobody has a row for are rubbish - that is what a
+ * backup taken while something was being written leaves behind - and `--fix` throws them away,
+ * along with the pictures of content that is gone. A row whose bytes are gone cannot be put right
+ * from here at all, so it is reported and the run ends badly, which is what makes this worth
+ * running from cron.
+ *
+ * A document filed against content that is not there is not asked about: the foreign key keeps
+ * that promise, and a check for what the database will not allow is a check that never fires.
+ *
+ * Nobody reads what a cron run said, so what cannot be put right is also sent to whoever is on
+ * call. Bytes nobody has a row for are not: they are rubbish, the run is a success, and an email
+ * a day about rubbish teaches the reader to ignore the ones that matter.
+ */
+class CheckFilesCommand extends Command
+{
+    /**
+     * How many of a kind are named before the rest are only counted.
+     *
+     * @var int
+     */
+    private const SHOWN = 10;
+
+    /**
+     * How long bytes nobody has a row for have to lie there before they count as left behind.
+     *
+     * @var int
+     */
+    private const HOURS_TO_SETTLE = 24;
+
+    /**
+     * The name of this command.
+     *
+     * @var string
+     */
+    protected string $name = 'check_files';
+
+    /**
+     * Get the default command name.
+     *
+     * @return string
+     */
+    #[Override]
+    public static function defaultName(): string
+    {
+        return 'check_files';
+    }
+
+    /**
+     * Get the command description.
+     *
+     * @return string
+     */
+    #[Override]
+    public static function getDescription(): string
+    {
+        return 'Checks the stored content against what the records say.';
+    }
+
+    /**
+     * Hook method for defining this command's option parser.
+     *
+     * @see https://book.cakephp.org/5/en/console-commands/commands.html#defining-arguments-and-options
+     * @param \Cake\Console\ConsoleOptionParser $parser The parser to be defined
+     * @return \Cake\Console\ConsoleOptionParser The built parser.
+     */
+    #[Override]
+    protected function buildOptionParser(ConsoleOptionParser $parser): ConsoleOptionParser
+    {
+        $parser = parent::buildOptionParser($parser);
+
+        $parser->setDescription(__d(
+            'files',
+            'Checks the stored content against what the records say, and reports what does not match.',
+        ));
+
+        $parser->addOption('fix', [
+            'help' => __d(
+                'files',
+                'Throw away the bytes and the pictures nobody has a row for. Nothing else is touched.',
+            ),
+            'boolean' => true,
+        ]);
+
+        return $parser;
+    }
+
+    /**
+     * Implement this method with your command's logic.
+     *
+     * @param \Cake\Console\Arguments $args The command arguments.
+     * @param \Cake\Console\ConsoleIo $io The console io
+     * @return int|null The exit code or null for success
+     */
+    public function execute(Arguments $args, ConsoleIo $io): ?int
+    {
+        $storage = new FileStorage();
+        $files = $this->fetchTable('Files.Files');
+
+        /** @var iterable<\Files\Model\Entity\File> $rows */
+        $rows = $files->find()->all();
+
+        $claimed = [];
+        $known = [];
+        $gone = [];
+        $short = [];
+
+        foreach ($rows as $file) {
+            $claimed[$file->path] = true;
+            $known[(string)$file->id] = true;
+
+            if (!$storage->has($file)) {
+                $gone[] = $file;
+
+                continue;
+            }
+
+            $size = $storage->filesystem()->fileSize($file->path);
+            if ($size !== $file->byte_size) {
+                $short[] = $file;
+            }
+        }
+
+        $stray = $this->stray($storage, $claimed);
+        $pictures = Previews::leftBehind($known);
+        $unused = $files->find('unused')->count();
+
+        $io->out(__d(
+            'files',
+            '{0} rows, {1} of them with their content stored.',
+            count($claimed),
+            count($claimed) - count($gone),
+        ));
+
+        $this->report($io, __d('files', 'Rows whose bytes are gone'), array_map(
+            fn(File $file): string => $file->path . '  ' . $file->hash,
+            $gone,
+        ), true);
+
+        $this->report($io, __d('files', 'Rows whose bytes are not the size they say'), array_map(
+            fn(File $file): string => $file->path . '  ' . $file->byte_size,
+            $short,
+        ), true);
+
+        $this->report($io, __d('files', 'Bytes nobody has a row for'), $stray, false);
+        $this->report($io, __d('files', 'Pictures of content nobody has a row for'), $pictures, false);
+
+        if ($unused > 0) {
+            $io->out(__d(
+                'files',
+                '{0} rows nothing points at. They are safe to let go of one at a time from the storage page.',
+                $unused,
+            ));
+        }
+
+        if (($stray !== [] || $pictures !== []) && $args->getOption('fix')) {
+            $unclaimed = $this->stillUnclaimed($storage, $stray);
+            foreach ($unclaimed as $path) {
+                $storage->filesystem()->delete($path);
+            }
+
+            foreach ($pictures as $path) {
+                unlink($path);
+            }
+
+            $io->success(__d('files', '{0} thrown away.', count($unclaimed) + count($pictures)));
+            $stray = array_diff($stray, $unclaimed);
+            $pictures = [];
+        }
+
+        if ($gone === [] && $short === []) {
+            $io->success($stray === [] && $pictures === []
+                ? __d('files', 'The store and the records agree.')
+                : __d('files', 'Nothing is missing. Run this again with --fix to throw the rest away.'));
+
+            return static::CODE_SUCCESS;
+        }
+
+        $this->tell(count($gone), count($short));
+
+        return static::CODE_ERROR;
+    }
+
+    /**
+     * Tells whoever is on call that content is missing.
+     *
+     * @param int $gone How many rows have no bytes at all.
+     * @param int $short How many have bytes that are not the length the row says.
+     * @return void
+     */
+    private function tell(int $gone, int $short): void
+    {
+        // One sentence to a line, because a heredoc handed to __d() is not something the
+        // extractor can read.
+        $body = implode("\n", [
+            __d('files', 'The store no longer holds everything the records point at.'),
+            '',
+            __d('files', 'Rows whose bytes are gone: {0}', $gone),
+            __d('files', 'Rows whose bytes are not the size they say: {0}', $short),
+            '',
+            __d(
+                'files',
+                'Run `bin/cake check_files` to see which. What is missing has to come back from'
+                . ' a backup - neither can be put right from there.',
+            ),
+        ]);
+
+        Log::error('check_files: ' . $gone . ' rows without bytes, ' . $short . ' of the wrong size.');
+        ErrorReport::send(__d('files', 'File store check failed'), $body);
+    }
+
+    /**
+     * The bytes that can go, asked at the last moment.
+     *
+     * Bytes are written before their row and the list took a whole pass over the store to make,
+     * so what is young may be a paper being filed right now, and a row may have turned up since.
+     *
+     * @param \Files\Service\FileStorage $storage The store.
+     * @param array<string> $stray Paths nobody had a row for.
+     * @return array<string>
+     */
+    private function stillUnclaimed(FileStorage $storage, array $stray): array
+    {
+        if ($stray === []) {
+            return [];
+        }
+
+        /** @var list<string> $claimed */
+        $claimed = $this->fetchTable('Files.Files')->find()
+            ->select(['path'])
+            ->where(['path IN' => $stray])
+            ->all()
+            ->extract('path')
+            ->toList();
+        $settled = DateTime::now()->subHours(self::HOURS_TO_SETTLE)->getTimestamp();
+
+        return array_filter(
+            array_diff($stray, $claimed),
+            fn(string $path): bool => $storage->filesystem()->lastModified($path) < $settled,
+        );
+    }
+
+    /**
+     * What is in the store that no row claims.
+     *
+     * @param \Files\Service\FileStorage $storage Where the bytes live.
+     * @param array<string, bool> $claimed The paths the rows stand for.
+     * @return list<string>
+     */
+    private function stray(FileStorage $storage, array $claimed): array
+    {
+        $stray = [];
+
+        /** @var \League\Flysystem\StorageAttributes $entry */
+        foreach ($storage->filesystem()->listContents('', true) as $entry) {
+            if ($entry->type() !== StorageAttributes::TYPE_FILE || isset($claimed[$entry->path()])) {
+                continue;
+            }
+
+            $stray[] = $entry->path();
+        }
+
+        return $stray;
+    }
+
+    /**
+     * Says how many of a kind there are, and names the first few of them.
+     *
+     * @param \Cake\Console\ConsoleIo $io The console io.
+     * @param string $what What they are.
+     * @param list<string> $found The ones found.
+     * @param bool $serious Whether this is something that cannot be put right from here.
+     * @return void
+     */
+    private function report(ConsoleIo $io, string $what, array $found, bool $serious): void
+    {
+        if ($found === []) {
+            return;
+        }
+
+        $line = $what . ': ' . count($found);
+        $serious ? $io->error($line) : $io->warning($line);
+
+        foreach (array_slice($found, 0, self::SHOWN) as $one) {
+            $io->out('  ' . $one);
+        }
+
+        if (count($found) > self::SHOWN) {
+            $io->out(__d('files', '  ... and {0} more.', count($found) - self::SHOWN));
+        }
+    }
+}

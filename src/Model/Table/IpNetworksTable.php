@@ -1,0 +1,129 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Model\Table;
+
+use App\Model\Enum\IpNetworkTypeOfUse;
+use App\Model\Validation\NetworkValidation;
+use Cake\Database\Type\EnumType;
+use Cake\ORM\RulesChecker;
+use Cake\Validation\Validator;
+use Override;
+
+/**
+ * IpNetworks Model
+ *
+ * @property \App\Model\Table\CustomersTable&\Cake\ORM\Association\BelongsTo $Customers
+ * @property \App\Model\Table\ContractsTable&\Cake\ORM\Association\BelongsTo $Contracts
+ * @method \App\Model\Entity\IpNetwork newEmptyEntity()
+ * @method \App\Model\Entity\IpNetwork newEntity(array $data, array $options = [])
+ * @method \App\Model\Entity\IpNetwork[] newEntities(array $data, array $options = [])
+ * @method \App\Model\Entity\IpNetwork get(mixed $primaryKey, array|string $finder = 'all', null|\Psr\SimpleCache\CacheInterface|string $cache = null, null|\Closure|string $cacheKey = null, mixed ...$args)
+ * @method \App\Model\Entity\IpNetwork findOrCreate($search, callable|array|null $callback = null, $options = [])
+ * @method \App\Model\Entity\IpNetwork patchEntity(\Cake\Datasource\EntityInterface $entity, array $data, array $options = [])
+ * @method \App\Model\Entity\IpNetwork[] patchEntities(iterable $entities, array $data, array $options = [])
+ * @method \App\Model\Entity\IpNetwork|false save(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method \App\Model\Entity\IpNetwork saveOrFail(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method iterable<\App\Model\Entity\IpNetwork>|false saveMany(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\IpNetwork> saveManyOrFail(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\IpNetwork>|false deleteMany(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\IpNetwork> deleteManyOrFail(iterable $entities, $options = [])
+ * @mixin \Cake\ORM\Behavior\TimestampBehavior
+ */
+class IpNetworksTable extends AppTable
+{
+    /**
+     * Initialize method
+     *
+     * @param array<string, mixed> $config The configuration for the Table.
+     * @return void
+     */
+    #[Override]
+    public function initialize(array $config): void
+    {
+        parent::initialize($config);
+
+        $this->setTable('ip_networks');
+        $this->setDisplayField('ip_network');
+        $this->setPrimaryKey('id');
+
+        $this->getSchema()->setColumnType(
+            'type_of_use',
+            EnumType::from(IpNetworkTypeOfUse::class),
+        );
+
+        $this->addBehavior('Timestamp');
+        $this->addBehavior('Footprint');
+        $this->addBehavior('StringModifications');
+
+        $this->belongsTo('Customers', [
+            'foreignKey' => 'customer_id',
+            'joinType' => 'INNER',
+        ]);
+        $this->belongsTo('Contracts', [
+            'foreignKey' => 'contract_id',
+            'joinType' => 'INNER',
+        ]);
+    }
+
+    /**
+     * Default validation rules.
+     *
+     * @param \Cake\Validation\Validator $validator Validator instance.
+     * @return \Cake\Validation\Validator
+     */
+    #[Override]
+    public function validationDefault(Validator $validator): Validator
+    {
+        $validator
+            ->uuid('customer_id')
+            ->requirePresence('customer_id', 'create')
+            ->notEmptyString('customer_id');
+
+        $validator
+            ->uuid('contract_id')
+            ->requirePresence('contract_id', 'create')
+            ->notEmptyString('contract_id');
+
+        $validator
+            ->scalar('ip_network')
+            ->add('ip_network', 'cidr', [
+                'rule' => NetworkValidation::cidr(...),
+                'message' => __('This is not the address of a network.'),
+            ])
+            ->requirePresence('ip_network', 'create')
+            ->notEmptyString('ip_network')
+            ->add('ip_network', 'unique', [
+                'rule' => 'validateUnique',
+                'provider' => 'table',
+                'message' => __('This IP network is already in use.'),
+            ]);
+
+        $validator
+            ->requirePresence('type_of_use', 'create')
+            ->notEmptyString('type_of_use');
+
+        $validator
+            ->scalar('note')
+            ->allowEmptyString('note');
+
+        return $validator;
+    }
+
+    /**
+     * Returns a rules checker object that will be used for validating
+     * application integrity.
+     *
+     * @param \Cake\ORM\RulesChecker $rules The rules object to be modified.
+     * @return \Cake\ORM\RulesChecker
+     */
+    #[Override]
+    public function buildRules(RulesChecker $rules): RulesChecker
+    {
+        $rules->add($rules->isUnique(['ip_network']), ['errorField' => 'ip_network']);
+        $rules->add($rules->existsIn('customer_id', 'Customers'), ['errorField' => 'customer_id']);
+        $rules->add($rules->existsIn('contract_id', 'Contracts'), ['errorField' => 'contract_id']);
+
+        return $rules;
+    }
+}

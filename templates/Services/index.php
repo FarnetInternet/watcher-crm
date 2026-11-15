@@ -1,0 +1,81 @@
+<?php
+/**
+ * @var \App\View\AppView $this
+ * @var iterable<\App\Model\Entity\Service> $services
+ */
+?>
+<?= $this->Form->create(null, ['type' => 'get', 'valueSources' => ['query', 'context']]) ?>
+<div class="row">
+    <div class="column">
+        <?= $this->Form->control('search', [
+            'label' => __('Search'),
+            'type' => 'search',
+            'onchange' => $this::SUBMIT_ON_CHANGE,
+        ]) ?>
+    </div>
+</div>
+<?= $this->Form->end() ?>
+
+<div class="services index content">
+    <?= $this->AuthLink->link(__('New Service'), ['action' => 'add'], ['class' => 'button float-right win-link']) ?>
+    <?= $this->heading(__('Services')) ?>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th><?= $this->Paginator->sort('name') ?></th>
+                    <th><?= $this->Paginator->sort('price') ?></th>
+                    <th><?= $this->Paginator->sort('service_type_id') ?></th>
+                    <th><?= $this->Paginator->sort('connection_profile_id') ?></th>
+                    <th><?= $this->Paginator->sort('criticality_level') ?></th>
+                    <th><?= $this->Paginator->sort('accounting_product_code') ?></th>
+                    <th><?= $this->Paginator->sort('currently_offered') ?></th>
+                    <th class="actions"><?= __('Actions') ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($services as $service) : ?>
+                <tr>
+                    <td><?= h($service->name) ?></td>
+                    <td><?= $service->price === null ? '' : $this->Number->currency($service->price->toString()) ?></td>
+                    <td>
+                        <?= $service->service_type !== null ? $this->Html->link(
+                            $service->service_type->name ?? '(' . $service->service_type->id . ')',
+                            ['controller' => 'ServiceTypes', 'action' => 'view', $service->service_type->id],
+                        ) : '' ?>
+                    </td>
+                    <td>
+                        <?= $service->connection_profile !== null ? $this->Html->link(
+                            $service->connection_profile->radius_group
+                                ?? '(' . $service->connection_profile->id . ')',
+                            [
+                                'controller' => 'ConnectionProfiles',
+                                'action' => 'view',
+                                $service->connection_profile->id,
+                            ],
+                        ) : '' ?>
+                    </td>
+                    <td><?= $service->criticality_level === null ?
+                        '' : h($service->criticality_level->label()) ?></td>
+                    <td><?= h($service->accounting_product_code) ?></td>
+                    <td><?= $service->currently_offered ? __('Yes') : __('No'); ?></td>
+                    <td class="actions">
+                        <?= $this->AuthLink->link(__('View'), ['action' => 'view', $service->id]) ?>
+                        <?= $this->AuthLink->link(
+                            __('Edit'),
+                            ['action' => 'edit', $service->id],
+                            ['class' => 'win-link'],
+                        ) ?>
+                        <?= $this->AuthLink->postLink(
+                            __('Delete'),
+                            ['action' => 'delete', $service->id],
+                            ['confirm' => __('Are you sure you want to delete # {0}?', $service->id)],
+                        ) ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?= $this->element('common/paginator') ?>
+</div>

@@ -1,0 +1,3437 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Test\TestCase\Controller;
+
+use App\Contracts\Proposal\ProposedBilling;
+use App\Contracts\TheUsualTerm;
+use App\Controller\ContractProposalsController;
+use App\Controller\CustomerProposalsController;
+use App\Model\Entity\ContractProposal;
+use App\Model\Enum\ContractDocumentType;
+use App\Model\Enum\DocumentsDeliveryType;
+use App\Model\Enum\DocumentVariant;
+use App\Model\Enum\ProposalLinesLock;
+use App\Model\Enum\ProposalPurpose;
+use App\Model\Table\BillingsTable;
+use App\Proposals\DrawnPaper;
+use App\Service\ContractPrint\ContractDocuments;
+use App\Test\Traits\ControllerTestTrait;
+use Cake\Core\Configure;
+use Cake\I18n\Date;
+use Cake\I18n\DateTime;
+use Cake\TestSuite\IntegrationTestTrait;
+use Cake\TestSuite\TestCase;
+use Files\Service\FileStorage;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\UsesClass;
+
+/**
+ * App\Controller\ContractProposalsController Test Case
+ *
+ * Mostly smoke tests: every action is requested once and has to answer. Two of them go further,
+ * because they are the ones that would let a paper and the record behind it part company - sending
+ * settles the proposal, and taking the snapshot again has to survive a billing having gone.
+ */
+#[UsesClass(ContractProposalsController::class)]
+class ContractProposalsControllerTest extends TestCase
+{
+    use ControllerTestTrait;
+    use IntegrationTestTrait;
+
+    /**
+     * Contract the nested routes hang off.
+     *
+     * @var string
+     */
+    /**
+     * Where these pages belong: a proposal is reached under the record it is for, and asked
+     * for anywhere else it is sent here.
+     *
+     * @var string
+     */
+    private const NESTED = '/customers/403bab0e-52cd-4a8e-83f8-43c2457d0481'
+        . '/contracts/7f76dc3f-a11b-4109-958b-4b0382545a66';
+
+    private const CONTRACT_ID = '7f76dc3f-a11b-4109-958b-4b0382545a66';
+
+    private const CUSTOMER_ID = '403bab0e-52cd-4a8e-83f8-43c2457d0481';
+
+    /**
+     * The proposal the fixture carries: open, unsent, changing nothing.
+     *
+     * @var string
+     */
+    private const PROPOSAL_ID = 'c9a1f2b3-4d5e-4f60-8a71-9b2c3d4e5f60';
+
+    /**
+     * The proposal those papers are a part of. Sending, signing and applying the changes happen
+     * there and reach everything in it.
+     *
+     * @var string
+     */
+    private const ROUND_ID = 'a7c1d5e2-3f48-4b90-9c61-2d0e7a5b8f34';
+
+    /**
+     * The version the fixture carries: concluded, so papers over it take effect on a day of their
+     * own and the form asks for one.
+     *
+     * @var string
+     */
+    private const CONTRACT_VERSION_ID = '74824fba-20b2-46fc-806c-df795aa9e429';
+
+    /**
+     * The kind of equipment the fixtures know.
+     */
+    private const EQUIPMENT_TYPE_ID = '582ff5cb-62c6-42bd-a1bb-7f3d167124a4';
+
+    /**
+     * A piece of equipment a snapshot says the contract has lent.
+     */
+    private const LENT_ID = 'e1000000-0000-4000-8000-000000000001';
+
+    /**
+     * A billing the fixture proposal's snapshot knows about.
+     *
+     * @var string
+     */
+    private const KNOWN_BILLING_ID = 'b2000000-0000-4000-8000-000000000002';
+
+    /**
+     * And one the fixtures stopped long before any of these papers.
+     *
+     * @var string
+     */
+    private const CLOSED_BILLING_ID = 'b1000000-0000-4000-8000-000000000001';
+
+    /**
+     * A service still sold, and one the fixtures mark as no longer offered.
+     */
+    private const OPEN_SERVICE_ID = '5f6a2f47-0a4d-4c05-9bcb-2f0dc0a3f0d2';
+
+    /**
+     * Every box of the form ticked, the term among them.
+     *
+     * @var array<string, int>
+     */
+    private const EVERYTHING_ANSWERED = [
+        'fixed_term' => 1,
+        'own_equipment' => 1,
+        'does_not_use_ip_addresses' => 1,
+        'does_not_use_radius' => 1,
+    ];
+
+    private const RETIRED_SERVICE_ID = 'eaacfeb3-1430-43ce-842e-497c5c95d953';
+
+    /**
+     * Fixtures
+     *
+     * @var array<string>
+     */
+    protected array $fixtures = [
+        'app.Users',
+        'app.AccountingProfiles',
+        'app.Customers',
+        'app.Countries',
+        'app.Addresses',
+        'app.Emails',
+        'app.Phones',
+        'app.Commissions',
+        'app.ContractStates',
+        'app.ServiceTypes',
+        'app.ConnectionProfiles',
+        'app.Services',
+        'app.Contracts',
+        'app.ContractVersions',
+        'app.Billings',
+        'app.EquipmentTypes',
+        'app.BorrowedEquipments',
+        'app.SoldEquipments',
+        'app.IpAddresses',
+        'app.IpNetworks',
+        'app.CustomerProposals',
+        'app.ContractProposals',
+        'plugin.Files.Files',
+        'plugin.Files.FileLinks',
+    ];
+
+    /**
+     * The detail renders.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::view()
+     */
+    public function testView(): void
+    {
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/view/' . self::PROPOSAL_ID);
+
+        $this->assertResponseOk();
+    }
+
+    /**
+     * The form for a new proposal renders.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testAdd(): void
+    {
+        $this->login();
+        $this->get('/customers/403bab0e-52cd-4a8e-83f8-43c2457d0481/contracts/'
+            . self::CONTRACT_ID . '/contract-proposals/add');
+
+        $this->assertResponseOk();
+    }
+
+    /**
+     * A link from the contract's own pages settles which contract the papers are for, so the form
+     * has the versions of that contract to choose from rather than an empty list.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testTheFormFollowsTheContractTheLinkNamed(): void
+    {
+        $this->login();
+        $this->get('/contract-proposals/add?contract_id=' . self::CONTRACT_ID);
+
+        $this->assertResponseOk();
+        $this->assertNotEmpty($this->viewVariable('versions')->toArray());
+    }
+
+    /**
+     * The day the papers apply from may be left empty, and then follows the version. It is left
+     * empty rather than filled in ahead of time on purpose: a day put there for the operator would
+     * stay behind when they chose another version, and read as theirs.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testTheDayThePapersApplyFromFollowsTheVersionWhenLeftEmpty(): void
+    {
+        $this->login();
+        $this->get('/contract-proposals/add?purpose=' . ProposalPurpose::ServiceChange->value
+            . '&contract_version_id=' . self::CONTRACT_VERSION_ID);
+
+        $this->assertResponseOk();
+        $this->assertResponseNotContains('value="2022-11-30"');
+        // An amendment does not change the term, so the version's dates are not asked for.
+        $this->assertResponseNotContains('version_change_named[obligation_until]');
+        // The hint names that day, written the way the application writes days.
+        $day = $this->getTableLocator()->get('ContractVersions')
+            ->get(self::CONTRACT_VERSION_ID)
+            ->get('valid_from');
+        $this->assertResponseContains('the start of the version is used (' . $day . ')');
+
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/add', [
+            'purpose' => ProposalPurpose::ServiceChange->value,
+            'contract_id' => self::CONTRACT_ID,
+            'contract_version_id' => self::CONTRACT_VERSION_ID,
+            'effective_from' => '',
+            'confirmations' => [
+                'fixed_term' => 1,
+                'own_equipment' => 1,
+                'does_not_use_ip_addresses' => 1,
+                'does_not_use_radius' => 1,
+            ],
+        ]);
+
+        $this->assertRedirect();
+
+        /** @var \App\Model\Entity\ContractProposal $drawn */
+        $drawn = $this->getTableLocator()->get('ContractProposals')
+            ->find()
+            ->orderByDesc('created')
+            ->firstOrFail();
+
+        $this->assertSame('2022-11-30', $drawn->effective_from->toDateString());
+    }
+
+    /**
+     * Saying nothing about which version the papers are for is said on that field, not on the
+     * columns behind the snapshot - those are not on the form, and an error nobody can see reads
+     * as three required fields with nothing marked.
+     *
+     * Asked of a change, because that is one of the purposes that has to name a version: it amends
+     * one that was already agreed to, so there is nothing for it to start.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testAProposalWithoutAVersionSaysSoWhereItCanBeSeen(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/add', [
+            'purpose' => ProposalPurpose::ServiceChange->value,
+            'contract_id' => self::CONTRACT_ID,
+            'effective_from' => '2026-11-01',
+        ]);
+
+        $this->assertResponseOk();
+
+        $errors = $this->viewVariable('contractProposal')->getErrors();
+        $this->assertArrayHasKey('contract_version_id', $errors);
+        $this->assertArrayNotHasKey('snapshot', $errors);
+        $this->assertArrayNotHasKey('snapshot_taken', $errors);
+    }
+
+    /**
+     * Papers for a new contract may be drawn up before the version they are about exists. The
+     * snapshot is taken of the version as it will be, so there is one to print from, and the
+     * version itself waits for the papers to be applied.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testANewContractMayBeProposedBeforeItsVersionExists(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/add', [
+            'purpose' => ProposalPurpose::NewContract->value,
+            'contract_id' => self::CONTRACT_ID,
+            'contract_version_id' => '',
+            'effective_from' => '2026-11-01',
+            'confirmations' => [
+                'fixed_term' => 1,
+                'own_equipment' => 1,
+                'does_not_use_ip_addresses' => 1,
+                'does_not_use_radius' => 1,
+            ],
+        ]);
+
+        $this->assertRedirect();
+
+        /** @var \App\Model\Entity\ContractProposal $drawn */
+        $drawn = $this->getTableLocator()->get('ContractProposals')
+            ->find()
+            ->orderByDesc('created')
+            ->firstOrFail();
+
+        $this->assertNull($drawn->contract_version_id);
+        $this->assertSame('2026-11-01', $drawn->effective_from->toDateString());
+
+        // The papers have a version to print from all the same, and it starts the day they do.
+        $taken = $drawn->stateOfThings()->part('version');
+        $this->assertNull($taken['id']);
+        $this->assertSame('2026-11-01', $taken['valid_from']);
+    }
+
+    /**
+     * Setting the connection up again is asked only of a new contract replacing an earlier one,
+     * and a new contract that replaces nothing cannot be said to set it up again.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testOnlyAReplacingContractIsAskedWhetherTheConnectionIsSetUpAgain(): void
+    {
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/add?purpose=' . ProposalPurpose::NewContract->value);
+        $this->assertResponseOk();
+        $this->assertResponseNotContains('name="reactivates"');
+
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/add', [
+            'refresh' => 'refresh',
+            'purpose' => ProposalPurpose::NewContract->value,
+            'contract_id' => self::CONTRACT_ID,
+            'terminates_contract_version_id' => self::CONTRACT_VERSION_ID,
+        ]);
+        $this->assertResponseContains('name="reactivates"');
+
+        $this->post('/contract-proposals/add', [
+            'purpose' => ProposalPurpose::NewContract->value,
+            'contract_id' => self::CONTRACT_ID,
+            'contract_version_id' => '',
+            'effective_from' => '2026-11-01',
+            'reactivates' => 1,
+            'confirmations' => [
+                'fixed_term' => 1,
+                'own_equipment' => 1,
+                'does_not_use_ip_addresses' => 1,
+                'does_not_use_radius' => 1,
+            ],
+        ]);
+        $this->assertRedirect();
+
+        /** @var \App\Model\Entity\ContractProposal $drawn */
+        $drawn = $this->getTableLocator()->get('ContractProposals')
+            ->find()
+            ->orderByDesc('created')
+            ->firstOrFail();
+
+        $this->assertFalse($drawn->reactivates);
+    }
+
+    /**
+     * There is one proposal and it is put to the customer. Papers drawn up from the contract
+     * rather than from a proposal are given one of their own, so nothing stands outside one.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testPapersDrawnUpOnTheirOwnGetAProposalToBePartOf(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $before = $this->getTableLocator()->get('CustomerProposals')->find()->count();
+
+        $this->post('/contract-proposals/add', [
+            'purpose' => ProposalPurpose::NewContract->value,
+            'contract_id' => self::CONTRACT_ID,
+            'contract_version_id' => '',
+            'effective_from' => '2026-11-01',
+            'confirmations' => [
+                'fixed_term' => 1,
+                'own_equipment' => 1,
+                'does_not_use_ip_addresses' => 1,
+                'does_not_use_radius' => 1,
+            ],
+        ]);
+        $this->assertRedirect();
+
+        /** @var \App\Model\Entity\ContractProposal $drawn */
+        $drawn = $this->getTableLocator()->get('ContractProposals')
+            ->find()
+            ->orderByDesc('created')
+            ->firstOrFail();
+
+        $this->assertNotNull($drawn->customer_proposal_id);
+        $this->assertSame(
+            $before + 1,
+            $this->getTableLocator()->get('CustomerProposals')->find()->count(),
+        );
+
+        // It asks nothing of the customer themselves: it is there to hold these papers.
+        $proposal = $this->getTableLocator()->get('CustomerProposals')->get($drawn->customer_proposal_id);
+        $this->assertNull($proposal->purpose);
+        $this->assertSame('2026-11-01', $proposal->effective_from->toDateString());
+    }
+
+    /**
+     * The preview of papers that bring their version into being has a version to say nothing
+     * about: there is none yet, so nothing can have moved on one.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ChangePreview::of()
+     */
+    public function testThePreviewOfPapersWithoutAVersionRenders(): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $proposals->saveOrFail(
+            $proposals->patchEntity($proposals->get(self::PROPOSAL_ID), [
+                'contract_version_id' => null,
+                'conclusion_date' => '2026-09-15',
+            ]),
+            ['checkRules' => false],
+        );
+
+        $this->login();
+        $this->get('/customers/' . self::CUSTOMER_ID . '/customer-proposals/apply-changes/' . self::ROUND_ID);
+
+        $this->assertResponseOk();
+    }
+
+    /**
+     * Without a day there is nothing for the version to start on, so it is asked for rather than
+     * guessed at - there is no version to take it from.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testANewContractWithoutAVersionHasToSayWhichDayItStarts(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/add', [
+            'purpose' => ProposalPurpose::NewContract->value,
+            'contract_id' => self::CONTRACT_ID,
+            'contract_version_id' => '',
+            'effective_from' => '',
+        ]);
+
+        $this->assertResponseOk();
+
+        $errors = $this->viewVariable('contractProposal')->getErrors();
+        $this->assertArrayHasKey('effective_from', $errors);
+    }
+
+    /**
+     * Changing the contract redraws the form with that contract's versions rather than trying to
+     * save what is only half filled in.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testChangingTheContractOnlyRedrawsTheForm(): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $before = $proposals->find()->count();
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/add', [
+            'refresh' => 'refresh',
+            'contract_id' => self::CONTRACT_ID,
+            'contract_version_id' => '74824fba-20b2-46fc-806c-df795aa9e429',
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertSame([], $this->viewVariable('contractProposal')->getErrors());
+        $this->assertNotEmpty($this->viewVariable('versions')->toArray());
+        $this->assertSame($before, $proposals->find()->count());
+    }
+
+    /**
+     * A contract whose service type wants equipment, addresses and an account asks three questions,
+     * and an unanswered one has to land on the box that answers it. They used to be set on the
+     * column the answers are kept in, which the form does not render as a field - so three
+     * complaints appeared above the form with nothing marked in it.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testUnansweredChecksLandOnTheirOwnBoxes(): void
+    {
+        $types = $this->getTableLocator()->get('ServiceTypes');
+        $type = $types->get($this->getTableLocator()->get('Contracts')->get(self::CONTRACT_ID)->service_type_id);
+        $types->saveOrFail($types->patchEntity($type, [
+            'have_equipments' => true,
+            'normally_with_borrowed_equipment' => true,
+            'have_ip_addresses' => true,
+            'have_radius_accounts' => true,
+        ]), ['checkRules' => false]);
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/customers/403bab0e-52cd-4a8e-83f8-43c2457d0481/contracts/'
+            . self::CONTRACT_ID . '/contract-proposals/add', [
+                'contract_id' => self::CONTRACT_ID,
+                'contract_version_id' => '74824fba-20b2-46fc-806c-df795aa9e429',
+                'effective_from' => '2026-11-01',
+                'confirmations' => ['fixed_term' => '1'],
+            ]);
+
+        $this->assertResponseOk();
+
+        $errors = $this->viewVariable('contractProposal')->getErrors();
+        $this->assertArrayHasKey('confirmations', $errors);
+        // Nested under the field the boxes are named after, so the form marks them.
+        $this->assertArrayHasKey('own_equipment', $errors['confirmations']);
+        $this->assertArrayNotHasKey('snapshot', $errors);
+        $this->assertArrayNotHasKey('changes', $errors);
+    }
+
+    /**
+     * Answering them lets the proposal through.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testAnsweringTheChecksLetsItThrough(): void
+    {
+        $types = $this->getTableLocator()->get('ServiceTypes');
+        $type = $types->get($this->getTableLocator()->get('Contracts')->get(self::CONTRACT_ID)->service_type_id);
+        $types->saveOrFail($types->patchEntity($type, [
+            'have_equipments' => true,
+            'normally_with_borrowed_equipment' => true,
+            'have_ip_addresses' => true,
+        ]), ['checkRules' => false]);
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/customers/403bab0e-52cd-4a8e-83f8-43c2457d0481/contracts/'
+            . self::CONTRACT_ID . '/contract-proposals/add', [
+                'contract_id' => self::CONTRACT_ID,
+                'contract_version_id' => '74824fba-20b2-46fc-806c-df795aa9e429',
+                'effective_from' => '2026-11-01',
+                'confirmations' => [
+                    'fixed_term' => '1',
+                    'own_equipment' => '1',
+                    'does_not_use_ip_addresses' => '1',
+                    'does_not_use_radius' => '1',
+                ],
+            ]);
+
+        $this->assertRedirect();
+    }
+
+    /**
+     * The form talks about the version and the contract in fields of its own. They are named apart
+     * from the records they speak of, because two of those names are associations on the proposal:
+     * handed `contract`, the marshaller once built a whole new contract out of one date and then
+     * complained that it had no customer, no service type and no state - three complaints on fields
+     * no form ever drew.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testTheFormsOwnFieldsAreNotReadAsAssociations(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/customers/403bab0e-52cd-4a8e-83f8-43c2457d0481/contracts/'
+            . self::CONTRACT_ID . '/contract-proposals/add', [
+                'contract_id' => self::CONTRACT_ID,
+                'contract_version_id' => '74824fba-20b2-46fc-806c-df795aa9e429',
+                'effective_from' => '2026-11-01',
+                'confirmations' => [
+                    'fixed_term' => '1',
+                    'own_equipment' => '1',
+                    'does_not_use_ip_addresses' => '1',
+                    'does_not_use_radius' => '1',
+                ],
+                // exactly what the form sends when nothing about them is ticked
+                'version_change_named' => ['valid_until' => '0', 'obligation_until' => '0'],
+                'version_change' => ['valid_until' => '', 'obligation_until' => ''],
+                'contract_change_named' => ['termination_date' => '0'],
+                'contract_change' => ['termination_date' => ''],
+            ]);
+
+        $this->assertRedirect();
+
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        /** @var \App\Model\Entity\ContractProposal $saved */
+        $saved = $proposals->find()->orderByDesc('created')->firstOrFail();
+        $this->assertTrue($saved->proposedChanges()->isEmpty());
+    }
+
+    /**
+     * Both the contract and the version redraw the form when they change, and they do it by adding
+     * a field the form never declared. It has to be unlocked whichever of them is on the page, or
+     * the redraw is refused as tampering.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testTheFieldThatRedrawsTheFormIsUnlocked(): void
+    {
+        $this->login();
+        $this->get('/customers/403bab0e-52cd-4a8e-83f8-43c2457d0481/contracts/'
+            . self::CONTRACT_ID . '/contract-proposals/add');
+
+        $this->assertResponseOk();
+        // Both selectors are drawn wherever the form was opened, and either has to be able to
+        // redraw it.
+        $this->assertResponseContains('refresh');
+        $this->assertResponseContains('name="contract_id"');
+    }
+
+    /**
+     * Opened under a contract, the form fills its contract in rather than leaving it out. Every way
+     * in reaches the same page and only the breadcrumbs say which one it was, so a field that
+     * disappeared with the route is one the operator would go looking for.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testTheNestedFormOpensWithItsContractChosen(): void
+    {
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/add');
+
+        $this->assertResponseOk();
+        $this->assertSame(self::CONTRACT_ID, $this->viewVariable('contractProposal')->contract_id);
+    }
+
+    /**
+     * And choosing another one there stands. The address fills the field in and nothing more, or
+     * the papers would quietly be drawn up for the contract the operator came in under.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testTheContractChosenBeatsTheOneInTheAddress(): void
+    {
+        $another = '9c0d5e5c-2a6b-4f8e-9a3d-1b7c4e2f6a90';
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post(self::NESTED . '/contract-proposals/add', [
+            'contract_id' => $another,
+            'effective_from' => '2026-11-01',
+            'confirmations' => [
+                'fixed_term' => '1',
+                'own_equipment' => '1',
+                'does_not_use_ip_addresses' => '1',
+                'does_not_use_radius' => '1',
+            ],
+        ]);
+
+        $this->assertRedirect();
+
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        /** @var \App\Model\Entity\ContractProposal $saved */
+        $saved = $proposals->find()->orderByDesc('created')->firstOrFail();
+        $this->assertSame($another, $saved->contract_id);
+    }
+
+    /**
+     * The number on the paper of what is being ended is asked only where something is being ended
+     * - an ending, or a new contract replacing an earlier version. Those are the two cases the rule
+     * that demands it asks about, so anywhere else it was a field with nothing to choose.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testTheNumberIsAskedForOnlyWhereSomethingIsEnded(): void
+    {
+        $this->login();
+
+        $this->get(self::NESTED . '/contract-proposals/add?purpose='
+            . ProposalPurpose::NewContract->value);
+        $this->assertResponseOk();
+        $this->assertResponseNotContains('name="terminated_contract_number"');
+
+        $this->get(self::NESTED . '/contract-proposals/add?purpose='
+            . ProposalPurpose::Termination->value);
+        $this->assertResponseOk();
+        $this->assertResponseContains('name="terminated_contract_number"');
+
+        // And a new contract that replaces an earlier version does end something, so naming the
+        // version draws the form again with the number on it.
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/add', [
+            'refresh' => 'refresh',
+            'purpose' => ProposalPurpose::NewContract->value,
+            'contract_id' => self::CONTRACT_ID,
+            'terminates_contract_version_id' => self::CONTRACT_VERSION_ID,
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('name="terminated_contract_number"');
+    }
+
+    /**
+     * A version nobody recorded the signature of cannot be replaced, and an old contract often
+     * has one. The form says so as soon as it is chosen, with the way to put it right.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testAnUnsignedVersionToBeReplacedIsPointedOut(): void
+    {
+        $versions = $this->getTableLocator()->get('ContractVersions');
+        $versions->updateAll(['conclusion_date' => null], ['id' => self::CONTRACT_VERSION_ID]);
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/add', [
+            'refresh' => 'refresh',
+            'purpose' => ProposalPurpose::NewContract->value,
+            'contract_id' => self::CONTRACT_ID,
+            'terminates_contract_version_id' => self::CONTRACT_VERSION_ID,
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('The version being replaced has no conclusion date.');
+        $this->assertResponseContains('/contract-versions/edit/' . self::CONTRACT_VERSION_ID);
+
+        // a signed one is replaced without a word
+        $versions->updateAll(['conclusion_date' => '2022-11-30'], ['id' => self::CONTRACT_VERSION_ID]);
+        $this->post('/contract-proposals/add', [
+            'refresh' => 'refresh',
+            'purpose' => ProposalPurpose::NewContract->value,
+            'contract_id' => self::CONTRACT_ID,
+            'terminates_contract_version_id' => self::CONTRACT_VERSION_ID,
+        ]);
+        $this->assertResponseNotContains('The version being replaced has no conclusion date.');
+    }
+
+    /**
+     * A contract with no version on record has nothing a new contract could replace, which the
+     * form says beside the field that would name it.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testAContractWithoutAVersionSaysThereIsNothingToReplace(): void
+    {
+        $this->getTableLocator()->get('ContractProposals')->deleteAll(['contract_id' => self::CONTRACT_ID]);
+        $this->getTableLocator()->get('ContractVersions')->deleteAll(['contract_id' => self::CONTRACT_ID]);
+
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/add?purpose=' . ProposalPurpose::NewContract->value);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('No version of this contract is on record.');
+    }
+
+    /**
+     * Says something of the proposal these papers go out in.
+     *
+     * The sending and the signature belong to the envelope, so a test that puts papers in either
+     * state puts the envelope in it.
+     *
+     * @param array<string, mixed> $says What the proposal says.
+     * @return void
+     */
+    private function theProposalSays(array $says): void
+    {
+        $envelopes = $this->getTableLocator()->get('CustomerProposals');
+        $envelopes->saveOrFail(
+            $envelopes->patchEntity($envelopes->get(self::ROUND_ID), $says),
+            ['checkRules' => false],
+        );
+    }
+
+    /**
+     * The usual minimum term is offered rather than typed: the form names the day it would run to,
+     * counted from the day the papers take effect, and clicking it fills the field in.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testTheUsualTermIsOfferedBesideTheObligation(): void
+    {
+        $version = $this->getTableLocator()->get('ContractVersions')->get(self::CONTRACT_VERSION_ID);
+        $offered = TheUsualTerm::from($version->valid_from);
+
+        $this->login();
+        // Only a new contract sets a term, so that is where it is offered.
+        $this->get(self::NESTED . '/contract-proposals/add?purpose='
+            . ProposalPurpose::NewContract->value
+            . '&contract_version_id=' . self::CONTRACT_VERSION_ID);
+
+        $this->assertResponseOk();
+        // The day is said out loud, so nobody has to click to find out what they would get.
+        $this->assertResponseContains(h((string)$offered));
+        // And the click fills that very day in.
+        $this->assertResponseContains($offered->toDateString());
+    }
+
+    /**
+     * A line is added on a page of its own, the way a billing on a contract is.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::billingLine()
+     */
+    public function testABillingIsAddedOnItsOwnPage(): void
+    {
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/billing-line/' . self::PROPOSAL_ID);
+        $this->assertResponseOk();
+
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/billing-line/' . self::PROPOSAL_ID, [
+            'service_id' => 'eaacfeb3-1430-43ce-842e-497c5c95d953',
+            'quantity' => '2',
+            'price' => '299.00',
+        ]);
+
+        $this->assertRedirect();
+
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $lines = $proposals->get(self::PROPOSAL_ID)->proposedChanges()->billings;
+
+        $this->assertCount(1, $lines);
+        $this->assertTrue($lines[0]->isAddition());
+        $this->assertSame('299.00', $lines[0]->price?->toString());
+        $this->assertNotEmpty($lines[0]->service, 'The chosen service did not come with the line.');
+    }
+
+    /**
+     * A proposal is where new arrangements are made, so what is no longer sold is not offered -
+     * the same as on a billing added to a contract.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::billingLine()
+     */
+    public function testARetiredServiceIsNotOffered(): void
+    {
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/billing-line/' . self::PROPOSAL_ID);
+
+        $this->assertResponseOk();
+
+        $offered = $this->viewVariable('services')->toArray();
+        $this->assertArrayHasKey(self::OPEN_SERVICE_ID, $offered);
+        $this->assertArrayNotHasKey(self::RETIRED_SERVICE_ID, $offered);
+    }
+
+    /**
+     * Except the one the line is already on. Changing a line that runs on a tariff nobody may take
+     * any more is what somebody comes to this page for, and a list without it would move them onto
+     * another tariff without saying so.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::billingLine()
+     */
+    public function testARetiredServiceAlreadyChosenStaysOnTheList(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/billing-line/' . self::PROPOSAL_ID, [
+            'service_id' => self::RETIRED_SERVICE_ID,
+            'quantity' => '1',
+            'price' => '299.00',
+        ]);
+        $this->assertRedirect();
+
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $line = $proposals->get(self::PROPOSAL_ID)->proposedChanges()->billings[0];
+
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/billing-line/' . self::PROPOSAL_ID . '/' . $line->id);
+
+        $this->assertResponseOk();
+        $this->assertArrayHasKey(
+            self::RETIRED_SERVICE_ID,
+            $this->viewVariable('services')->toArray(),
+        );
+    }
+
+    /**
+     * Changing something already billed for starts from what is there, so the operator changes the
+     * one thing they came to change.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::billingLine()
+     */
+    public function testChangingABillingStartsFromWhatIsThere(): void
+    {
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/billing-line/' . self::PROPOSAL_ID
+            . '?replaces=' . self::KNOWN_BILLING_ID);
+
+        $this->assertResponseOk();
+        $this->assertSame(self::KNOWN_BILLING_ID, $this->viewVariable('values')['billing_id']);
+    }
+
+    /**
+     * A billing taken off the contract while the proposal waits is still on its table. Ending it
+     * lands back on the proposal, where the preview goes on to say what became of it.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::endBilling()
+     */
+    public function testEndingABillingAlreadyGoneComesBackToTheProposal(): void
+    {
+        $billings = $this->getTableLocator()->get('Billings');
+        $billings->deleteOrFail(
+            $billings->get(self::KNOWN_BILLING_ID),
+            [BillingsTable::ALLOW_CLOSED_PERIODS => true],
+        );
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/end-billing/' . self::PROPOSAL_ID . '/' . self::KNOWN_BILLING_ID);
+
+        $this->assertRedirectContains('/contract-proposals/view/' . self::PROPOSAL_ID);
+    }
+
+    /**
+     * The form of a line has no record behind it for Cake to read the types from, so the money on
+     * it is declared by hand. As plain text a decimal comma reaches the line as written, and the
+     * line cannot read it as money.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::billingLine()
+     */
+    public function testTheMoneyOnALineIsAskedForAsNumbers(): void
+    {
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/billing-line/' . self::PROPOSAL_ID);
+
+        $this->assertResponseOk();
+        $this->assertResponseRegExp('/<input[^>]*type="number"[^>]*name="price"[^>]*step="0\.01"/');
+        $this->assertResponseRegExp('/<input[^>]*type="number"[^>]*name="fixed_discount"[^>]*step="0\.01"/');
+    }
+
+    /**
+     * A line below the contract's minimum is not saved, and the box means nothing coming from
+     * somebody who is not offered it.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::billingLine()
+     */
+    public function testALineBelowTheMinimumIsRefusedOnTheForm(): void
+    {
+        $this->agreeMinimum('100');
+
+        $this->login('bookkeeper');
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/billing-line/' . self::PROPOSAL_ID, [
+            'service_id' => self::OPEN_SERVICE_ID,
+            'quantity' => '1',
+            'price' => '50',
+            'below_minimum_allowed' => '1',
+        ]);
+
+        $this->assertNoRedirect();
+        $this->assertSame('50', $this->viewVariable('values')['price'], 'What was typed was not kept.');
+        $this->assertResponseContains('<div class="error-message">');
+        $this->assertSame(
+            [],
+            $this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID)->proposedChanges()->billings,
+        );
+    }
+
+    /**
+     * What an administrator allows stays on the line, until somebody else writes the line again.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::billingLine()
+     */
+    public function testAnAdministratorsAllowanceStaysOnTheLineUntilSomebodyElseWritesIt(): void
+    {
+        $this->agreeMinimum('100');
+        $line = [
+            'service_id' => self::OPEN_SERVICE_ID,
+            'quantity' => '1',
+            'price' => '50',
+            'below_minimum_allowed' => '1',
+        ];
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/billing-line/' . self::PROPOSAL_ID, $line);
+        $this->assertRedirect();
+
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $written = $proposals->get(self::PROPOSAL_ID)->proposedChanges()->billings[0];
+        $this->assertTrue($written->below_minimum_allowed);
+
+        $this->login('bookkeeper');
+        $this->post('/contract-proposals/billing-line/' . self::PROPOSAL_ID . '/' . $written->id, [
+            'note' => 'Written again',
+        ] + $line);
+
+        $this->assertNoRedirect();
+        $this->assertNull($proposals->get(self::PROPOSAL_ID)->proposedChanges()->billings[0]->note);
+    }
+
+    /**
+     * A manager is offered the box an administrator is, and only ticking it lets the line through.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::billingLine()
+     */
+    public function testAManagerTickingTheBoxAllowsALineBelowTheMinimum(): void
+    {
+        $this->agreeMinimum('100');
+        $line = [
+            'service_id' => self::OPEN_SERVICE_ID,
+            'quantity' => '1',
+            'price' => '50',
+        ];
+
+        $this->login('manager');
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/billing-line/' . self::PROPOSAL_ID, $line);
+
+        $this->assertNoRedirect();
+        $this->assertResponseContains('below_minimum_allowed');
+
+        $this->post('/contract-proposals/billing-line/' . self::PROPOSAL_ID, $line + [
+            'below_minimum_allowed' => '1',
+        ]);
+
+        $this->assertRedirect();
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $this->assertTrue($proposals->get(self::PROPOSAL_ID)->proposedChanges()->billings[0]->below_minimum_allowed);
+    }
+
+    /**
+     * Puts a minimum on the contract the proposal is about.
+     *
+     * @param string $minimum The minimum.
+     * @return void
+     */
+    private function agreeMinimum(string $minimum): void
+    {
+        $this->getTableLocator()->get('Contracts')->updateAll(
+            ['minimum_connection_price' => $minimum],
+            ['id' => self::CONTRACT_ID],
+        );
+    }
+
+    /**
+     * One change may be several lines: half price until a day, full price from it. The second line
+     * carries its own start, and the first stops the day before it.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::billingLine()
+     */
+    public function testOneChangeMayBeSeveralLines(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $this->post('/contract-proposals/billing-line/' . self::PROPOSAL_ID
+            . '?replaces=' . self::KNOWN_BILLING_ID, [
+                'service_id' => 'eaacfeb3-1430-43ce-842e-497c5c95d953',
+                'quantity' => '1',
+                'percentage_discount' => '50',
+                'billing_until' => '2027-08-31',
+            ]);
+        $this->assertRedirect();
+
+        $this->post('/contract-proposals/billing-line/' . self::PROPOSAL_ID, [
+            'service_id' => 'eaacfeb3-1430-43ce-842e-497c5c95d953',
+            'quantity' => '1',
+            'billing_from' => '2027-09-01',
+        ]);
+        $this->assertRedirect();
+
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $lines = $proposals->get(self::PROPOSAL_ID)->proposedChanges()->billings;
+
+        $this->assertCount(2, $lines);
+        $this->assertSame(50, $lines[0]->percentage_discount);
+        $this->assertSame('2027-08-31', $lines[0]->billing_until?->toDateString());
+        $this->assertSame('2027-09-01', $lines[1]->billing_from?->toDateString());
+        $this->assertNull($lines[1]->percentage_discount);
+    }
+
+    /**
+     * A line can be taken back out again, leaving what it acted on as it stands.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::dropBillingLine()
+     */
+    public function testALineCanBeTakenBackOut(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/billing-line/' . self::PROPOSAL_ID, [
+            'service_id' => 'eaacfeb3-1430-43ce-842e-497c5c95d953',
+            'quantity' => '1',
+        ]);
+
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $line = $proposals->get(self::PROPOSAL_ID)->proposedChanges()->billings[0];
+
+        $this->post('/contract-proposals/drop-billing-line/'
+            . self::PROPOSAL_ID . '/' . $line->id);
+
+        $this->assertRedirect();
+        $this->assertTrue($proposals->get(self::PROPOSAL_ID)->proposedChanges()->isEmpty());
+    }
+
+    /**
+     * Ending a billing that is already being replaced replaces that line rather than adding a
+     * second one to the same billing.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::endBilling()
+     */
+    public function testEndingSomethingAlreadyBeingReplacedReplacesThatLine(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $this->post('/contract-proposals/billing-line/' . self::PROPOSAL_ID
+            . '?replaces=' . self::KNOWN_BILLING_ID, [
+                'service_id' => 'eaacfeb3-1430-43ce-842e-497c5c95d953',
+                'quantity' => '1',
+            ]);
+
+        $this->post('/contract-proposals/end-billing/'
+            . self::PROPOSAL_ID . '/' . self::KNOWN_BILLING_ID);
+        $this->assertRedirect();
+
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $lines = $proposals->get(self::PROPOSAL_ID)->proposedChanges()->billings;
+
+        $this->assertCount(1, $lines);
+        $this->assertTrue($lines[0]->terminatesOnly());
+    }
+
+    /**
+     * Equipment is lent on a page of its own, and the line brings the kind with it, so the papers
+     * can print its name and value.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::equipmentLine()
+     */
+    public function testEquipmentIsLentOnItsOwnPage(): void
+    {
+        $this->theProposalIs(['purpose' => ProposalPurpose::NewContract->value]);
+
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/view/' . self::PROPOSAL_ID);
+        $this->assertResponseContains('/contract-proposals/equipment-line/' . self::PROPOSAL_ID);
+
+        $this->get(self::NESTED . '/contract-proposals/equipment-line/' . self::PROPOSAL_ID);
+        $this->assertResponseOk();
+
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/equipment-line/' . self::PROPOSAL_ID, [
+            'equipment_type_id' => self::EQUIPMENT_TYPE_ID,
+            'serial_number' => ' SN-NEW-1 ',
+            'note' => '',
+        ]);
+        $this->assertRedirect();
+
+        $lent = $this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID)
+            ->proposedChanges()
+            ->equipmentLent();
+
+        $this->assertCount(1, $lent);
+        $this->assertSame('SN-NEW-1', $lent[0]->serial_number);
+        $this->assertNull($lent[0]->note);
+        $this->assertSame(self::EQUIPMENT_TYPE_ID, $lent[0]->equipment_type['id'] ?? null);
+    }
+
+    /**
+     * A contract replacing an earlier version takes back what that one lent, once, and the return
+     * can be taken back off the proposal again.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::returnEquipment()
+     */
+    public function testEquipmentIsTakenBackByAReplacingContract(): void
+    {
+        $versions = $this->getTableLocator()->get('ContractVersions');
+        $earlier = $versions->newEntity([
+            'contract_id' => self::CONTRACT_ID,
+            'valid_from' => '2020-01-01',
+            'valid_until' => '2020-12-31',
+            'conclusion_date' => '2019-12-15',
+            'number_of_amendments' => 0,
+        ]);
+        $versions->saveOrFail($earlier, ['checkRules' => false]);
+
+        $proposal = $this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID);
+        $snapshot = $proposal->snapshot;
+        $snapshot['borrowed_equipments'] = [['id' => self::LENT_ID, 'serial_number' => 'SN-OLD-1']];
+
+        $this->theProposalIs([
+            'purpose' => ProposalPurpose::NewContract->value,
+            'terminates_contract_version_id' => $earlier->id,
+            'terminated_contract_number' => '2022/0001',
+            'snapshot' => $snapshot,
+        ]);
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/return-equipment/' . self::PROPOSAL_ID . '/' . self::LENT_ID);
+        $this->post('/contract-proposals/return-equipment/' . self::PROPOSAL_ID . '/' . self::LENT_ID);
+        $this->assertRedirect();
+
+        $changes = $this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID)->proposedChanges();
+        $this->assertSame([self::LENT_ID], array_keys($changes->equipmentTakenBack()));
+
+        $line = $changes->equipmentTakenBack()[self::LENT_ID];
+        $this->post('/contract-proposals/drop-equipment-line/' . self::PROPOSAL_ID . '/' . $line->id);
+
+        $this->assertSame([], $this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID)
+            ->proposedChanges()
+            ->equipments);
+    }
+
+    /**
+     * Once the papers have gone out their equipment is settled too, for every role that may draw
+     * papers up - the same gate the billing lines have.
+     *
+     * @param string $role The role to ask as.
+     * @return void
+     * @link \App\Controller\ContractProposalsController::equipmentLine()
+     */
+    #[DataProvider('rolesThatDrawUpPapers')]
+    public function testTheEquipmentOfASentProposalIsLeftAlone(string $role): void
+    {
+        $this->theProposalIs(['purpose' => ProposalPurpose::NewContract->value]);
+        $this->theProposalSays(['sent_date' => '2026-10-01', 'delivery_type' => DocumentsDeliveryType::Email]);
+
+        $this->login($role);
+        $this->get(self::NESTED . '/contract-proposals/view/' . self::PROPOSAL_ID);
+        $this->assertResponseOk();
+        $this->assertResponseNotContains('/contract-proposals/equipment-line/' . self::PROPOSAL_ID);
+
+        $this->get(self::NESTED . '/contract-proposals/equipment-line/' . self::PROPOSAL_ID);
+        $this->assertRedirect();
+
+        $this->get(self::NESTED . '/contract-proposals/billing-line/' . self::PROPOSAL_ID);
+        $this->assertRedirect();
+    }
+
+    /**
+     * An exchange of borrowed equipments is drawn up without a version, on the day it is drawn up,
+     * and offers to end what the contract lends - but not its billings. Its protocol is not drawn
+     * before a line says what is exchanged.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testAnExchangeIsDrawnUpWithoutAVersion(): void
+    {
+        $equipments = $this->getTableLocator()->get('BorrowedEquipments');
+        $lent = $equipments->newEntity([
+            'customer_id' => self::CUSTOMER_ID,
+            'contract_id' => self::CONTRACT_ID,
+            'equipment_type_id' => self::EQUIPMENT_TYPE_ID,
+            'serial_number' => 'SN-OLD-1',
+            'borrowed_from' => '2022-01-01',
+        ]);
+        $equipments->saveOrFail($lent);
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/add', [
+            'purpose' => ProposalPurpose::EquipmentChange->value,
+            'contract_id' => self::CONTRACT_ID,
+        ]);
+        $this->assertRedirect();
+
+        /** @var \App\Model\Entity\ContractProposal $drawn */
+        $drawn = $this->getTableLocator()->get('ContractProposals')
+            ->find()
+            ->orderByDesc('created')
+            ->firstOrFail();
+
+        $this->assertNull($drawn->contract_version_id);
+        $this->assertSame(Date::today()->toDateString(), $drawn->effective_from->toDateString());
+        $this->assertTrue($drawn->stateOfThings()->knowsBorrowedEquipment((string)$lent->id));
+
+        $this->get(self::NESTED . '/contract-proposals/view/' . $drawn->id);
+        $this->assertResponseOk();
+        $this->assertResponseContains('/contract-proposals/return-equipment/' . $drawn->id . '/' . $lent->id);
+        $this->assertResponseNotContains('/contract-proposals/billing-line/' . $drawn->id);
+
+        $this->assertNotSame(
+            [],
+            (new DrawnPaper())->problemsWith($drawn, ContractDocumentType::HandoverExchange->value),
+        );
+    }
+
+    /**
+     * A document generated from the proposal locks its lines, the page says why and offers to
+     * discard it, and once it is gone the lines may be changed again.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::discardDocuments()
+     */
+    public function testGeneratedDocumentsLockTheLinesUntilTheyAreDiscarded(): void
+    {
+        Configure::write('Files.root', TMP . 'lines-lock-' . uniqid());
+        $storage = new FileStorage();
+        $drawn = $storage->link(
+            $storage->store('%PDF-1.7 ours', 'application/pdf'),
+            ContractDocuments::MODEL,
+            self::PROPOSAL_ID,
+            ContractDocumentType::ContractAmendment->value,
+            DocumentVariant::Generated->value,
+            ['name' => 'amendment.pdf'],
+        );
+
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/view/' . self::PROPOSAL_ID);
+        $this->assertResponseOk();
+        $this->assertResponseContains('/contract-proposals/discard-documents/' . self::PROPOSAL_ID);
+        $this->assertResponseNotContains('/contract-proposals/billing-line/' . self::PROPOSAL_ID);
+
+        $this->get(self::NESTED . '/contract-proposals/billing-line/' . self::PROPOSAL_ID);
+        $this->assertRedirect();
+
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/discard-documents/' . self::PROPOSAL_ID);
+        $this->assertRedirect();
+        $this->assertFalse($this->getTableLocator()->get('Files.FileLinks')->exists(['id' => $drawn->id]));
+
+        $this->get(self::NESTED . '/contract-proposals/billing-line/' . self::PROPOSAL_ID);
+        $this->assertResponseOk();
+
+        Configure::delete('Files.root');
+    }
+
+    /**
+     * The customer's signed copy is what they agreed to, so nothing is discarded and the page says
+     * why and what to do instead.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::discardDocuments()
+     */
+    public function testASignedCopyIsNotDiscarded(): void
+    {
+        Configure::write('Files.root', TMP . 'lines-lock-' . uniqid());
+        $storage = new FileStorage();
+        $drawn = $storage->link(
+            $storage->store('%PDF-1.7 ours', 'application/pdf'),
+            ContractDocuments::MODEL,
+            self::PROPOSAL_ID,
+            ContractDocumentType::ContractAmendment->value,
+            DocumentVariant::Generated->value,
+            ['name' => 'amendment.pdf'],
+        );
+        $storage->link(
+            $storage->store('%PDF-1.7 signed', 'application/pdf'),
+            ContractDocuments::MODEL,
+            self::PROPOSAL_ID,
+            ContractDocumentType::ContractAmendment->value,
+            DocumentVariant::ReceivedSignedByCustomer->value,
+            ['name' => 'amendment-signed.pdf'],
+        );
+
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/view/' . self::PROPOSAL_ID);
+        $this->assertResponseOk();
+        $this->assertResponseContains(h(ProposalLinesLock::SignedByTheCustomer->label()));
+        $this->assertResponseNotContains('/contract-proposals/discard-documents/' . self::PROPOSAL_ID);
+
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/discard-documents/' . self::PROPOSAL_ID);
+        $this->assertRedirect();
+        $this->assertTrue($this->getTableLocator()->get('Files.FileLinks')->exists(['id' => $drawn->id]));
+
+        Configure::delete('Files.root');
+    }
+
+    /**
+     * Says something of the papers themselves, past the rules - the way a fixture would.
+     *
+     * @param array<string, mixed> $says What the papers say.
+     * @return void
+     */
+    private function theProposalIs(array $says): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $proposals->saveOrFail(
+            $proposals->patchEntity($proposals->get(self::PROPOSAL_ID), $says),
+            ['checkRules' => false],
+        );
+    }
+
+    /**
+     * A settled proposal has its lines left alone.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::billingLine()
+     */
+    public function testTheLinesOfASentProposalAreLeftAlone(): void
+    {
+        $this->theProposalSays(['sent_date' => '2026-10-01', 'delivery_type' => DocumentsDeliveryType::Email]);
+
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/billing-line/' . self::PROPOSAL_ID);
+
+        $this->assertRedirect();
+    }
+
+    /**
+     * Every role that may draw papers up may put them together again, and the button to it is
+     * drawn for them. Tests log in as an administrator unless they say otherwise, who is let
+     * through before the rules for the roles are read at all.
+     *
+     * @param string $role The role to ask as.
+     * @return void
+     * @link \App\Controller\ContractProposalsController::recreate()
+     */
+    #[DataProvider('rolesThatDrawUpPapers')]
+    public function testRecreateIsOpenToTheRolesThatDrawUpPapers(string $role): void
+    {
+        $this->login($role);
+
+        $this->get(self::NESTED . '/contract-proposals/view/' . self::PROPOSAL_ID);
+        $this->assertResponseOk();
+        $this->assertResponseContains('/contract-proposals/recreate/' . self::PROPOSAL_ID);
+
+        $this->get(self::NESTED . '/contract-proposals/recreate/' . self::PROPOSAL_ID);
+        $this->assertResponseOk();
+    }
+
+    /**
+     * And the same gate as deleting keeps them out once the papers have gone out.
+     *
+     * @param string $role The role to ask as.
+     * @return void
+     * @link \App\Controller\ContractProposalsController::recreate()
+     */
+    #[DataProvider('rolesThatDrawUpPapers')]
+    public function testRecreateIsShutOnceThePapersHaveGoneOut(string $role): void
+    {
+        $proposal = $this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID);
+        $this->getTableLocator()->get('CustomerProposals')->updateAll(
+            ['sent_date' => '2026-09-01', 'delivery_type' => DocumentsDeliveryType::cases()[0]->value],
+            ['id' => $proposal->customer_proposal_id],
+        );
+        $this->login($role);
+
+        $this->get(self::NESTED . '/contract-proposals/view/' . self::PROPOSAL_ID);
+        $this->assertResponseOk();
+        $this->assertResponseNotContains('/contract-proposals/recreate/' . self::PROPOSAL_ID);
+
+        $this->get(self::NESTED . '/contract-proposals/recreate/' . self::PROPOSAL_ID);
+        $this->assertRedirect();
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function rolesThatDrawUpPapers(): array
+    {
+        return [
+            'network manager' => ['network-manager'],
+            'sales representative' => ['sales-representative'],
+            'sales manager' => ['sales-manager'],
+            'bookkeeper' => ['bookkeeper'],
+        ];
+    }
+
+    /**
+     * The form renders, and asks for nothing the papers are about.
+     *
+     * Those fields are what the snapshot and the changes were made from, so the page that offers
+     * them is the one that draws papers up. Here there is nothing to offer but what is written
+     * where it is read.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::recreate()
+     */
+    public function testRecreate(): void
+    {
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/recreate/' . self::PROPOSAL_ID);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('name="note"');
+
+        foreach (['purpose', 'contract_id', 'contract_version_id', 'effective_from', 'ends_on'] as $settled) {
+            $this->assertResponseNotContains(
+                sprintf('name="%s"', $settled),
+                sprintf('The form offers %s, which the papers were drawn up from.', $settled),
+            );
+        }
+    }
+
+    /**
+     * Putting the papers together again reads the contract afresh and takes back the lines the new
+     * reading no longer knows.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::recreate()
+     */
+    public function testRecreatingTakesTheSnapshotAgain(): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $billings = $this->getTableLocator()->get('Billings');
+
+        $line = ProposedBilling::fromArray(['billing_id' => self::KNOWN_BILLING_ID, 'quantity' => 2]);
+        $proposal = $proposals->get(self::PROPOSAL_ID);
+        $proposal->set('changes', $proposal->proposedChanges()->withLine($line)->toArray());
+        // Answered the way the form answers them, since saving asks whether the contract is ready.
+        $proposal->set('confirmations', [
+            'fixed_term' => true,
+            'own_equipment' => true,
+            'does_not_use_ip_addresses' => true,
+            'does_not_use_radius' => true,
+        ]);
+        $proposals->saveOrFail($proposal);
+        // Invoiced for, so only an administrator's override takes it away - which is what
+        // the operator who made this situation on the live records would have had to do.
+        $billings->deleteOrFail(
+            $billings->get(self::KNOWN_BILLING_ID),
+            [BillingsTable::ALLOW_CLOSED_PERIODS => true],
+        );
+
+        $before = $proposals->get(self::PROPOSAL_ID)->snapshot_taken;
+
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/view/' . self::PROPOSAL_ID);
+        $this->assertResponseContains('/contract-proposals/recreate/' . self::PROPOSAL_ID);
+
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post(self::NESTED . '/contract-proposals/recreate/' . self::PROPOSAL_ID, [
+            'confirmations' => [
+                'fixed_term' => 1,
+                'own_equipment' => 1,
+                'does_not_use_ip_addresses' => 1,
+                'does_not_use_radius' => 1,
+            ],
+        ]);
+
+        $this->assertRedirectContains('/contract-proposals/view/' . self::PROPOSAL_ID);
+
+        $after = $proposals->get(self::PROPOSAL_ID);
+        $this->assertTrue($after->snapshot_taken > $before, 'The snapshot was not taken again.');
+        $this->assertArrayNotHasKey(self::KNOWN_BILLING_ID, $after->stateOfThings()->billings());
+        $this->assertNull($after->proposedChanges()->line($line->id));
+    }
+
+    /**
+     * The documents we generated came from the old snapshot, so they go with it - and nothing else
+     * does. An ending is filed with the customer's own notice and with what an office wrote, and
+     * neither is ours to throw away.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::recreate()
+     */
+    public function testRecreatingDeletesOnlyTheDocumentsWeGenerated(): void
+    {
+        Configure::write('Files.root', TMP . 'recreate-papers-' . uniqid());
+        $storage = new FileStorage();
+
+        $ours = $storage->link(
+            $storage->store('%PDF-1.7 ours', 'application/pdf'),
+            ContractDocuments::MODEL,
+            self::PROPOSAL_ID,
+            ContractDocumentType::ContractTermination->value,
+            DocumentVariant::Generated->value,
+            ['name' => 'termination.pdf'],
+        );
+        $theirs = $storage->link(
+            $storage->store('%PDF-1.7 theirs', 'application/pdf'),
+            ContractDocuments::MODEL,
+            self::PROPOSAL_ID,
+            ContractDocumentType::TerminationNotice->value,
+            DocumentVariant::Received->value,
+            ['name' => 'notice.pdf'],
+        );
+
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/recreate/' . self::PROPOSAL_ID);
+
+        // Named on the form, so nobody agrees to something they were not shown - and the one that
+        // came from the customer is not among them.
+        $this->assertResponseOk();
+        $this->assertResponseContains('termination.pdf');
+        $this->assertResponseNotContains('notice.pdf');
+
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post(self::NESTED . '/contract-proposals/recreate/' . self::PROPOSAL_ID, [
+            'discard_the_documents' => '1',
+            'confirmations' => [
+                'fixed_term' => 1,
+                'own_equipment' => 1,
+                'does_not_use_ip_addresses' => 1,
+                'does_not_use_radius' => 1,
+            ],
+        ]);
+
+        $this->assertRedirect();
+
+        $links = $this->getTableLocator()->get('Files.FileLinks');
+        $this->assertFalse($links->exists(['id' => $ours->id]), 'What we generated was kept.');
+        $this->assertTrue($links->exists(['id' => $theirs->id]), 'The customer\'s own notice was deleted.');
+
+        Configure::delete('Files.root');
+    }
+
+    /**
+     * And they are not deleted behind anybody's back: without the box that says they may go, the
+     * snapshot stands and so do they.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::recreate()
+     */
+    public function testTheGeneratedDocumentsAreNotDeletedUnasked(): void
+    {
+        Configure::write('Files.root', TMP . 'recreate-papers-' . uniqid());
+        $storage = new FileStorage();
+
+        $ours = $storage->link(
+            $storage->store('%PDF-1.7 ours', 'application/pdf'),
+            ContractDocuments::MODEL,
+            self::PROPOSAL_ID,
+            ContractDocumentType::ContractTermination->value,
+            DocumentVariant::Generated->value,
+            ['name' => 'termination.pdf'],
+        );
+
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $before = $proposals->get(self::PROPOSAL_ID)->snapshot_taken;
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post(self::NESTED . '/contract-proposals/recreate/' . self::PROPOSAL_ID, [
+            'confirmations' => [
+                'fixed_term' => 1,
+                'own_equipment' => 1,
+                'does_not_use_ip_addresses' => 1,
+                'does_not_use_radius' => 1,
+            ],
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertArrayHasKey(
+            'discard_the_documents',
+            $this->viewVariable('contractProposal')->getErrors(),
+        );
+        $this->assertTrue(
+            $this->getTableLocator()->get('Files.FileLinks')->exists(['id' => $ours->id]),
+            'A document was deleted without anybody agreeing to it.',
+        );
+        $this->assertEquals($before, $proposals->get(self::PROPOSAL_ID)->snapshot_taken);
+
+        Configure::delete('Files.root');
+    }
+
+    /**
+     * A fresh reading may raise a question that was answered against the old one, and the question
+     * is asked on the very form that read it - which is why the two used to send the operator back
+     * and forth to each other. Nothing is written until it is answered.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::recreate()
+     */
+    public function testAnUnansweredQuestionIsAskedOnTheForm(): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $before = $proposals->get(self::PROPOSAL_ID)->snapshot_taken;
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post(self::NESTED . '/contract-proposals/recreate/' . self::PROPOSAL_ID);
+
+        $this->assertResponseOk();
+        $this->assertNotEmpty($this->viewVariable('contractProposal')->getErrors());
+        $this->assertEquals($before, $proposals->get(self::PROPOSAL_ID)->snapshot_taken);
+    }
+
+    /**
+     * The contracts are offered the way every other form offers them - number, service and where
+     * it is - rather than as bare numbers nobody remembers.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testTheContractsAreNamedAsElsewhere(): void
+    {
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/add');
+
+        $this->assertResponseOk();
+        $contract = $this->getTableLocator()->get('Contracts')
+            ->get(self::CONTRACT_ID, contain: ['InstallationAddresses', 'ServiceTypes']);
+        $offered = iterator_to_array($this->viewVariable('contracts'));
+
+        $this->assertSame($contract->name, $offered[self::CONTRACT_ID] ?? null);
+        $this->assertNotSame((string)$contract->number, $contract->name, 'The fixture names nothing but the number.');
+    }
+
+    /**
+     * Taking the snapshot again survives a billing having gone from the contract since - which is
+     * the very case somebody asks for it in, and which saving the snapshot on its own would have
+     * been refused for.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::recreate()
+     */
+    public function testTheSnapshotIsTakenAgainEvenWhenABillingHasGone(): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $billings = $this->getTableLocator()->get('Billings');
+
+        // A line acting on that billing, put there while it was still on the contract.
+        $line = ProposedBilling::fromArray(['billing_id' => self::KNOWN_BILLING_ID, 'quantity' => 2]);
+        $proposal = $proposals->get(self::PROPOSAL_ID);
+        $proposal->set('changes', $proposal->proposedChanges()->withLine($line)->toArray());
+        $proposals->saveOrFail($proposal);
+
+        // The proposal's snapshot knows this billing; the contract will not.
+        // Invoiced for, so only an administrator's override takes it away - which is what
+        // the operator who made this situation on the live records would have had to do.
+        $billings->deleteOrFail(
+            $billings->get(self::KNOWN_BILLING_ID),
+            [BillingsTable::ALLOW_CLOSED_PERIODS => true],
+        );
+
+        $before = $proposals->get(self::PROPOSAL_ID)->snapshot_taken;
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post(self::NESTED . '/contract-proposals/recreate/' . self::PROPOSAL_ID, [
+            'confirmations' => [
+                'fixed_term' => 1,
+                'own_equipment' => 1,
+                'does_not_use_ip_addresses' => 1,
+                'does_not_use_radius' => 1,
+            ],
+        ]);
+
+        $this->assertRedirect();
+
+        $after = $proposals->get(self::PROPOSAL_ID);
+        $this->assertTrue($after->snapshot_taken > $before, 'The snapshot was not taken again.');
+        $this->assertArrayNotHasKey(
+            self::KNOWN_BILLING_ID,
+            $after->stateOfThings()->billings(),
+        );
+        $this->assertNull(
+            $after->proposedChanges()->line($line->id),
+            'The line was left acting on a billing that is no longer there.',
+        );
+    }
+
+    /**
+     * An ending is drawn up from one day: the version stops being valid on it, the contract is
+     * terminated on it, and the papers take effect the day after, because what is billed for stops
+     * the day before they apply.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testAnEndingIsDrawnUpFromOneDay(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/add', [
+            'purpose' => ProposalPurpose::Termination->value,
+            'contract_id' => self::CONTRACT_ID,
+            'contract_version_id' => self::CONTRACT_VERSION_ID,
+            'terminated_contract_number' => '2022/0001',
+            'ends_on' => '2026-12-31',
+            'confirmations' => [
+                'own_equipment' => 1,
+                'does_not_use_ip_addresses' => 1,
+                'does_not_use_radius' => 1,
+            ],
+        ]);
+
+        $this->assertSame([], $this->viewVariable('contractProposal')?->getErrors() ?? []);
+        $this->assertRedirect();
+
+        /** @var \App\Model\Entity\ContractProposal $drawn */
+        $drawn = $this->getTableLocator()->get('ContractProposals')
+            ->find()
+            ->orderByDesc('created')
+            ->firstOrFail();
+
+        $changes = $drawn->proposedChanges();
+        $this->assertSame('2026-12-31', $changes->version->get('valid_until')?->toDateString());
+        $this->assertSame('2026-12-31', $changes->contract->get('termination_date')?->toDateString());
+        $this->assertSame('2027-01-01', $drawn->effective_from->toDateString());
+    }
+
+    /**
+     * An ending stops what the contract is still billed for, and leaves alone what stopped on its
+     * own before the papers take effect. A line for something long dead would read as a change on
+     * the proposal and would be one in the records.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::endWhatTheContractIsBilledFor()
+     */
+    public function testAnEndingLeavesAloneWhatHasAlreadyStopped(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/add', [
+            'purpose' => ProposalPurpose::Termination->value,
+            'contract_id' => self::CONTRACT_ID,
+            'contract_version_id' => self::CONTRACT_VERSION_ID,
+            'terminated_contract_number' => '2022/0001',
+            'ends_on' => '2026-12-31',
+            'confirmations' => [
+                'own_equipment' => 1,
+                'does_not_use_ip_addresses' => 1,
+                'does_not_use_radius' => 1,
+            ],
+        ]);
+
+        $this->assertRedirect();
+
+        /** @var \App\Model\Entity\ContractProposal $drawn */
+        $drawn = $this->getTableLocator()->get('ContractProposals')
+            ->find()
+            ->orderByDesc('created')
+            ->firstOrFail();
+
+        $ended = array_keys($drawn->proposedChanges()->billingsByBillingId());
+
+        $this->assertContains(self::KNOWN_BILLING_ID, $ended, 'What is still billed for was not ended.');
+        $this->assertNotContains(
+            self::CLOSED_BILLING_ID,
+            $ended,
+            'A billing that stopped years ago was given an ending.',
+        );
+    }
+
+    /**
+     * Draws up a new contract for a fixed term through the form.
+     *
+     * @param \Cake\I18n\Date $ends The last day of the term.
+     * @return \App\Model\Entity\ContractProposal What was drawn up.
+     */
+    private function drawUpAFixedTerm(Date $ends): ContractProposal
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/add', [
+            'purpose' => ProposalPurpose::NewContract->value,
+            'contract_id' => self::CONTRACT_ID,
+            'contract_version_id' => '',
+            'effective_from' => Date::today()->toDateString(),
+            'version_change_named' => ['valid_until' => '1', 'obligation_until' => '1'],
+            'version_change' => [
+                'valid_until' => $ends->toDateString(),
+                'obligation_until' => $ends->toDateString(),
+            ],
+            'confirmations' => self::EVERYTHING_ANSWERED,
+        ]);
+
+        $this->assertRedirect();
+
+        /** @var \App\Model\Entity\ContractProposal $drawn */
+        $drawn = $this->getTableLocator()->get('ContractProposals')
+            ->find()
+            ->orderByDesc('created')
+            ->firstOrFail();
+
+        return $drawn;
+    }
+
+    /**
+     * Says when a billing stops, past the rules - the way somebody on the contract's own page would.
+     *
+     * @param string $id Which billing.
+     * @param \Cake\I18n\Date|null $until The day.
+     * @return void
+     */
+    private function theBillingRunsUntil(string $id, ?Date $until): void
+    {
+        $billings = $this->getTableLocator()->get('Billings');
+        $billings->saveOrFail(
+            $billings->patchEntity($billings->get($id), ['billing_until' => $until?->toDateString()]),
+            ['checkRules' => false],
+        );
+    }
+
+    /**
+     * Turns the fixture's proposal into a new contract for a fixed term that has not run out.
+     *
+     * @param \Cake\I18n\Date $ends The last day of the term.
+     * @param array<array<string, mixed>> $lines Its billing lines.
+     * @return void
+     */
+    private function theProposalIsForATerm(Date $ends, array $lines = []): void
+    {
+        $this->theProposalIs([
+            'purpose' => ProposalPurpose::NewContract->value,
+            'contract_version_id' => null,
+            'effective_from' => Date::today()->toDateString(),
+            'confirmations' => self::EVERYTHING_ANSWERED,
+            'changes' => [
+                'billings' => $lines,
+                'version' => [
+                    'valid_until' => $ends->toDateString(),
+                    'obligation_until' => $ends->toDateString(),
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * Puts the papers together again, with every question answered.
+     *
+     * @return void
+     */
+    private function recreateThePapers(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post(self::NESTED . '/contract-proposals/recreate/' . self::PROPOSAL_ID, [
+            'confirmations' => self::EVERYTHING_ANSWERED,
+        ]);
+
+        $this->assertRedirectContains('/contract-proposals/view/' . self::PROPOSAL_ID);
+    }
+
+    /**
+     * What the proposal's lines say about each billing, read as they were saved.
+     *
+     * @return array<string, \App\Contracts\Proposal\ProposedBilling>
+     */
+    private function linesOfTheProposal(): array
+    {
+        return $this->getTableLocator()->get('ContractProposals')
+            ->get(self::PROPOSAL_ID)
+            ->proposedChanges()
+            ->billingsByBillingId();
+    }
+
+    /**
+     * A fixed term stops what is billed for on its last day, and what stopped earlier needs nothing.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::endWhatTheContractIsBilledFor()
+     */
+    public function testAFixedTermStopsWhatIsBilledForOnItsLastDay(): void
+    {
+        $ends = Date::today()->addYears(1);
+
+        $drawn = $this->drawUpAFixedTerm($ends);
+
+        $lines = $drawn->proposedChanges()->billingsByBillingId();
+
+        $this->assertArrayHasKey(self::KNOWN_BILLING_ID, $lines, 'What is still billed for was not stopped.');
+        $this->assertArrayNotHasKey(self::CLOSED_BILLING_ID, $lines, 'Something long stopped got a line.');
+
+        $line = $lines[self::KNOWN_BILLING_ID];
+        $this->assertTrue($line->terminatesOnly(), 'Nothing is meant to take its place.');
+        $this->assertSame(
+            $ends->toDateString(),
+            $line->endsTheBillingOn($drawn->effective_from, null)?->toDateString(),
+        );
+    }
+
+    /**
+     * A billing that stops sooner than the term is somebody's decision, and it is never lengthened
+     * for them: a tariff followed by another looks exactly the same.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::runsPast()
+     */
+    public function testAFixedTermLeavesAloneWhatStopsSooner(): void
+    {
+        $this->theBillingRunsUntil(self::KNOWN_BILLING_ID, Date::today()->addMonths(2));
+
+        $drawn = $this->drawUpAFixedTerm(Date::today()->addYears(1));
+
+        $this->assertSame([], $drawn->proposedChanges()->billingsByBillingId());
+    }
+
+    /**
+     * Something running on past the term is brought back to it.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::runsPast()
+     */
+    public function testAFixedTermStopsWhatRunsLonger(): void
+    {
+        $ends = Date::today()->addYears(1);
+        $this->theBillingRunsUntil(self::KNOWN_BILLING_ID, $ends->addMonths(3));
+
+        $drawn = $this->drawUpAFixedTerm($ends);
+
+        $this->assertArrayHasKey(self::KNOWN_BILLING_ID, $drawn->proposedChanges()->billingsByBillingId());
+    }
+
+    /**
+     * Putting the papers together again replaces every answer, so the one about the term is asked
+     * too. Without the box the saving would be refused over something nobody can tick.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::recreate()
+     */
+    public function testRecreatingAsksAboutTheTerm(): void
+    {
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/recreate/' . self::PROPOSAL_ID);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('name="confirmations[fixed_term]"');
+        $this->assertTrue($this->viewVariable('contractProposal')->confirmations()->confirms('fixed_term'));
+
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post(self::NESTED . '/contract-proposals/recreate/' . self::PROPOSAL_ID, [
+            'confirmations' => ['fixed_term' => 0] + self::EVERYTHING_ANSWERED,
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertArrayHasKey('confirmations', $this->viewVariable('contractProposal')->getErrors());
+
+        $this->recreateThePapers();
+
+        $this->assertTrue(
+            $this->getTableLocator()->get('ContractProposals')
+                ->get(self::PROPOSAL_ID)
+                ->confirmations()
+                ->confirms('fixed_term'),
+            'The answer did not survive.',
+        );
+    }
+
+    /**
+     * What the customer signed is what applying the changes has to write. Papers put together again
+     * would say something else than the copy on file, whether or not anybody recorded the signature
+     * or that they went out - a technician bringing it back often comes before either.
+     *
+     * @param string $role The role to ask as.
+     * @return void
+     * @link \App\Model\Table\ContractProposalsTable::mayBeRecreated()
+     */
+    #[DataProvider('rolesThatDrawUpPapers')]
+    public function testRecreatingStopsAtAPaperTheCustomerSigned(string $role): void
+    {
+        Configure::write('Files.root', TMP . 'recreate-papers-' . uniqid());
+        $storage = new FileStorage();
+        $storage->link(
+            $storage->store('%PDF-1.7 signed', 'application/pdf'),
+            ContractDocuments::MODEL,
+            self::PROPOSAL_ID,
+            ContractDocumentType::ContractAmendment->value,
+            DocumentVariant::ReceivedSignedByCustomer->value,
+            ['name' => 'amendment-signed.pdf'],
+        );
+
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $before = $proposals->get(self::PROPOSAL_ID)->snapshot_taken;
+
+        $this->login($role);
+        $this->get(self::NESTED . '/contract-proposals/view/' . self::PROPOSAL_ID);
+        $this->assertResponseOk();
+        $this->assertResponseNotContains('/contract-proposals/recreate/' . self::PROPOSAL_ID);
+
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post(self::NESTED . '/contract-proposals/recreate/' . self::PROPOSAL_ID, [
+            'confirmations' => self::EVERYTHING_ANSWERED,
+        ]);
+
+        $this->assertRedirect();
+        $this->assertEquals(
+            $before,
+            $proposals->get(self::PROPOSAL_ID)->snapshot_taken,
+            'The papers were put together again over what the customer signed.',
+        );
+
+        Configure::delete('Files.root');
+    }
+
+    /**
+     * Another proposal of the customer that has already gone out, sitting beside the fixture's.
+     *
+     * @return string Its id.
+     */
+    private function aProposalAlreadySent(): string
+    {
+        $envelopes = $this->getTableLocator()->get('CustomerProposals');
+        $sent = $envelopes->saveOrFail($envelopes->newEntity([
+            'customer_id' => self::CUSTOMER_ID,
+            'effective_from' => '2026-10-01',
+            'sent_date' => '2026-10-02',
+            'delivery_type' => DocumentsDeliveryType::Email,
+        ]), ['checkRules' => false]);
+
+        return (string)$sent->id;
+    }
+
+    /**
+     * Papers put together again may move to another proposal, but not to one that has gone out:
+     * they would read as having gone out with it, and its signature would carry them over.
+     *
+     * The proposal the papers are in comes loaded, and what asks has to look at the new one.
+     *
+     * @return void
+     * @link \App\Model\Table\ContractProposalsTable::theEnvelopeOf()
+     */
+    public function testRecreatingDoesNotMoveThePapersIntoASentProposal(): void
+    {
+        $sent = $this->aProposalAlreadySent();
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post(self::NESTED . '/contract-proposals/recreate/' . self::PROPOSAL_ID, [
+            'customer_proposal_id' => $sent,
+            'confirmations' => self::EVERYTHING_ANSWERED,
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertSame(
+            self::ROUND_ID,
+            $this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID)->customer_proposal_id,
+            'The papers moved into a proposal that has gone out.',
+        );
+    }
+
+    /**
+     * A proposal that has gone out takes nothing more, so it is not offered.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::openProposalsOf()
+     */
+    public function testASentProposalIsNotOfferedToJoin(): void
+    {
+        $sent = $this->aProposalAlreadySent();
+
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/recreate/' . self::PROPOSAL_ID);
+
+        $this->assertResponseOk();
+
+        $offered = $this->viewVariable('proposals');
+        $this->assertArrayHasKey(self::ROUND_ID, $offered);
+        $this->assertArrayNotHasKey($sent, $offered);
+    }
+
+    /**
+     * A version that runs on has no term to ask about.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::recreate()
+     */
+    public function testRecreatingAsksNothingAboutATermThereIsNot(): void
+    {
+        $versions = $this->getTableLocator()->get('ContractVersions');
+        $versions->saveOrFail(
+            $versions->patchEntity($versions->get(self::CONTRACT_VERSION_ID), ['valid_until' => null]),
+            ['checkRules' => false],
+        );
+
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/recreate/' . self::PROPOSAL_ID);
+
+        $this->assertResponseOk();
+        $this->assertResponseNotContains('confirmations[fixed_term]');
+    }
+
+    /**
+     * A billing that stopped sooner than the term has its end cleared on the contract, and the
+     * papers put together again have to notice.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::endWhatTheContractIsBilledFor()
+     */
+    public function testRecreatingStopsWhatHasStartedToRunPastTheTerm(): void
+    {
+        $ends = Date::today()->addYears(1);
+        $this->theBillingRunsUntil(self::KNOWN_BILLING_ID, Date::today()->addMonths(2));
+        $this->theProposalIsForATerm($ends);
+        $this->recreateThePapers();
+
+        $this->assertSame([], $this->linesOfTheProposal());
+
+        $this->theBillingRunsUntil(self::KNOWN_BILLING_ID, null);
+        $this->recreateThePapers();
+
+        $this->assertArrayHasKey(self::KNOWN_BILLING_ID, $this->linesOfTheProposal());
+    }
+
+    /**
+     * Something that already ran on in the last snapshot had its line then, so one that is missing
+     * was taken back on purpose and does not come back.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::endWhatTheContractIsBilledFor()
+     */
+    public function testRecreatingDoesNotBringBackALineTakenBack(): void
+    {
+        $this->theProposalIsForATerm(Date::today()->addYears(1));
+
+        $this->recreateThePapers();
+
+        $this->assertSame([], $this->linesOfTheProposal());
+    }
+
+    /**
+     * A billing added while an ending waits is ended with the rest once the papers are put together
+     * again, or it would go on being charged for after the contract is gone.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::endWhatTheContractIsBilledFor()
+     */
+    public function testRecreatingAnEndingStopsWhatWasAddedSince(): void
+    {
+        $billings = $this->getTableLocator()->get('Billings');
+        $added = $billings->saveOrFail($billings->newEntity([
+            'customer_id' => self::CUSTOMER_ID,
+            'contract_id' => self::CONTRACT_ID,
+            'text' => 'Added while the papers waited',
+            'quantity' => 1,
+            'price' => '10',
+            'billing_from' => '2026-01-01',
+            'separate_invoice' => false,
+        ]), ['checkRules' => false]);
+
+        $this->theProposalIs([
+            'purpose' => ProposalPurpose::Termination->value,
+            'effective_from' => '2030-01-01',
+            'terminated_contract_number' => '2022/0001',
+            'changes' => [
+                'version' => ['valid_until' => '2029-12-31'],
+                'contract' => ['termination_date' => '2029-12-31'],
+            ],
+        ]);
+
+        $this->recreateThePapers();
+
+        $lines = $this->linesOfTheProposal();
+
+        $this->assertArrayHasKey((string)$added->id, $lines, 'What was added since runs on past the end.');
+        $this->assertArrayNotHasKey(self::KNOWN_BILLING_ID, $lines, 'A line nobody drew has appeared.');
+    }
+
+    /**
+     * A billing written on a fixed term opens with the day the term ends, whether it is new or
+     * replaces one. It is only what the form opens with, so the operator may say otherwise.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ProposedBillingForm::fill()
+     */
+    public function testANewBillingOpensWithTheLastDayOfTheTerm(): void
+    {
+        $ends = Date::today()->addYears(1);
+        $this->theProposalIsForATerm($ends);
+
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/billing-line/' . self::PROPOSAL_ID);
+        $this->assertResponseOk();
+        $this->assertSame($ends->toDateString(), $this->viewVariable('values')['billing_until']);
+
+        $this->get(self::NESTED . '/contract-proposals/billing-line/' . self::PROPOSAL_ID
+            . '?replaces=' . self::KNOWN_BILLING_ID);
+        $this->assertResponseOk();
+        $this->assertSame($ends->toDateString(), $this->viewVariable('values')['billing_until']);
+    }
+
+    /**
+     * A billing with an end of its own keeps it on the form: somebody decided that. Only the term
+     * stands above it, because nothing is billed past the end of a fixed-term contract.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ProposedBillingForm::fill()
+     */
+    public function testChangingABillingOpensWithItsOwnEndUpToTheTerm(): void
+    {
+        $ends = Date::today()->addYears(1);
+        $sooner = Date::today()->addMonths(2);
+
+        $this->theBillingRunsUntil(self::KNOWN_BILLING_ID, $sooner);
+        $this->theProposalIsForATerm($ends);
+        $this->recreateThePapers();
+
+        $this->get(self::NESTED . '/contract-proposals/billing-line/' . self::PROPOSAL_ID
+            . '?replaces=' . self::KNOWN_BILLING_ID);
+        $this->assertSame($sooner->toDateString(), $this->viewVariable('values')['billing_until']);
+
+        $this->theBillingRunsUntil(self::KNOWN_BILLING_ID, $ends->addMonths(3));
+        $this->recreateThePapers();
+        $this->dropEveryLine();
+
+        $this->get(self::NESTED . '/contract-proposals/billing-line/' . self::PROPOSAL_ID
+            . '?replaces=' . self::KNOWN_BILLING_ID);
+        $this->assertSame($ends->toDateString(), $this->viewVariable('values')['billing_until']);
+    }
+
+    /**
+     * Without a term the billing's own end is all there is to go by, and it is not lost.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ProposedBillingForm::fill()
+     */
+    public function testChangingABillingKeepsItsEndWithoutATerm(): void
+    {
+        $until = Date::today()->addMonths(2);
+        $this->theBillingRunsUntil(self::KNOWN_BILLING_ID, $until);
+        $this->recreateThePapers();
+
+        $this->get(self::NESTED . '/contract-proposals/billing-line/' . self::PROPOSAL_ID
+            . '?replaces=' . self::KNOWN_BILLING_ID);
+
+        $this->assertSame($until->toDateString(), $this->viewVariable('values')['billing_until']);
+    }
+
+    /**
+     * Takes back whatever lines the proposal holds.
+     *
+     * @return void
+     */
+    private function dropEveryLine(): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $proposal = $proposals->get(self::PROPOSAL_ID);
+        $changes = $proposal->changes;
+        unset($changes['billings']);
+        $this->theProposalIs(['changes' => $changes]);
+    }
+
+    /**
+     * What a line would bill for past the end of a fixed term, or without any end, is refused:
+     * nothing is to run after the contract does.
+     *
+     * @param string $day What the line says, in days from the last day of the term.
+     * @param string $field Which day it says it about.
+     * @return void
+     * @link \App\Contracts\Proposal\ProposedBilling::staysWithin()
+     */
+    #[DataProvider('daysPastTheTerm')]
+    public function testALineMayNotRunPastTheTerm(string $day, string $field): void
+    {
+        $ends = Date::today()->addYears(1);
+        $this->theProposalIsForATerm($ends);
+
+        $said = ['service_id' => self::OPEN_SERVICE_ID, 'quantity' => '1', 'billing_until' => $ends->toDateString()];
+        $said[$field] = $day === '' ? '' : $ends->addDays((int)$day)->toDateString();
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/billing-line/' . self::PROPOSAL_ID, $said);
+
+        $this->assertResponseOk();
+        $this->assertSame(
+            [],
+            $this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID)->proposedChanges()->billings,
+            'A line running past the term was saved.',
+        );
+    }
+
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function daysPastTheTerm(): array
+    {
+        return [
+            'ends after it' => ['1', 'billing_until'],
+            'has no end' => ['', 'billing_until'],
+            'starts after it' => ['1', 'billing_from'],
+        ];
+    }
+
+    /**
+     * A line ending with the term is what the form opens with, so it is saved.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ProposedBilling::staysWithin()
+     */
+    public function testALineEndingWithTheTermIsSaved(): void
+    {
+        $ends = Date::today()->addYears(1);
+        $this->theProposalIsForATerm($ends);
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/billing-line/' . self::PROPOSAL_ID, [
+            'service_id' => self::OPEN_SERVICE_ID,
+            'quantity' => '1',
+            'billing_until' => $ends->toDateString(),
+        ]);
+
+        $this->assertRedirectContains('/contract-proposals/view/' . self::PROPOSAL_ID);
+    }
+
+    /**
+     * A term that has run out says nothing about what is billed for today, and a last day before
+     * the first would be refused by the records anyway.
+     *
+     * @return void
+     * @link \App\Model\Table\ContractProposalsTable::lastDayOfARunningTerm()
+     */
+    public function testANewBillingOpensWithNothingOnceTheTermHasRunOut(): void
+    {
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/billing-line/' . self::PROPOSAL_ID);
+
+        $this->assertResponseOk();
+        $this->assertNull($this->viewVariable('values')['billing_until']);
+    }
+
+    /**
+     * A line that only ends a billing says nothing about what the billing is, and saving the form
+     * replaces the billing with what the form says. Opened empty, it would take the tariff and the
+     * price off the contract.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ProposedBillingForm::fill()
+     */
+    public function testEditingALineThatOnlyEndsStartsFromTheBilling(): void
+    {
+        $ends = Date::today()->addYears(1);
+        $this->theProposalIsForATerm($ends, [[
+            'id' => 'f0000000-0000-4000-8000-000000000001',
+            'billing_id' => self::KNOWN_BILLING_ID,
+            'terminates_only' => true,
+            'billing_from' => $ends->addDays(1)->toDateString(),
+        ]]);
+
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/billing-line/' . self::PROPOSAL_ID
+            . '/f0000000-0000-4000-8000-000000000001');
+
+        $this->assertResponseOk();
+
+        $values = $this->viewVariable('values');
+        $this->assertSame(self::KNOWN_BILLING_ID, $values['billing_id']);
+        $this->assertSame('Sed do eiusmod tempor', $values['text']);
+        $this->assertSame('2.00', $values['price']);
+        $this->assertSame($ends->toDateString(), $values['billing_until']);
+    }
+
+    /**
+     * A snapshot keeps the service whole rather than as an id, so a billing read back from one has
+     * no `service_id` and the form has to find the service where it is.
+     *
+     * The snapshot is taken here rather than read from the fixture, which holds no service.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ProposedBillingForm::fill()
+     */
+    public function testChangingABillingOpensOnItsService(): void
+    {
+        $this->theProposalIsForATerm(Date::today()->addYears(1));
+        $this->recreateThePapers();
+
+        $this->get(self::NESTED . '/contract-proposals/billing-line/' . self::PROPOSAL_ID
+            . '?replaces=' . self::KNOWN_BILLING_ID);
+
+        $this->assertResponseOk();
+        $this->assertSame(self::OPEN_SERVICE_ID, $this->viewVariable('values')['service_id']);
+    }
+
+    /**
+     * What somebody wrote down about a billing goes on to what replaces it, unless they say
+     * otherwise. Everything else on the form starts from what is there, and so does this.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ProposedBillingForm::fill()
+     */
+    public function testChangingABillingOpensWithItsNote(): void
+    {
+        $this->getTableLocator()->get('Billings')->updateAll(
+            ['note' => 'Agreed over the phone'],
+            ['id' => self::KNOWN_BILLING_ID],
+        );
+        $this->theProposalIsForATerm(Date::today()->addYears(1));
+        $this->recreateThePapers();
+
+        $this->get(self::NESTED . '/contract-proposals/billing-line/' . self::PROPOSAL_ID
+            . '?replaces=' . self::KNOWN_BILLING_ID);
+
+        $this->assertResponseOk();
+        $this->assertSame('Agreed over the phone', $this->viewVariable('values')['note']);
+    }
+
+    /**
+     * The same goes for a line that only ends the billing, opened to be changed.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ProposedBillingForm::fill()
+     */
+    public function testEditingALineThatOnlyEndsOpensOnTheService(): void
+    {
+        $ends = Date::today()->addYears(1);
+        $this->theProposalIsForATerm($ends, [[
+            'id' => 'f0000000-0000-4000-8000-000000000002',
+            'billing_id' => self::KNOWN_BILLING_ID,
+            'terminates_only' => true,
+            'billing_from' => $ends->addDays(1)->toDateString(),
+        ]]);
+        $this->recreateThePapers();
+
+        $this->get(self::NESTED . '/contract-proposals/billing-line/' . self::PROPOSAL_ID
+            . '/f0000000-0000-4000-8000-000000000002');
+
+        $this->assertResponseOk();
+        $this->assertSame(self::OPEN_SERVICE_ID, $this->viewVariable('values')['service_id']);
+    }
+
+    /**
+     * A billing on a tariff nobody may take any more keeps it on the list when it is changed, or
+     * the form would move it onto another one without saying so.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::billingLine()
+     */
+    public function testChangingABillingKeepsItsRetiredServiceOnTheList(): void
+    {
+        $billings = $this->getTableLocator()->get('Billings');
+        $billings->saveOrFail(
+            $billings->patchEntity($billings->get(self::KNOWN_BILLING_ID), [
+                'service_id' => self::RETIRED_SERVICE_ID,
+            ]),
+            ['checkRules' => false],
+        );
+
+        $this->theProposalIsForATerm(Date::today()->addYears(1));
+        $this->recreateThePapers();
+
+        $this->get(self::NESTED . '/contract-proposals/billing-line/' . self::PROPOSAL_ID
+            . '?replaces=' . self::KNOWN_BILLING_ID);
+
+        $this->assertResponseOk();
+        $this->assertArrayHasKey(self::RETIRED_SERVICE_ID, $this->viewVariable('services')->toArray());
+    }
+
+    /**
+     * A version ending while the contract runs on leaves the billings alone. What is billed for
+     * hangs off the contract, which carries on, and the version that follows says what becomes of
+     * it - so stopping it here would stop it for good, in the records as well as on the paper.
+     *
+     * It used to be ended all the same: the question asked was whether the papers end anything,
+     * and a version ending is an ending.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::endWhatTheContractIsBilledFor()
+     */
+    public function testEndingOneVersionLeavesWhatIsBilledForAlone(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/add', [
+            'purpose' => ProposalPurpose::Termination->value,
+            'contract_id' => self::CONTRACT_ID,
+            'contract_version_id' => self::CONTRACT_VERSION_ID,
+            'terminated_contract_number' => '2022/0001',
+            'ends_on' => '2026-12-31',
+            'version_only' => '1',
+            'confirmations' => [
+                'own_equipment' => 1,
+                'does_not_use_ip_addresses' => 1,
+                'does_not_use_radius' => 1,
+            ],
+        ]);
+
+        $this->assertRedirect();
+
+        /** @var \App\Model\Entity\ContractProposal $drawn */
+        $drawn = $this->getTableLocator()->get('ContractProposals')
+            ->find()
+            ->orderByDesc('created')
+            ->firstOrFail();
+
+        $changes = $drawn->proposedChanges();
+
+        $this->assertSame('2026-12-31', $changes->version->get('valid_until')?->toDateString());
+        $this->assertFalse(
+            $changes->contract->endsTheContract(),
+            'The contract was ended by papers that end one version of it.',
+        );
+        $this->assertSame(
+            [],
+            $changes->billings,
+            'What is billed for was stopped although the contract runs on.',
+        );
+    }
+
+    /**
+     * An ending with no day says so on the field that asks for it. The columns that would
+     * otherwise complain - the day the papers apply from, and what the proposal asks for - are not
+     * on this form, and a complaint about a field nobody can see reads as no complaint at all.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testAnEndingWithoutADaySaysSoWhereItIsAsked(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/add', [
+            'purpose' => ProposalPurpose::Termination->value,
+            'contract_id' => self::CONTRACT_ID,
+            'contract_version_id' => self::CONTRACT_VERSION_ID,
+            'terminated_contract_number' => '2022/0001',
+            'ends_on' => '',
+        ]);
+
+        $this->assertResponseOk();
+
+        $errors = $this->viewVariable('contractProposal')->getErrors();
+        $this->assertArrayHasKey('ends_on', $errors);
+        $this->assertArrayNotHasKey('effective_from', $errors);
+        $this->assertArrayNotHasKey('changes', $errors);
+    }
+
+    /**
+     * Choosing the version draws the form again, and an ending whose day was typed first arrives
+     * there asking for the contract to end - with no snapshot behind it yet, because a form being
+     * drawn again never takes one. Stopping what is billed for read the snapshot all the same and
+     * the form came back as an error page, which is why the two fields had to be filled in in one
+     * order and not the other.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testAnEndingWhoseDayWasTypedBeforeTheVersionOnlyRedrawsTheForm(): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $before = $proposals->find()->count();
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/add', [
+            'refresh' => 'refresh',
+            'purpose' => ProposalPurpose::Termination->value,
+            'contract_id' => self::CONTRACT_ID,
+            'contract_version_id' => self::CONTRACT_VERSION_ID,
+            'ends_on' => '2026-12-31',
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertSame([], $this->viewVariable('contractProposal')->getErrors());
+        $this->assertSame($before, $proposals->find()->count());
+    }
+
+    /**
+     * And an ending that names no version is a question put to the operator, not a failure: the
+     * snapshot was never taken, so there is nothing to stop billing against either.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::add()
+     */
+    public function testAnEndingWithoutAVersionIsAsked(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/add', [
+            'purpose' => ProposalPurpose::Termination->value,
+            'contract_id' => self::CONTRACT_ID,
+            'contract_version_id' => '',
+            'ends_on' => '2026-12-31',
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertArrayHasKey(
+            'contract_version_id',
+            $this->viewVariable('contractProposal')->getErrors(),
+        );
+    }
+
+    /**
+     * Papers go out more than once - by another means, or after the first attempt came back - so
+     * the day and the way they went may be recorded again. What they stand on stays settled.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::send()
+     */
+    public function testPapersMayGoOutAgain(): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $this->post('/customer-proposals/send/' . self::ROUND_ID, [
+            'sent_date' => '2026-10-01',
+            'delivery_type' => DocumentsDeliveryType::Email->value,
+        ]);
+        $this->assertRedirect();
+
+        $this->post('/customer-proposals/send/' . self::ROUND_ID, [
+            'sent_date' => '2026-10-08',
+            'delivery_type' => DocumentsDeliveryType::Post->value,
+        ]);
+        $this->assertRedirect();
+
+        // Read with the envelope, because that is where the papers read the sending from.
+        $sent = $proposals->get(self::PROPOSAL_ID, contain: ['CustomerProposals']);
+        $this->assertSame('2026-10-08', $sent->sent_date?->toDateString());
+        $this->assertSame(DocumentsDeliveryType::Post, $sent->delivery_type);
+    }
+
+    /**
+     * Nothing may be applied without the day the customer agreed to it, so there is a way to
+     * record that day - and to correct it, for as long as the proposal is open.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::conclude()
+     */
+    public function testTheSignatureIsRecordedAndMayBeCorrected(): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        foreach (['2026-10-05', '2026-10-06'] as $day) {
+            $this->post('/customer-proposals/conclude/' . self::ROUND_ID, [
+                'conclusion_date' => $day,
+            ]);
+
+            $this->assertRedirect();
+            $this->assertSame(
+                $day,
+                $proposals->get(self::PROPOSAL_ID, contain: ['CustomerProposals'])
+                    ->conclusion_date?->toDateString(),
+            );
+        }
+    }
+
+    /**
+     * Recording that the papers went out settles what stands behind them: nothing about the
+     * proposal may be changed afterwards.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::send()
+     */
+    public function testSendingSettlesTheProposal(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/customer-proposals/send/' . self::ROUND_ID, [
+            'sent_date' => '2026-10-01',
+            'delivery_type' => DocumentsDeliveryType::Email->value,
+        ]);
+
+        $this->assertRedirect();
+
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $sent = $proposals->get(self::PROPOSAL_ID, contain: ['CustomerProposals']);
+
+        $this->assertTrue($sent->hasBeenSent());
+        $this->assertFalse($proposals->mayBeEdited($sent));
+
+        $this->get(self::NESTED . '/contract-proposals/recreate/' . self::PROPOSAL_ID);
+        $this->assertRedirect();
+    }
+
+    /**
+     * Giving up on a proposal touches nothing else, because the live records never moved.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::revoke()
+     */
+    public function testRevokingTouchesNothingLive(): void
+    {
+        $billings = $this->getTableLocator()->get('Billings');
+        $before = $billings->find()->count();
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post(self::NESTED . '/contract-proposals/revoke/' . self::PROPOSAL_ID);
+
+        // Given up on where it stands: the papers are still what the reader was looking at.
+        $this->assertRedirectContains('/contract-proposals/view/' . self::PROPOSAL_ID);
+
+        $proposal = $this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID);
+        $this->assertTrue($proposal->hasBeenRevoked());
+        $this->assertSame($before, $billings->find()->count());
+    }
+
+    /**
+     * The preview says what applying the changes would run into before anybody presses the button.
+     *
+     * @return void
+     * @link \App\Controller\CustomerProposalsController::applyChanges()
+     */
+    public function testThePreviewOfTheChangesSaysWhatStandsInTheWay(): void
+    {
+        $this->login();
+        $this->get('/customers/' . self::CUSTOMER_ID . '/customer-proposals/apply-changes/' . self::ROUND_ID);
+
+        $this->assertResponseOk();
+        // Nobody has signed it, so it says so and does not offer the button.
+        $this->assertResponseContains(__('This proposal has not been signed yet, so its changes'
+            . ' cannot be applied.'));
+    }
+
+    /**
+     * The papers are said out loud without standing in the way: the day the customer agreed is
+     * known before the post arrives, and holding the records back for a scan would leave the
+     * service waiting on the scanner.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ChangePreview::of()
+     */
+
+    /**
+     * A billing written to begin after the papers take effect is said about before the button:
+     * applying the changes takes it off the contract rather than ending it.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ChangePreview::of()
+     */
+    public function testTheBillingThatNeverRunsIsSaidAboutBeforeTheButton(): void
+    {
+        $billings = $this->getTableLocator()->get('Billings');
+        $billings->saveOrFail(
+            $billings->patchEntity($billings->get(self::KNOWN_BILLING_ID), ['billing_from' => '2026-12-01']),
+            ['checkRules' => false],
+        );
+
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $proposals->saveOrFail(
+            $proposals->patchEntity($proposals->get(self::PROPOSAL_ID), [
+                'changes' => ['billings' => [[
+                    'billing_id' => self::KNOWN_BILLING_ID,
+                    'terminates_only' => true,
+                ]]],
+            ]),
+            ['checkRules' => false],
+        );
+        $this->theProposalSays(['conclusion_date' => '2026-09-15']);
+
+        $this->login();
+        $this->get('/customers/' . self::CUSTOMER_ID . '/customer-proposals/apply-changes/' . self::ROUND_ID);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('it never runs at all');
+        // Said, not stopped.
+        $this->assertResponseContains(__('Apply Changes'));
+    }
+
+    /**
+     * And the table of what the papers say gives it a column of its own, where the operator looks
+     * the proposal over rather than stands at the button.
+     *
+     * That table is drawn from the snapshot rather than from the records as they stand, because it
+     * is what the papers say - so what makes a billing never run here is the day the papers take
+     * effect, not somebody having moved a billing since.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ProposalProjection::explain()
+     */
+    public function testTheTableSaysWhichBillingIsTakenOffRatherThanEnded(): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $proposals->saveOrFail(
+            $proposals->patchEntity($proposals->get(self::PROPOSAL_ID), [
+                // Before the snapshot's billing begins, so the papers end one that never ran.
+                'effective_from' => '2021-12-01',
+                'changes' => ['billings' => [[
+                    'billing_id' => self::KNOWN_BILLING_ID,
+                    'terminates_only' => true,
+                ]]],
+            ]),
+            ['checkRules' => false],
+        );
+
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/view/' . self::PROPOSAL_ID);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains(__('Removed by this proposal'));
+    }
+
+    /**
+     * A signed proposal whose billing somebody has taken off the contract cannot be applied and
+     * cannot be edited either. Only an administrator is offered the way out of it.
+     *
+     * @return void
+     * @link \App\Controller\CustomerProposalsController::applyChanges()
+     */
+    public function testOnlyAnAdministratorIsOfferedTheWayOutOfAGoneBilling(): void
+    {
+        $this->aSignedProposalAgainstAGoneBilling();
+
+        $this->login('sales-manager');
+        $this->get('/customers/' . self::CUSTOMER_ID . '/customer-proposals/apply-changes/' . self::ROUND_ID);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains(__('The changes of this proposal cannot be applied in its'
+            . ' current state.'));
+        $this->assertResponseNotContains(__('Leave out the lines whose billing is no longer on the contract'));
+
+        $this->login('admin');
+        $this->get('/customers/' . self::CUSTOMER_ID . '/customer-proposals/apply-changes/' . self::ROUND_ID);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains(__('Leave out the lines whose billing is no longer on the contract'));
+    }
+
+    /**
+     * Not being offered the box is not the whole of it: sending it by hand has to leave the
+     * proposal where it was, or the form would be all that stands in the way.
+     *
+     * @return void
+     * @link \App\Controller\CustomerProposalsController::applyChanges()
+     */
+    public function testALineIsNotLeftOutOnABoxSentByHand(): void
+    {
+        $this->aSignedProposalAgainstAGoneBilling();
+
+        $this->login('sales-manager');
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post(
+            '/customer-proposals/apply-changes/' . self::ROUND_ID,
+            [CustomerProposalsController::LEAVE_OUT_WHAT_IS_GONE => '1'],
+        );
+
+        $this->assertResponseOk();
+        $this->assertResponseContains(__('The changes of this proposal cannot be applied in its'
+            . ' current state.'));
+        $this->assertFalse($this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID)->hasBeenApplied());
+    }
+
+    /**
+     * Papers that reach into an invoiced period take a role that may and a box that says so. The
+     * role alone does not write, and the box sent by somebody else does not either.
+     *
+     * @return void
+     * @link \App\Controller\CustomerProposalsController::applyChanges()
+     */
+    public function testAnInvoicedPeriodIsReachedOnlyByTheRoleWithTheBox(): void
+    {
+        /** @var \App\Model\Table\BillingsTable $billings */
+        $billings = $this->getTableLocator()->get('Billings');
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $invoiced = $billings->lastClosedPeriodEnd()->subDays(5);
+
+        $proposal = $proposals->get(self::PROPOSAL_ID);
+        $proposal->set('changes', $proposal->proposedChanges()->withLine(
+            ProposedBilling::fromArray(['billing_id' => self::KNOWN_BILLING_ID, 'terminates_only' => true]),
+        )->toArray());
+        $proposal->set('effective_from', $invoiced);
+        $proposals->saveOrFail($proposal, ['checkRules' => false]);
+        $this->theProposalSays(['effective_from' => $invoiced, 'conclusion_date' => $invoiced->subDays(1)]);
+
+        $apply = function (string $role, array $box): void {
+            $this->login($role);
+            $this->enableCsrfToken();
+            $this->enableSecurityToken();
+            $this->post('/customer-proposals/apply-changes/' . self::ROUND_ID, $box);
+        };
+        $box = [BillingsTable::ALLOW_CLOSED_PERIODS => '1'];
+
+        $apply('bookkeeper', $box);
+        $this->assertResponseOk();
+        $this->assertNull($billings->get(self::KNOWN_BILLING_ID)->billing_until, 'A box sent by hand wrote.');
+
+        $apply('manager', []);
+        $this->assertResponseOk();
+        $this->assertNull($billings->get(self::KNOWN_BILLING_ID)->billing_until, 'The role alone wrote.');
+
+        $apply('manager', $box);
+        $this->assertRedirect();
+        $this->assertNotNull($billings->get(self::KNOWN_BILLING_ID)->billing_until);
+    }
+
+    /**
+     * And ticking the box settles the proposal with the line written down on it.
+     *
+     * @return void
+     * @link \App\Model\Entity\ContractProposal::whatWasLeftOut()
+     */
+    public function testLeavingTheLineOutSettlesTheProposalAndWritesItDown(): void
+    {
+        $this->aSignedProposalAgainstAGoneBilling();
+
+        $this->login('admin');
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post(
+            '/customer-proposals/apply-changes/' . self::ROUND_ID,
+            [CustomerProposalsController::LEAVE_OUT_WHAT_IS_GONE => '1'],
+        );
+
+        $this->assertRedirect();
+
+        $settled = $this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID);
+        $this->assertTrue($settled->hasBeenApplied());
+        $this->assertFalse($settled->wasAppliedInFull());
+    }
+
+    /**
+     * A manager may leave rows out, so a manager may also say they have been dealt with.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::settleWhatWasLeftOut()
+     */
+    public function testAManagerSettlesWhatWasLeftOut(): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $proposals->saveOrFail(
+            $proposals->patchEntity($proposals->get(self::PROPOSAL_ID), [
+                'applied' => DateTime::now()->subDays(1),
+                'left_out' => ['7db8e6a3-e8e9-47c3-8683-473b77c56664' => 'The billing has gone.'],
+            ]),
+            ['checkRules' => false],
+        );
+
+        $this->login('manager');
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post(self::NESTED . '/contract-proposals/settle-what-was-left-out/' . self::PROPOSAL_ID);
+
+        $this->assertTrue($proposals->get(self::PROPOSAL_ID)->whatWasLeftOutHasBeenSettled());
+    }
+
+    /**
+     * What was left out is a job, so it has to be possible to say it is done - and saying so is
+     * what takes the contract off the listing. The record of what was left out stays.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::settleWhatWasLeftOut()
+     */
+    public function testWhatWasLeftOutCanBeMarkedAsSeenTo(): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $proposals->saveOrFail(
+            $proposals->patchEntity($proposals->get(self::PROPOSAL_ID), [
+                'applied' => DateTime::now()->subDays(1),
+                'left_out' => ['7db8e6a3-e8e9-47c3-8683-473b77c56664' => 'The billing has gone.'],
+            ]),
+            ['checkRules' => false],
+        );
+
+        $this->login('admin');
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post(self::NESTED . '/contract-proposals/settle-what-was-left-out/' . self::PROPOSAL_ID);
+
+        $this->assertRedirect();
+
+        $settled = $proposals->get(self::PROPOSAL_ID);
+        $this->assertTrue($settled->whatWasLeftOutHasBeenSettled());
+        $this->assertFalse($settled->isWaitingOnWhatWasLeftOut());
+        // What it was stays on the record. Only the job is closed.
+        $this->assertFalse($settled->wasAppliedInFull());
+    }
+
+    /**
+     * And the card says who saw to it by name, because they are the one to ask what they did.
+     *
+     * Written onto the record rather than taken from the request: the test user has no id of its
+     * own, and whether the controller reads the identity is the test above's business.
+     *
+     * @return void
+     */
+    public function testTheCardNamesWhoSawToWhatWasLeftOut(): void
+    {
+        $users = $this->getTableLocator()->get('Users');
+        $user = $users->find()->where(['Users.username IS NOT' => null])->firstOrFail();
+
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $proposals->saveOrFail(
+            $proposals->patchEntity($proposals->get(self::PROPOSAL_ID), [
+                'applied' => DateTime::now()->subDays(1),
+                'left_out' => ['7db8e6a3-e8e9-47c3-8683-473b77c56664' => 'The billing has gone.'],
+                'left_out_settled' => DateTime::now(),
+                'left_out_settled_by' => $user->get('id'),
+            ]),
+            ['checkRules' => false],
+        );
+
+        $this->login();
+        $this->get(self::NESTED . '/contract-proposals/view/' . self::PROPOSAL_ID);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains(__('Left Out Settled By'));
+        // Their name, not their id. The id is in the body either way, because the name links to
+        // them - so what is asserted is that the name is what the reader sees.
+        $this->assertResponseContains((string)$user->get('username'));
+    }
+
+    /**
+     * And there is nothing to mark on a proposal that was applied in full.
+     *
+     * @return void
+     */
+    public function testThereIsNothingToSeeToOnAProposalAppliedInFull(): void
+    {
+        $this->login('admin');
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post(self::NESTED . '/contract-proposals/settle-what-was-left-out/' . self::PROPOSAL_ID);
+
+        $this->assertRedirect();
+        $this->assertFalse(
+            $this->getTableLocator()->get('ContractProposals')
+                ->get(self::PROPOSAL_ID)
+                ->whatWasLeftOutHasBeenSettled(),
+        );
+    }
+
+    /**
+     * A signed proposal with a line acting on a billing that is no longer on the contract.
+     *
+     * @return void
+     */
+    private function aSignedProposalAgainstAGoneBilling(): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $billings = $this->getTableLocator()->get('Billings');
+
+        $proposal = $proposals->get(self::PROPOSAL_ID);
+        $proposal->set('changes', $proposal->proposedChanges()->withLine(
+            ProposedBilling::fromArray(['billing_id' => self::KNOWN_BILLING_ID, 'terminates_only' => true]),
+        )->toArray());
+        $proposals->saveOrFail($proposal);
+
+        // Invoiced for, so taking it away is what an administrator would have had to do.
+        $billings->deleteOrFail(
+            $billings->get(self::KNOWN_BILLING_ID),
+            [BillingsTable::ALLOW_CLOSED_PERIODS => true],
+        );
+
+        $this->theProposalSays(['conclusion_date' => '2026-09-15']);
+    }
+
+    public function testAMissingScanIsSaidOutLoudAndStopsNothing(): void
+    {
+        $this->theProposalSays(['conclusion_date' => '2026-09-15']);
+
+        $this->login();
+        $this->get('/customers/' . self::CUSTOMER_ID . '/customer-proposals/apply-changes/' . self::ROUND_ID);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains(
+            __('The signature is recorded, but no signed documents have been uploaded for this'
+                . ' proposal.'),
+        );
+        // Said, not stopped: the button is still there. This proposal changes nothing, so it
+        // reads as marking the job done rather than as moving anything.
+        $this->assertResponseContains(__('Mark as Settled'));
+    }
+
+    /**
+     * The customer's own notice ending the contract is the answer by itself, so nothing is said
+     * about a missing scan once it is on file.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ChangePreview::of()
+     */
+    public function testANoticeOnFileIsTheAnswer(): void
+    {
+        $this->theProposalSays(['conclusion_date' => '2026-09-15']);
+
+        $root = TMP . 'notice-papers-' . uniqid();
+        Configure::write('Files.root', $root);
+        $storage = new FileStorage();
+        $storage->link(
+            $storage->store('%PDF-1.7 notice', 'application/pdf'),
+            ContractDocuments::MODEL,
+            self::PROPOSAL_ID,
+            ContractDocumentType::TerminationNotice->value,
+            DocumentVariant::Received->value,
+            ['name' => 'notice.pdf'],
+        );
+
+        $this->login();
+        $this->get('/customers/' . self::CUSTOMER_ID . '/customer-proposals/apply-changes/' . self::ROUND_ID);
+
+        $this->assertResponseOk();
+        $this->assertResponseNotContains(
+            __('The signature is recorded, but no signed documents have been uploaded for this'
+                . ' proposal.'),
+        );
+
+        Configure::delete('Files.root');
+    }
+
+    /**
+     * A minimum raised after a line was written does not hold the rest of the proposal up: the line
+     * was asked when it was written, and what it says now is for the preview to tell.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::recreate()
+     */
+    public function testAMinimumRaisedSinceDoesNotHoldUpPuttingThePapersRight(): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $this->aConnectionLineAtFifty();
+        $this->agreeMinimum('100');
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post(self::NESTED . '/contract-proposals/recreate/' . self::PROPOSAL_ID, [
+            'note' => 'Written after the minimum was raised',
+            'confirmations' => [
+                'fixed_term' => 1,
+                'own_equipment' => 1,
+                'does_not_use_ip_addresses' => 1,
+                'does_not_use_radius' => 1,
+            ],
+        ]);
+
+        $this->assertRedirect();
+        $this->assertSame('Written after the minimum was raised', $proposals->get(self::PROPOSAL_ID)->note);
+    }
+
+    /**
+     * Puts a line on the proposal pricing the connection at fifty, bypassing the form.
+     *
+     * @return void
+     */
+    private function aConnectionLineAtFifty(): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $proposals->saveOrFail(
+            $proposals->patchEntity($proposals->get(self::PROPOSAL_ID), [
+                'changes' => ['billings' => [[
+                    'billing_id' => self::KNOWN_BILLING_ID,
+                    'terminates_only' => false,
+                    'service_id' => self::OPEN_SERVICE_ID,
+                    'quantity' => 1,
+                    'price' => '50.00',
+                    // the service comes with the line, the way the form brings it
+                    'service' => [
+                        'id' => self::OPEN_SERVICE_ID,
+                        'name' => 'Internet',
+                        'price' => '2',
+                        'connection_profile' => ['id' => '9a2952ed-9947-4c0e-bda8-97f00614eab4', 'name' => 'Internet'],
+                    ],
+                ]]],
+            ]),
+            ['checkRules' => false],
+        );
+    }
+
+    /**
+     * Moves the papers to a day nobody has invoiced for yet, and says which day that is.
+     *
+     * The invoicing boundary walks with the calendar while the fixtures stand still, so a line
+     * written against a fixed day lands in a closed period as soon as the month turns. Asked of
+     * the table rather than counted out here, because what is closed depends on the settings.
+     *
+     * @return \Cake\I18n\Date The day the papers now take effect.
+     */
+    private function thePapersTakeEffectInAnOpenPeriod(): Date
+    {
+        /** @var \App\Model\Table\BillingsTable $billings */
+        $billings = $this->getTableLocator()->get('Billings');
+        $takes_effect = $billings->firstOpenPeriodStart()->addDays(1);
+
+        $this->theProposalSays(['effective_from' => $takes_effect]);
+
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $proposals->saveOrFail(
+            $proposals->patchEntity($proposals->get(self::PROPOSAL_ID), [
+                'effective_from' => $takes_effect,
+            ]),
+            ['checkRules' => false],
+        );
+
+        return $takes_effect;
+    }
+
+    /**
+     * A minimum raised after a line was written is said before the button, and the administrator
+     * may apply the line anyway by ticking the box.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ChangePreview::of()
+     */
+    public function testAMinimumRaisedSinceIsSaidAndMayBeGoneBelowDeliberately(): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $this->aConnectionLineAtFifty();
+        $takes_effect = $this->thePapersTakeEffectInAnOpenPeriod();
+        $this->theProposalSays(['conclusion_date' => $takes_effect->subDays(1)]);
+        $this->agreeMinimum('100');
+
+        $this->login();
+        $this->get('/customers/' . self::CUSTOMER_ID . '/customer-proposals/apply-changes/' . self::ROUND_ID);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('minimum set on the contract');
+        $this->assertResponseContains('allow_below_minimum');
+
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/customer-proposals/apply-changes/' . self::ROUND_ID, ['allow_below_minimum' => '1']);
+
+        $this->assertRedirect();
+        $this->assertTrue($proposals->get(self::PROPOSAL_ID)->hasBeenApplied());
+    }
+
+    /**
+     * A signed proposal that changes nothing is applied all the same, so that it stops being
+     * listed as waiting - and nothing of the contract moves.
+     *
+     * @return void
+     * @link \App\Controller\CustomerProposalsController::applyChanges()
+     */
+    public function testAnEmptyProposalIsMarkedAsDealtWith(): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $this->theProposalSays(['conclusion_date' => '2026-09-15']);
+
+        $billings = $this->getTableLocator()->get('Billings');
+        $before = $billings->find()->count();
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/customer-proposals/apply-changes/' . self::ROUND_ID);
+
+        $this->assertRedirect();
+        $this->assertTrue($proposals->get(self::PROPOSAL_ID)->hasBeenApplied());
+        $this->assertSame($before, $billings->find()->count());
+    }
+
+    /**
+     * An unsigned proposal is not applied even when the request is made straight at it.
+     *
+     * @return void
+     * @link \App\Controller\CustomerProposalsController::applyChanges()
+     */
+    public function testAnUnsignedProposalIsNotApplied(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/customer-proposals/apply-changes/' . self::ROUND_ID);
+
+        $this->assertFalse(
+            $this->getTableLocator()->get('ContractProposals')
+                ->get(self::PROPOSAL_ID)
+                ->hasBeenApplied(),
+        );
+    }
+
+    /**
+     * A proposal that never went anywhere may be removed; one that did may not.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::delete()
+     */
+    public function testOnlyAProposalThatWentNowhereIsRemoved(): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/delete/' . self::PROPOSAL_ID);
+        // The papers are gone, the proposal that held them is not.
+        $this->assertRedirectContains(
+            '/customers/' . self::CUSTOMER_ID . '/customer-proposals/view/' . self::ROUND_ID,
+        );
+        $this->assertSame(0, $proposals->find()->where(['id' => self::PROPOSAL_ID])->count());
+    }
+
+    /**
+     * A sent proposal is not removed either.
+     *
+     * @return void
+     * @link \App\Controller\ContractProposalsController::delete()
+     */
+    public function testASentProposalIsNotRemoved(): void
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $this->theProposalSays(['sent_date' => '2026-10-01', 'delivery_type' => DocumentsDeliveryType::Email]);
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/contract-proposals/delete/' . self::PROPOSAL_ID);
+
+        $this->assertRedirectContains('/contract-proposals/view/' . self::PROPOSAL_ID);
+        $this->assertSame(1, $proposals->find()->where(['id' => self::PROPOSAL_ID])->count());
+    }
+}

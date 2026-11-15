@@ -1,0 +1,217 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Model\Table;
+
+use App\Model\Enum\AddressNumberType;
+use App\Model\Enum\AddressType;
+use Cake\Database\Type\EnumType;
+use Cake\ORM\RulesChecker;
+use Cake\Validation\Validator;
+use Override;
+
+/**
+ * Addresses Model
+ *
+ * @property \App\Model\Table\CustomersTable&\Cake\ORM\Association\BelongsTo $Customers
+ * @property \App\Model\Table\CountriesTable&\Cake\ORM\Association\BelongsTo $Countries
+ * @property \App\Model\Table\ContractsTable&\Cake\ORM\Association\HasMany $Contracts
+ * @method \App\Model\Entity\Address newEmptyEntity()
+ * @method \App\Model\Entity\Address newEntity(array $data, array $options = [])
+ * @method \App\Model\Entity\Address[] newEntities(array $data, array $options = [])
+ * @method \App\Model\Entity\Address get(mixed $primaryKey, array|string $finder = 'all', null|\Psr\SimpleCache\CacheInterface|string $cache = null, null|\Closure|string $cacheKey = null, mixed ...$args)
+ * @method \App\Model\Entity\Address findOrCreate($search, callable|array|null $callback = null, $options = [])
+ * @method \App\Model\Entity\Address patchEntity(\Cake\Datasource\EntityInterface $entity, array $data, array $options = [])
+ * @method \App\Model\Entity\Address[] patchEntities(iterable $entities, array $data, array $options = [])
+ * @method \App\Model\Entity\Address|false save(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method \App\Model\Entity\Address saveOrFail(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method iterable<\App\Model\Entity\Address>|false saveMany(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\Address> saveManyOrFail(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\Address>|false deleteMany(iterable $entities, $options = [])
+ * @method iterable<\App\Model\Entity\Address> deleteManyOrFail(iterable $entities, $options = [])
+ * @mixin \Cake\ORM\Behavior\TimestampBehavior
+ */
+class AddressesTable extends AppTable
+{
+    /**
+     * Initialize method
+     *
+     * @param array<string, mixed> $config The configuration for the Table.
+     * @return void
+     */
+    #[Override]
+    public function initialize(array $config): void
+    {
+        parent::initialize($config);
+
+        $this->setTable('addresses');
+        $this->setDisplayField('address');
+        $this->setPrimaryKey('id');
+
+        $this->getSchema()->setColumnType(
+            'type',
+            EnumType::from(AddressType::class),
+        );
+
+        $this->getSchema()->setColumnType(
+            'number_type',
+            EnumType::from(AddressNumberType::class),
+        );
+
+        $this->addBehavior('Timestamp');
+        $this->addBehavior('Footprint');
+        $this->addBehavior('StringModifications');
+        // the customer's search document is built from these records
+        $this->addBehavior('FulltextSearchCustomers');
+
+        $this->belongsTo('Customers', [
+            'foreignKey' => 'customer_id',
+            'joinType' => 'INNER',
+        ]);
+        $this->belongsTo('Countries', [
+            'foreignKey' => 'country_id',
+            'joinType' => 'INNER',
+        ]);
+        // as InstallationAddresses
+        $this->hasMany('Contracts', [
+            'foreignKey' => 'installation_address_id',
+        ]);
+    }
+
+    /**
+     * Default validation rules.
+     *
+     * @param \Cake\Validation\Validator $validator Validator instance.
+     * @return \Cake\Validation\Validator
+     */
+    #[Override]
+    public function validationDefault(Validator $validator): Validator
+    {
+        $validator
+            ->uuid('id')
+            ->allowEmptyString('id', null, 'create');
+
+        $validator
+            ->integer('type')
+            ->requirePresence('type', 'create')
+            ->notEmptyString('type');
+
+        $validator
+            ->integer('number_type')
+            ->requirePresence('number_type')
+            ->notEmptyString('number_type');
+
+        $validator
+            ->uuid('country_id')
+            ->requirePresence('country_id', 'create')
+            ->notEmptyString('country_id');
+
+        $validator
+            ->scalar('title')
+            ->allowEmptyString('title');
+
+        $validator
+            ->scalar('first_name')
+            ->notEmptyString(
+                'first_name',
+                __('First name and last name are required when company is not filled in.'),
+                fn($context): bool => empty($context['data']['company'] ?? null),
+            );
+
+        $validator
+            ->scalar('last_name')
+            ->notEmptyString(
+                'last_name',
+                __('First name and last name are required when company is not filled in.'),
+                fn($context): bool => empty($context['data']['company'] ?? null),
+            );
+
+        $validator
+            ->scalar('suffix')
+            ->allowEmptyString('suffix');
+
+        $validator
+            ->scalar('company')
+            ->notEmptyString(
+                'company',
+                __('Company is required when first and last name are not filled in.'),
+                fn($context): bool => (
+                    empty($context['data']['first_name'] ?? null)
+                    || empty($context['data']['last_name'] ?? null)
+                ),
+            );
+
+        $validator
+            ->scalar('street')
+            ->allowEmptyString('street');
+
+        $validator
+            ->scalar('number')
+            ->allowEmptyString('number');
+
+        $validator
+            ->scalar('entrance')
+            ->allowEmptyString('entrance');
+
+        $validator
+            ->scalar('unit')
+            ->allowEmptyString('unit');
+
+        $validator
+            ->scalar('city')
+            ->allowEmptyString('city');
+
+        $validator
+            ->integer('zip')
+            ->allowEmptyString('zip');
+
+        $validator
+            ->scalar('address_registry_reference')
+            ->allowEmptyString('address_registry_reference');
+
+        $validator
+            ->scalar('address_registry_source')
+            ->allowEmptyString('address_registry_source');
+
+        $validator
+            ->numeric('gps_x')
+            ->allowEmptyString('gps_x');
+
+        $validator
+            ->numeric('gps_y')
+            ->allowEmptyString('gps_y');
+
+        $validator
+            ->boolean('manual_coordinate_setting')
+            ->notEmptyString('manual_coordinate_setting');
+
+        $validator
+            ->scalar('note')
+            ->allowEmptyString('note');
+
+        $validator
+            ->uuid('customer_id')
+            ->requirePresence('customer_id', 'create')
+            ->notEmptyString('customer_id');
+
+        return $validator;
+    }
+
+    /**
+     * Returns a rules checker object that will be used for validating
+     * application integrity.
+     *
+     * @param \Cake\ORM\RulesChecker $rules The rules object to be modified.
+     * @return \Cake\ORM\RulesChecker
+     */
+    #[Override]
+    public function buildRules(RulesChecker $rules): RulesChecker
+    {
+        $rules->add($rules->existsIn(['customer_id'], 'Customers'), ['errorField' => 'customer_id']);
+        $rules->add($rules->existsIn(['country_id'], 'Countries'), ['errorField' => 'country_id']);
+
+        $rules->addDelete($rules->isNotLinkedTo('Contracts')); // as InstallationAddresses
+
+        return $rules;
+    }
+}

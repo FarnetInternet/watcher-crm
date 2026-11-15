@@ -1,0 +1,811 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Test\TestCase\Model\Table;
+
+use App\Model\Entity\Billing;
+use App\Model\Table\BillingsTable;
+use App\Test\Traits\TableTestTrait;
+use Bookkeeping\Model\Enum\InvoicingSchedule;
+use Cake\Chronos\Chronos;
+use Cake\I18n\Date;
+use Cake\TestSuite\TestCase;
+use Cake\Utility\Inflector;
+use Override;
+use PhpCollective\DecimalObject\Decimal;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Settings\Utility\Settings;
+
+/**
+ * App\Model\Table\BillingsTable Test Case
+ */
+class BillingsTableTest extends TestCase
+{
+    use TableTestTrait;
+
+    /**
+     * Test subject
+     *
+     * @var \App\Model\Table\BillingsTable
+     */
+    protected $Billings;
+
+    /**
+     * The fixture's service with a connection profile, which makes a billing of it the connection.
+     *
+     * @var string
+     */
+    private const CONNECTION = '5f6a2f47-0a4d-4c05-9bcb-2f0dc0a3f0d2';
+
+    /**
+     * Fixtures
+     *
+     * @var array<string>
+     */
+    protected array $fixtures = [
+        'app.Users',
+        'app.AccountingProfiles',
+        'app.Customers',
+        'app.Countries',
+        'app.Addresses',
+        'app.Commissions',
+        'app.ContractStates',
+        'app.ServiceTypes',
+        'app.Contracts',
+        'app.ConnectionProfiles',
+        'app.Services',
+        'app.Billings',
+        'plugin.Settings.Settings',
+    ];
+
+    /**
+     * setUp method
+     *
+     * @return void
+     */
+    #[Override]
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $config = $this->getTableLocator()->exists('Billings') ? [] : ['className' => BillingsTable::class];
+        $this->Billings = $this->getTableLocator()->get('Billings', $config);
+    }
+
+    /**
+     * tearDown method
+     *
+     * @return void
+     */
+    #[Override]
+    protected function tearDown(): void
+    {
+        /** @phpstan-ignore unset.possiblyHookedProperty */
+        unset($this->Billings);
+
+        parent::tearDown();
+    }
+
+    /**
+     * A new record with nothing filled in is refused - see the trait for why that is the question
+     * worth asking here.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::validationDefault()
+     */
+    public function testValidationDefault(): void
+    {
+        $this->assertEmptyRecordIsRefused($this->Billings);
+    }
+
+    /**
+     * The rules refuse a record whose references point nowhere - see the trait for why that is
+     * the question worth asking here.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testBuildRules(): void
+    {
+        $this->assertDanglingReferencesAreRefused($this->Billings);
+    }
+
+    /**
+     * Where the line falls, spelled out for each way an installation invoices and for the days it
+     * turns on. Everything else in this class hangs off these four dates.
+     *
+     * @return array<string, array{string, bool, string, string, string}>
+     */
+    public static function boundaries(): array
+    {
+        return [
+            'the month is invoiced on its own last day, and today is not it' => [
+                InvoicingSchedule::CURRENT_MONTH_ON_LAST->value, false, '2026-08-30', '2026-07-31', '2026-07-31',
+            ],
+            'the month is invoiced today, and the day is shut' => [
+                InvoicingSchedule::CURRENT_MONTH_ON_LAST->value, false, '2026-08-31', '2026-08-31', '2026-08-31',
+            ],
+            'the month is invoiced today, and the day stays open for corrections' => [
+                InvoicingSchedule::CURRENT_MONTH_ON_LAST->value, true, '2026-08-31', '2026-08-31', '2026-07-31',
+            ],
+            'invoiced in arrears, in the middle of the month' => [
+                InvoicingSchedule::PREV_MONTH_ON_FIRST->value, false, '2026-08-14', '2026-07-31', '2026-07-31',
+            ],
+            'invoiced in arrears, on the day of the run, shut' => [
+                InvoicingSchedule::PREV_MONTH_ON_FIRST->value, false, '2026-09-01', '2026-08-31', '2026-08-31',
+            ],
+            'invoiced in arrears, on the day of the run, open for corrections' => [
+                InvoicingSchedule::PREV_MONTH_ON_FIRST->value, true, '2026-09-01', '2026-08-31', '2026-07-31',
+            ],
+        ];
+    }
+
+    /**
+     * What invoicing has settled is a fact about the run; what may no longer be moved is a
+     * decision about editing. They part company on the day of the run and nowhere else.
+     *
+     * @param string $schedule When the installation invoices.
+     * @param bool $dayStaysOpen Whether the day of the run is left editable.
+     * @param string $today The day the question is asked on.
+     * @param string $invoiced The last day invoicing has settled.
+     * @param string $closed The last day a billing may no longer be moved behind.
+     * @return void
+     * @link \App\Model\Table\BillingsTable::lastInvoicedPeriodEnd()
+     * @link \App\Model\Table\BillingsTable::lastClosedPeriodEnd()
+     */
+    #[DataProvider('boundaries')]
+    public function testWhereTheLineFalls(
+        string $schedule,
+        bool $dayStaysOpen,
+        string $today,
+        string $invoiced,
+        string $closed,
+    ): void {
+        Settings::set(InvoicingSchedule::SETTINGS_PATH, $schedule);
+        Settings::set(BillingsTable::DAY_STAYS_OPEN, $dayStaysOpen);
+
+        $was = Chronos::getTestNow();
+        Chronos::setTestNow(new Chronos($today . ' 09:00:00'));
+
+        try {
+            $this->assertSame($invoiced, $this->Billings->lastInvoicedPeriodEnd()->toDateString());
+            $this->assertSame($closed, $this->Billings->lastClosedPeriodEnd()->toDateString());
+            $this->assertSame(
+                (new Date($closed))->addDays(1)->toDateString(),
+                $this->Billings->firstOpenPeriodStart()->toDateString(),
+                'A day belongs to neither period, or to both.',
+            );
+        } finally {
+            Chronos::setTestNow($was);
+        }
+    }
+
+    /**
+     * A billing of a single day is a real one, so it is the day before the start that is refused -
+     * the same reading `ImpossibleBillingPeriodCheck` gives it after the fact.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testTheEndMayNotComeBeforeTheStart(): void
+    {
+        $billing = $this->openBilling();
+        $day = $billing->billing_from;
+
+        $this->assertNotFalse(
+            $this->Billings->save(
+                $this->Billings->patchEntity($billing, ['billing_until' => $day->toDateString()]),
+            ),
+            'A billing lasting one day was refused.',
+        );
+
+        $refused = $this->Billings->patchEntity(
+            $this->Billings->get($billing->id),
+            ['billing_until' => $day->subDays(1)->toDateString()],
+        );
+
+        $this->assertFalse($this->Billings->save($refused));
+        $this->assertArrayHasKey('billingPeriodIsPossible', $refused->getError('billing_until'));
+    }
+
+    /**
+     * The record would stop saying what was invoiced, even though no invoice changes.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testAStartThatHasBeenInvoicedForCannotBeMoved(): void
+    {
+        $billing = $this->Billings->patchEntity(
+            $this->Billings->get($this->closedBillingId()),
+            ['billing_from' => $this->Billings->firstOpenPeriodStart()->toDateString()],
+        );
+
+        $this->assertFalse($this->Billings->save($billing));
+        $this->assertArrayHasKey('billingStartsInAnOpenPeriod', $billing->getError('billing_from'));
+    }
+
+    /**
+     * The other way round, which lays a charge on months whose invoices have already gone out.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testAStartCannotBeMovedBackIntoAnInvoicedPeriod(): void
+    {
+        $billing = $this->Billings->patchEntity(
+            $this->openBilling(),
+            ['billing_from' => $this->Billings->lastClosedPeriodEnd()->toDateString()],
+        );
+
+        $this->assertFalse($this->Billings->save($billing));
+        $this->assertArrayHasKey('billingStartsInAnOpenPeriod', $billing->getError('billing_from'));
+    }
+
+    /**
+     * Entering one late is the same act as back-dating one that was already there.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testANewBillingMayNotStartInAnInvoicedPeriod(): void
+    {
+        $billing = $this->newBillingFrom($this->Billings->lastClosedPeriodEnd());
+
+        $this->assertFalse($this->Billings->save($billing));
+        $this->assertArrayHasKey('billingStartsInAnOpenPeriod', $billing->getError('billing_from'));
+    }
+
+    /**
+     * The last day invoiced is still allowed: ending there charges exactly the months that were
+     * charged. A day earlier takes part of an invoice back.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testTheEndMayNotBeMovedBeforeWhatWasInvoiced(): void
+    {
+        $closed = $this->Billings->lastClosedPeriodEnd();
+        $running = $this->runningBillingId();
+
+        $this->assertNotFalse(
+            $this->Billings->save(
+                $this->Billings->patchEntity(
+                    $this->Billings->get($running),
+                    ['billing_until' => $closed->toDateString()],
+                ),
+            ),
+            'Ending a billing on the last day invoiced was refused.',
+        );
+
+        $refused = $this->Billings->patchEntity(
+            $this->Billings->get($running),
+            ['billing_until' => $closed->subDays(1)->toDateString()],
+        );
+
+        $this->assertFalse($this->Billings->save($refused));
+        $this->assertArrayHasKey('billingEndsAfterWhatWasInvoiced', $refused->getError('billing_until'));
+    }
+
+    /**
+     * Lifting it charges for months the invoices went out without, so an end lying behind the line
+     * is not to be moved in either direction.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testAnEndThatHasBeenInvoicedPastCannotBeLifted(): void
+    {
+        $billing = $this->Billings->patchEntity(
+            $this->Billings->get($this->closedBillingId()),
+            ['billing_until' => null],
+        );
+
+        $this->assertFalse($this->Billings->save($billing));
+        $this->assertArrayHasKey('billingEndsAfterWhatWasInvoiced', $billing->getError('billing_until'));
+    }
+
+    /**
+     * Which is what the box on the form asks for, and why only an admin is offered it.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testTheInvoicedPeriodCanBeReachedIntoWhenItIsAskedFor(): void
+    {
+        $billing = $this->Billings->patchEntity(
+            $this->Billings->get($this->runningBillingId()),
+            ['billing_from' => $this->Billings->firstOpenPeriodStart()->toDateString()],
+        );
+
+        $this->assertNotFalse(
+            $this->Billings->save($billing, [BillingsTable::ALLOW_CLOSED_PERIODS => true]),
+        );
+    }
+
+    /**
+     * None of this reaches a billing whose dates are all still ahead of the invoicing.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testAChangeInsideTheOpenPeriodIsLeftAlone(): void
+    {
+        $open = $this->Billings->firstOpenPeriodStart();
+
+        $billing = $this->Billings->patchEntity($this->openBilling(), [
+            'billing_from' => $open->addDays(3)->toDateString(),
+            'billing_until' => $open->addMonths(2)->toDateString(),
+        ]);
+
+        $this->assertNotFalse($this->Billings->save($billing));
+    }
+
+    /**
+     * The fields that say what is being charged for, taken from the table so a term added there
+     * cannot quietly go untested.
+     *
+     * @return list<array{string}>
+     */
+    public static function settledTerms(): array
+    {
+        return array_map(static fn(string $term): array => [$term], BillingsTable::SETTLED_TERMS);
+    }
+
+    /**
+     * What has already been invoiced for is not re-priced in place: the invoice has gone out and
+     * the record is the only account of what it was for.
+     *
+     * @param string $term The field being changed.
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    #[DataProvider('settledTerms')]
+    public function testASettledTermIsNotRewritten(string $term): void
+    {
+        $billing = $this->Billings->get($this->closedBillingId());
+        $changed = $this->Billings->patchEntity($billing, [$term => $this->somethingElseFor($billing, $term)]);
+
+        $this->assertFalse($this->Billings->save($changed), sprintf('%s was rewritten.', $term));
+        $this->assertArrayHasKey('settled' . Inflector::camelize($term), $changed->getError($term));
+    }
+
+    /**
+     * Until an invoice has gone out there is nothing to disagree with, so the same change is
+     * nobody's business but the operator's.
+     *
+     * @param string $term The field being changed.
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    #[DataProvider('settledTerms')]
+    public function testASettledTermMayBeChangedWhileNothingHasBeenInvoiced(string $term): void
+    {
+        $billing = $this->openBilling();
+        $changed = $this->Billings->patchEntity($billing, [$term => $this->somethingElseFor($billing, $term)]);
+
+        $this->assertNotFalse($this->Billings->save($changed), sprintf('%s could not be set.', $term));
+    }
+
+    /**
+     * Something does have to be put right now and then, and that is what the admin's box is for.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testASettledTermCanBeRewrittenWhenItIsAskedFor(): void
+    {
+        $billing = $this->Billings->patchEntity($this->Billings->get($this->closedBillingId()), ['price' => 9]);
+
+        $this->assertNotFalse(
+            $this->Billings->save($billing, [BillingsTable::ALLOW_CLOSED_PERIODS => true]),
+        );
+    }
+
+    /**
+     * The sanctioned way out is to end the billing and start another, so the one being started
+     * must not be held to what the one it replaces was invoiced for.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testABillingBeingStartedIsNotHeldToWhatCameBefore(): void
+    {
+        $replaced = $this->Billings->get($this->closedBillingId());
+
+        $starting = $this->Billings->newEntity(
+            ['billing_from' => $this->Billings->firstOpenPeriodStart()->toDateString()]
+            + $this->somethingElseFor($replaced, 'copy'),
+        );
+
+        $this->assertNotFalse($this->Billings->save($starting));
+    }
+
+    /**
+     * What may be taken back and what may not, which the permissions ask before they draw the
+     * button and again before they let the request through.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::mayBeDeleted()
+     */
+    public function testOnlyABillingInvoicingHasNotReachedMayBeTakenBack(): void
+    {
+        $open = $this->Billings->firstOpenPeriodStart();
+
+        $this->assertTrue(
+            $this->Billings->mayBeDeleted($this->newBillingFrom($open)),
+            'A billing nobody has been invoiced for could not be taken back.',
+        );
+        $this->assertFalse(
+            $this->Billings->mayBeDeleted($this->newBillingFrom($open->subDays(1))),
+            'A billing starting in a period already invoiced was taken back.',
+        );
+        $this->assertFalse(
+            $this->Billings->mayBeDeleted($this->Billings->get($this->closedBillingId())),
+            'A billing from years back was taken back.',
+        );
+    }
+
+    /**
+     * Removing a billing somebody has been invoiced for takes the ground out from under an
+     * invoice that has gone out, so the model refuses it and only the override gets past.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testABillingInvoicedForIsNotDeletedWithoutTheOverride(): void
+    {
+        $invoiced = $this->Billings->get($this->closedBillingId());
+
+        $this->assertFalse($this->Billings->delete($invoiced));
+        $this->assertArrayHasKey('billingHasNotBeenInvoicedFor', $invoiced->getError('billing_from'));
+
+        // The same billing, with the override an administrator's request carries.
+        $this->assertTrue(
+            $this->Billings->delete($invoiced, [BillingsTable::ALLOW_CLOSED_PERIODS => true]),
+            'An administrator could not remove a billing that has been invoiced for.',
+        );
+    }
+
+    /**
+     * A billing nobody has been invoiced for is nobody's history and goes without asking.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testABillingNobodyHasBeenInvoicedForIsDeleted(): void
+    {
+        $open = $this->newBillingFrom($this->Billings->firstOpenPeriodStart());
+        $this->Billings->saveOrFail($open);
+
+        $this->assertTrue($this->Billings->delete($open));
+    }
+
+    /**
+     * A connection priced below what the contract agreed is refused, and the admin's box lets it through.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testAConnectionBelowTheMinimumIsRefused(): void
+    {
+        $this->agreeMinimum('100');
+
+        $refused = $this->newConnection('99.99');
+        $this->assertFalse($this->Billings->save($refused));
+        $this->assertArrayHasKey('connectionKeepsTheMinimum', $refused->getError('price'));
+
+        $this->assertNotFalse(
+            $this->Billings->save($this->newConnection('99.99'), [BillingsTable::ALLOW_BELOW_MINIMUM => true]),
+        );
+        $this->assertNotFalse($this->Billings->save($this->newConnection('100')));
+    }
+
+    /**
+     * A billing without a price of its own is priced by the list, and the list is what is measured.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testTheListPriceIsWhatIsMeasured(): void
+    {
+        $this->agreeMinimum('100');
+
+        $refused = $this->newConnection(null);
+
+        $this->assertFalse($this->Billings->save($refused));
+        $this->assertArrayHasKey('connectionKeepsTheMinimum', $refused->getError('price'));
+    }
+
+    /**
+     * A discount lowers the price as surely as the price itself does.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testADiscountOnTheConnectionIsHeldToTheMinimum(): void
+    {
+        $this->agreeMinimum('100');
+        $connection = $this->Billings->saveOrFail($this->newConnection('150'));
+
+        $refused = $this->Billings->patchEntity($connection, ['fixed_discount' => '60']);
+
+        $this->assertFalse($this->Billings->save($refused));
+        $this->assertArrayHasKey('connectionKeepsTheMinimum', $refused->getError('price'));
+    }
+
+    /**
+     * Only the connection is measured. A fee beside it, or a service without a connection profile, is not.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testWhatStandsBesideTheConnectionIsNotMeasured(): void
+    {
+        $this->agreeMinimum('100');
+
+        $this->assertNotFalse($this->Billings->save($this->newConnection('10', null)));
+        $this->assertNotFalse($this->Billings->save($this->newConnection('10', $this->serviceWithoutConnectionProfile())));
+    }
+
+    /**
+     * Without a minimum there is nothing to measure against.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testAContractWithoutMinimumIsNotLimited(): void
+    {
+        $this->assertNotFalse($this->Billings->save($this->newConnection('0.01')));
+    }
+
+    /**
+     * Ending a billing is not a change of price, so a contract being wound up or a service being
+     * replaced is not stopped here.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testEndingTheConnectionIsLeftAlone(): void
+    {
+        $this->agreeMinimum('100');
+
+        $ended = $this->Billings->patchEntity(
+            $this->Billings->get($this->runningBillingId()),
+            ['billing_until' => $this->Billings->firstOpenPeriodStart()->toDateString()],
+        );
+
+        $this->assertNotFalse($this->Billings->save($ended));
+    }
+
+    /**
+     * Moving the connection onto a service that is not one takes the connection away altogether.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testTheConnectionIsNotMovedOntoSomethingElse(): void
+    {
+        $this->agreeMinimum('100');
+        $connection = $this->Billings->saveOrFail($this->newConnection('150'));
+
+        $refused = $this->Billings->patchEntity($connection, ['service_id' => $this->serviceWithoutConnectionProfile()]);
+
+        $this->assertFalse($this->Billings->save($refused));
+        $this->assertArrayHasKey('connectionKeepsTheMinimum', $refused->getError('price'));
+    }
+
+    /**
+     * Deleting the connection leaves nothing meeting the minimum, unless another one takes its place.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testTheConnectionIsNotDeletedFromUnderTheMinimum(): void
+    {
+        $this->agreeMinimum('100');
+        $connection = $this->Billings->saveOrFail($this->newConnection('150'));
+
+        $this->assertFalse($this->Billings->delete($connection));
+        $this->assertArrayHasKey('connectionIsNotLeftBelowMinimum', $connection->getError('price'));
+
+        $this->Billings->saveOrFail($this->newConnection('120'));
+        $connection->setErrors([]);
+
+        $this->assertTrue($this->Billings->delete($connection));
+    }
+
+    /**
+     * Which the admin may still do, the confirmation behind the link being the deliberate act.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::buildRules()
+     */
+    public function testTheConnectionCanBeDeletedWhenItIsAskedFor(): void
+    {
+        $this->agreeMinimum('100');
+        $connection = $this->Billings->saveOrFail($this->newConnection('150'));
+
+        $this->assertTrue($this->Billings->delete($connection, [BillingsTable::ALLOW_BELOW_MINIMUM => true]));
+    }
+
+    /**
+     * Puts a minimum on the fixture's contract.
+     *
+     * @param string $minimum The minimum.
+     * @return void
+     */
+    private function agreeMinimum(string $minimum): void
+    {
+        $existing = $this->Billings->get($this->closedBillingId());
+
+        $this->Billings->Contracts->updateAll(
+            ['minimum_connection_price' => $minimum],
+            ['id' => $existing->contract_id],
+        );
+    }
+
+    /**
+     * A billing for the connection on the fixture's contract, starting where nothing is invoiced yet.
+     *
+     * @param string|null $price The price; null takes the list.
+     * @param string|null $service_id The service; the fixture's one with a connection profile when not given.
+     * @return \App\Model\Entity\Billing
+     */
+    private function newConnection(?string $price, ?string $service_id = self::CONNECTION): Billing
+    {
+        $existing = $this->Billings->get($this->closedBillingId());
+
+        return $this->Billings->newEntity([
+            'customer_id' => $existing->customer_id,
+            'contract_id' => $existing->contract_id,
+            'service_id' => $service_id,
+            'text' => $service_id === null ? 'Beside the connection' : null,
+            'price' => $price,
+            'quantity' => 1,
+            'separate_invoice' => false,
+            'billing_from' => $this->Billings->firstOpenPeriodStart()->toDateString(),
+        ]);
+    }
+
+    /**
+     * A service that is not a connection.
+     *
+     * @return string
+     */
+    private function serviceWithoutConnectionProfile(): string
+    {
+        $service = $this->Billings->Services->newEntity([
+            'name' => 'Static address',
+            'price' => '50',
+            'accounting_product_code' => 'IP',
+            'currently_offered' => true,
+            'criticality_level' => 20,
+        ]);
+
+        return (string)$this->Billings->Services->saveOrFail($service)->id;
+    }
+
+    /**
+     * A value for one of the settled terms that differs from the one the billing carries.
+     *
+     * Asked for as `copy` it hands back the whole record instead, which is what starting a billing
+     * over as a replacement for another one amounts to.
+     *
+     * @param \App\Model\Entity\Billing $billing The billing being changed.
+     * @param string $term The field being changed, or `copy` for all of them.
+     * @return mixed
+     */
+    private function somethingElseFor(Billing $billing, string $term): mixed
+    {
+        if ($term === 'copy') {
+            $terms = ['customer_id' => $billing->customer_id, 'contract_id' => $billing->contract_id];
+            foreach (BillingsTable::SETTLED_TERMS as $settled) {
+                $carried = $billing->get($settled);
+                // the money is held as an object, and what arrives from a form never is
+                $terms[$settled] = $carried instanceof Decimal ? $carried->toString() : $carried;
+            }
+
+            return $terms;
+        }
+
+        if ($term === 'service_id') {
+            return $this->Billings->Services
+                ->find()
+                ->where(['Services.id IS NOT' => $billing->service_id])
+                ->firstOrFail()
+                ->get('id');
+        }
+
+        return 9;
+    }
+
+    /**
+     * A billing that starts in the period nobody has been invoiced for yet.
+     *
+     * It has to be made here rather than in the fixture: where the line falls depends on the day
+     * the test is run on, which a fixture cannot know.
+     *
+     * @return \App\Model\Entity\Billing
+     */
+    private function openBilling(): Billing
+    {
+        return $this->Billings->saveOrFail($this->newBillingFrom($this->Billings->firstOpenPeriodStart()));
+    }
+
+    /**
+     * A billing on the fixture's contract, starting on the given day.
+     *
+     * @param \Cake\I18n\Date $from The day billing starts.
+     * @return \App\Model\Entity\Billing
+     */
+    private function newBillingFrom(Date $from): Billing
+    {
+        $existing = $this->Billings->get($this->closedBillingId());
+
+        return $this->Billings->newEntity([
+            'customer_id' => $existing->customer_id,
+            'contract_id' => $existing->contract_id,
+            'text' => 'Billed from ' . $from->toDateString(),
+            'quantity' => 1,
+            'separate_invoice' => false,
+            'billing_from' => $from->toDateString(),
+        ]);
+    }
+
+    /**
+     * A billing from the fixture, which begins and ends in years nobody can still invoice for.
+     *
+     * @return string
+     */
+    private function closedBillingId(): string
+    {
+        return (string)$this->Billings
+            ->find()
+            ->where(['Billings.billing_until IS NOT' => null])
+            ->firstOrFail()
+            ->get('id');
+    }
+
+    /**
+     * Running on a day means begun on it or before and not ended before it, both days counted in.
+     *
+     * The fixture has a billing of a single day, 2021-11-05, and two open ones from 2022-01-01.
+     *
+     * @return void
+     * @link \App\Model\Table\BillingsTable::findActiveOn()
+     */
+    public function testRunningOnADayCountsBothOfItsEnds(): void
+    {
+        $running = fn(string $day): array => $this->Billings
+            ->find('activeOn', on: new Date($day))
+            ->orderBy(['Billings.id'])
+            ->all()
+            ->extract('id')
+            ->toList();
+
+        $this->assertSame([], $running('2021-11-04'));
+        $this->assertSame(['b1000000-0000-4000-8000-000000000001'], $running('2021-11-05'));
+        $this->assertSame([], $running('2021-12-31'));
+        $this->assertSame(
+            ['b2000000-0000-4000-8000-000000000002', 'b3000000-0000-4000-8000-000000000003'],
+            $running('2022-01-01'),
+        );
+    }
+
+    /**
+     * A billing from the fixture that started years ago and has not been given an end.
+     *
+     * Where the start is behind the line and the end is not, so a rule about one of them is not
+     * answered first by a rule about the other.
+     *
+     * @return string
+     */
+    private function runningBillingId(): string
+    {
+        return (string)$this->Billings
+            ->find()
+            ->where(['Billings.billing_until IS' => null])
+            ->firstOrFail()
+            ->get('id');
+    }
+}

@@ -1,0 +1,230 @@
+<?php
+/**
+ * The workbench: the papers of a customer and of their contracts, and everything that leads
+ * anywhere from them.
+ *
+ * Cards down the page in the order the work goes: who this is, what has been drawn up, and then
+ * the papers themselves - the tables last, so they do not stand between the heading and the doing.
+ *
+ * @var \App\View\AppView $this
+ * @var \App\Model\Entity\Customer $customer
+ * @var \App\Model\Entity\Contract|null $contract
+ * @var \App\Model\Entity\ContractVersion|null $version
+ * @var \App\Model\Entity\ContractProposal|\App\Model\Entity\CustomerProposal|null $proposal
+ * @var array<array<string, mixed>> $proposals
+ * @var array{0: string, 1: string} $scope
+ * @var string $about The innermost thing the address names, which is what the papers are of.
+ * @var bool $with_contracts
+ * @var bool $show_revoked
+ * @var bool $showCustomer
+ */
+
+use App\Model\Entity\ContractProposal;
+use App\Model\Entity\CustomerProposal;
+
+// Diving into one proposal is what turns the page into somewhere pages may be reordered and let go
+// of: everything else here is about reading what is there.
+$inside = $proposal !== null;
+
+// Only where something is held underneath is there anything to leave out.
+$holdsContracts = in_array($scope[0], ['customer', 'customerProposal'], true);
+
+/**
+ * What the rest of the address is carrying, so that one switch does not turn the others off.
+ *
+ * @param array<string> $fields Which of them this form has to take along.
+ * @return string
+ */
+$carrying = function (array $fields): string {
+    $carried = '';
+
+    foreach ($fields as $field) {
+        $said = $this->getRequest()->getQuery($field);
+
+        if ($said !== null) {
+            $carried .= $this->Form->hidden($field, ['value' => $said]);
+        }
+    }
+
+    return $carried;
+};
+?>
+<div class="row">
+    <aside class="column">
+        <div class="side-nav">
+            <h4 class="heading"><?= __('Actions') ?></h4>
+            <?= $this->AuthLink->link(
+                __('View Customer'),
+                ['controller' => 'Customers', 'action' => 'view', $customer->id],
+                ['class' => 'side-nav-item'],
+            ) ?>
+            <?= $this->AuthLink->link(
+                __('Edit Customer'),
+                ['controller' => 'Customers', 'action' => 'edit', $customer->id],
+                ['class' => 'side-nav-item'],
+            ) ?>
+            <?php if ($contract !== null) : ?>
+                <?= $this->AuthLink->link(
+                    __('View Contract'),
+                    ['controller' => 'Contracts', 'action' => 'view', $contract->id],
+                    ['class' => 'side-nav-item'],
+                ) ?>
+            <?php endif; ?>
+            <?= $this->AuthLink->link(
+                __d('app_files', 'Documentations'),
+                ['controller' => 'Documentations', 'action' => 'index'],
+                ['class' => 'side-nav-item'],
+            ) ?>
+        </div>
+    </aside>
+    <div class="column column-90">
+        <div class="documents content">
+            <?php
+            // Who this is and where it stands is the whereabouts underneath, so the heading says
+            // it once rather than twice.
+            ?>
+            <?= $contract === null
+                ? $this->element('Customers/heading', ['doing' => __('Documents'), 'withName' => false])
+                : $this->element('Contracts/heading', ['doing' => __('Documents'), 'withName' => false]) ?>
+            <?= $this->element('Documents/whereabouts') ?>
+        </div>
+        <br>
+        <div class="documents content">
+            <?php
+            // Papers of a contract are drawn up in one place and one place only: the form that
+            // draws them up. Opened from inside a proposal, it starts out in that proposal.
+            $inAProposal = $proposal instanceof CustomerProposal;
+            ?>
+            <?= $this->AuthLink->link(
+                __('New Customer Proposal'),
+                [
+                    'controller' => 'CustomerProposals',
+                    'action' => 'add',
+                    'contract_id' => null,
+                ],
+                ['class' => 'button button-small float-right'],
+            ) ?>
+            <?= $this->AuthLink->link(
+                __('New Contract Proposal'),
+                [
+                    'controller' => 'ContractProposals',
+                    'action' => 'add',
+                    // Opened from inside a proposal the papers start out in it. Opened from
+                    // anywhere else the form asks which proposal they belong to, or draws one up.
+                    '?' => $inAProposal ? ['proposal_id' => $proposal->id] : [],
+                ],
+                ['class' => 'button button-small float-right'],
+            ) ?>
+            <h4><?= __('Proposals') ?></h4>
+            <p><?= __('The proposals shown here. A customer proposal holds the proposals of the'
+                . ' customer\'s contracts. Its row lists those contracts and what changes on'
+                . ' each, and all of their documents are below.') ?></p>
+            <?= $this->element('Documents/proposals', ['working' => true]) ?>
+            <?php
+            // Under the table rather than over it: the buttons above have the corner, and what
+            // this switch does is only worth asking once somebody has read what is there.
+            ?>
+            <div class="clearfix">
+                <div class="float-right">
+                    <?= $this->Form->create(null, ['type' => 'get', 'valueSources' => ['query', 'context']]) ?>
+                    <?= $carrying(['agenda', 'proposal_id', 'with_contracts']) ?>
+                    <?= $this->Form->control('show_revoked', [
+                        'label' => __('Show revoked proposals'),
+                        'type' => 'checkbox',
+                        'checked' => $show_revoked,
+                        'onchange' => $this::SUBMIT_ON_CHANGE,
+                    ]) ?>
+                    <?= $this->Form->end() ?>
+                </div>
+            </div>
+        </div>
+        <br>
+        <div class="documents content">
+            <?php
+            // Diving into one proposal names it in the heading, and the way to it belongs beside
+            // that name: from here on the page is about those papers alone, and what they say -
+            // what is being agreed, and where it stands - is read on the proposal itself.
+            ?>
+            <?php if ($inside) : ?>
+                <?php
+                // Named by the papers rather than by the envelope: a proposal is the one thing a
+                // proposal of a contract hangs under, while what hangs there is open-ended.
+                $ofPapers = $proposal instanceof ContractProposal;
+                ?>
+                <?= $this->AuthLink->link(
+                    $ofPapers ? __('View Contract Proposal') : __('View Customer Proposal'),
+                    [
+                        'plugin' => null,
+                        'controller' => $ofPapers ? 'ContractProposals' : 'CustomerProposals',
+                        'action' => 'view',
+                        $proposal->id,
+                    ],
+                    ['class' => 'button button-small float-right'],
+                ) ?>
+            <?php endif; ?>
+            <h4><?= h(__('Documents - {0}', $about)) ?></h4>
+            <?php if ($holdsContracts) : ?>
+            <div class="float-right">
+                <?= $this->Form->create(null, ['type' => 'get', 'valueSources' => ['query', 'context']]) ?>
+                <?= $carrying(['agenda', 'proposal_id', 'show_revoked']) ?>
+                <?= $this->Form->control('with_contracts', [
+                    'label' => __('Show documents of the contract proposals'),
+                    'type' => 'checkbox',
+                    'checked' => $with_contracts,
+                    'onchange' => $this::SUBMIT_ON_CHANGE,
+                ]) ?>
+                <?= $this->Form->end() ?>
+            </div>
+            <div class="clearfix"></div>
+            <?php endif; ?>
+            <div class="related">
+                <?php if ($inside) : ?>
+                    <?php
+                    // The row that says nothing has come back offers the filing too, but it is
+                    // gone once the first scan is there - and the rest of them arrive later.
+                    ?>
+                    <?= $this->AuthLink->link(
+                        __('Add Files'),
+                        [
+                            'action' => 'addPages',
+                            '?' => [
+                                'proposal_id' => $proposal->id,
+                                'agenda' => $proposal instanceof CustomerProposal
+                                    ? 'CustomerProposals'
+                                    : 'ContractProposals',
+                            ],
+                        ],
+                        ['class' => 'button button-small float-right'],
+                    ) ?>
+                <?php endif; ?>
+                <h5><?= __('Received Documents') ?></h5>
+                <p><?= __('Documents received from the customer. Each one is filed with the'
+                    . ' proposal it belongs to, as its row shows.') ?></p>
+                <?php $this->Preview->load() ?>
+                <?= $this->cell('Documents', $scope, [
+                    'generatedByUs' => false,
+                    'withWhatIsMissing' => true,
+                    'withContracts' => $with_contracts,
+                    'withRevoked' => $show_revoked,
+                    'manage' => $inside,
+                    'thumbnails' => $inside,
+                ]) ?>
+            </div>
+            <div class="related">
+                <h5><?= __('Generated Documents') ?></h5>
+                <p><?= __('Documents we have generated, and those still to be generated. A'
+                    . ' document is generated only once and the same file is returned'
+                    . ' afterwards, so these are exactly the files the customer received. A row'
+                    . ' without a file is a document still to be generated.') ?></p>
+                <?= $this->cell('Documents', $scope, [
+                    'generatedByUs' => true,
+                    'withWhatIsMissing' => true,
+                    'withContracts' => $with_contracts,
+                    'withRevoked' => $show_revoked,
+                    'manage' => $inside,
+                    'thumbnails' => $inside,
+                ]) ?>
+            </div>
+        </div>
+    </div>
+</div>

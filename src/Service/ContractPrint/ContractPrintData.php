@@ -1,0 +1,235 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Service\ContractPrint;
+
+use App\Contracts\Proposal\ProjectedEquipment;
+use App\Model\Entity\Billing;
+use App\Model\Entity\Contract;
+use App\Model\Entity\ContractProposal;
+use App\Model\Entity\ContractVersion;
+use App\Model\Enum\ContractDocumentType;
+use Cake\Collection\Collection;
+use Cake\Collection\CollectionInterface;
+use Cake\I18n\Date;
+
+/**
+ * Data Transfer Object for contract PDF printing.
+ *
+ * This object represents a fully validated and prepared dataset
+ * required for generating a contract-related PDF document.
+ *
+ * It intentionally separates print-specific data from domain entities
+ * to avoid mutating Contract or ContractVersion with temporary state.
+ *
+ * Lifecycle:
+ *  - Created by Controller
+ *  - Filled by ContractPrintValidator
+ *  - Enriched by ContractPrintDataEnricher
+ *  - Consumed by PDF generator
+ */
+final class ContractPrintData
+{
+    /**
+     * Type of document being printed.
+     */
+    public ContractDocumentType $type;
+
+    /**
+     * Contract being printed.
+     */
+    public Contract $contract;
+
+    /**
+     * Contract version to be executed used for printing.
+     */
+    public ?ContractVersion $contractVersionToBeExecuted = null;
+
+    /**
+     * Contract version to be terminated used for printing.
+     */
+    public ?ContractVersion $contractVersionToBeTerminated = null;
+
+    /**
+     * Effective date of the amendment.
+     *
+     * Used for:
+     *  - contract-amendment
+     */
+    public ?Date $effectiveDateOfAmendment = null;
+
+    /**
+     * Technical details required for handover protocols.
+     */
+    public ?ContractPrintTechnicalData $technicalDetails = null;
+
+    /**
+     * Number of the contract to be terminated.
+     *
+     * Used for:
+     *  - contract-termination
+     *  - contract-new-x
+     *  - handover-protocol-uninstallation
+     */
+    public ?string $contractNumberToBeTerminated = null;
+
+    /**
+     * Indicates whether the document should be generated as signed.
+     */
+    public bool $signed = false;
+
+    /**
+     * The proposal the document is printed from.
+     *
+     * Every document is printed from one: the snapshot it holds is what the pages are drawn from,
+     * so that the same paper printed twice is the same paper.
+     */
+    public ?ContractProposal $proposal = null;
+
+    /**
+     * The billings as the proposal would leave them, put together from its snapshot.
+     *
+     * @var array<\App\Model\Entity\Billing>|null
+     */
+    public ?array $projectedBillings = null;
+
+    /**
+     * The borrowed equipments as the proposal would leave them, where its lines move any.
+     *
+     * Null where they move none, and then the papers print what the snapshot holds.
+     */
+    public ?ProjectedEquipment $projectedEquipment = null;
+
+    /**
+     * Active billings applicable at the time of the contract version.
+     *
+     * Typically split later into:
+     *  - individual billings
+     *  - standard billings
+     *
+     * @var \Cake\Collection\CollectionInterface<array-key, \App\Model\Entity\Billing>
+     */
+    public CollectionInterface $activeBillings;
+
+    /**
+     * Future billings starting after the contract version validity.
+     *
+     * @var \Cake\Collection\CollectionInterface<array-key, \App\Model\Entity\Billing>
+     */
+    public CollectionInterface $futureBillings;
+
+    /**
+     * Constructor.
+     */
+    public function __construct(
+        ContractDocumentType $type,
+        Contract $contract,
+        ?ContractVersion $contractVersionToBeExecuted,
+        ?ContractVersion $contractVersionToBeTerminated,
+    ) {
+        $this->type = $type;
+        $this->contract = $contract;
+        $this->contractVersionToBeExecuted = $contractVersionToBeExecuted;
+        $this->contractVersionToBeTerminated = $contractVersionToBeTerminated;
+
+        $this->activeBillings = new Collection([]);
+        $this->futureBillings = new Collection([]);
+    }
+
+    /**
+     * Whether the papers charge for setting the connection up.
+     *
+     * The proposal says. Printed without one, a contract replacing an earlier version is taken to
+     * take the connection over as it is.
+     *
+     * @return bool
+     */
+    public function activatesTheService(): bool
+    {
+        return $this->proposal?->activatesTheService() ?? $this->type !== ContractDocumentType::ContractNewX;
+    }
+
+    /**
+     * The equipment borrowed once the papers take effect.
+     *
+     * @return array<\App\Model\Entity\BorrowedEquipment>
+     */
+    public function equipmentLentAfterwards(): array
+    {
+        return $this->projectedEquipment?->afterwards() ?? $this->contract->borrowed_equipments ?? [];
+    }
+
+    /**
+     * The equipment an installation protocol hands over.
+     *
+     * A new contract hands over everything it lends. One replacing an earlier version hands over
+     * only what it adds, because the rest is already with the customer.
+     *
+     * @return array<\App\Model\Entity\BorrowedEquipment>
+     */
+    public function equipmentHandedOver(): array
+    {
+        if ($this->projectedEquipment === null) {
+            return $this->contract->borrowed_equipments ?? [];
+        }
+
+        return $this->proposal?->terminatesAnotherVersion() ?? false
+            ? $this->projectedEquipment->lent
+            : $this->projectedEquipment->afterwards();
+    }
+
+    /**
+     * The equipment an uninstallation protocol takes back.
+     *
+     * Where the proposal ends particular pieces, only those. Otherwise everything, as an ending
+     * takes it all back.
+     *
+     * @return array<\App\Model\Entity\BorrowedEquipment>
+     */
+    public function equipmentTakenBack(): array
+    {
+        $returned = $this->projectedEquipment->returned ?? [];
+
+        return $returned === [] ? $this->contract->borrowed_equipments ?? [] : $returned;
+    }
+
+    /**
+     * @return \Cake\Collection\CollectionInterface<array-key, \App\Model\Entity\Billing>
+     */
+    public function getActiveStandardBillings(): CollectionInterface
+    {
+        return $this->activeBillings->filter(
+            fn(Billing $billing): bool => $billing->price === null,
+        );
+    }
+
+    /**
+     * @return \Cake\Collection\CollectionInterface<array-key, \App\Model\Entity\Billing>
+     */
+    public function getActiveIndividualBillings(): CollectionInterface
+    {
+        return $this->activeBillings->filter(
+            fn(Billing $billing): bool => $billing->price !== null,
+        );
+    }
+
+    /**
+     * @return \Cake\Collection\CollectionInterface<array-key, \App\Model\Entity\Billing>
+     */
+    public function getFutureStandardBillings(): CollectionInterface
+    {
+        return $this->futureBillings->filter(
+            fn(Billing $billing): bool => $billing->price === null,
+        );
+    }
+
+    /**
+     * @return \Cake\Collection\CollectionInterface<array-key, \App\Model\Entity\Billing>
+     */
+    public function getFutureIndividualBillings(): CollectionInterface
+    {
+        return $this->futureBillings->filter(
+            fn(Billing $billing): bool => $billing->price !== null,
+        );
+    }
+}

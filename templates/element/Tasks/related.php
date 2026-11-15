@@ -1,0 +1,141 @@
+<?php
+/**
+ * The tasks filed under a task state or a task type, as they are listed beside it.
+ *
+ * Whichever of the two the card is about is left out of the table: it would say the same thing
+ * on every row. A card lists only so many, so it also leads to the listing of all of them.
+ *
+ * @var \App\View\AppView $this
+ * @var array<\App\Model\Entity\Task> $tasks
+ * @var bool|null $task_type_column
+ * @var bool|null $task_state_column
+ * @var array<string, mixed> $listing What the listing of the tasks is narrowed to.
+ */
+
+use App\Model\Table\TasksTable;
+
+?>
+<?php if (!empty($tasks)) : ?>
+<div class="table-responsive">
+    <table>
+        <tr>
+            <th><?= __d('app_tasks', 'Number') ?></th>
+            <?php if (!empty($task_type_column)) : ?>
+            <th><?= __d('app_tasks', 'Task Type') ?></th>
+            <?php endif; ?>
+            <?php if (!empty($task_state_column)) : ?>
+            <th><?= __d('app_tasks', 'Task State') ?></th>
+            <?php endif; ?>
+            <th><?= __d('app_tasks', 'Priority') ?></th>
+            <th><?= __d('app_tasks', 'User') ?></th>
+            <th><?= __d('app_tasks', 'Subject') ?></th>
+            <th><?= __d('app_tasks', 'Text') ?></th>
+            <th><?= __d('app_tasks', 'Email') ?></th>
+            <th><?= __d('app_tasks', 'Phone') ?></th>
+            <th><?= __d('app_tasks', 'Customer') ?></th>
+            <th><?= __d('app_tasks', 'Customer Number') ?></th>
+            <th><?= __d('app_tasks', 'Access Point') ?></th>
+            <th><?= __d('app_tasks', 'Start Date') ?></th>
+            <th><?= __d('app_tasks', 'Estimated Date') ?></th>
+            <th><?= __d('app_tasks', 'Critical Date') ?></th>
+            <th><?= __d('app_tasks', 'Finish Date') ?></th>
+            <th class="actions"><?= __d('app_tasks', 'Actions') ?></th>
+        </tr>
+        <?php foreach ($tasks as $task) : ?>
+        <tr style="<?= $task->style ?>">
+            <td><?= h($task->number) ?></td>
+            <?php if (!empty($task_type_column)) : ?>
+            <td><?= $task->task_type !== null ?
+                $this->Html->link(
+                    $task->task_type->name ?? '(' . $task->task_type->id . ')',
+                    ['controller' => 'TaskTypes', 'action' => 'view', $task->task_type->id],
+                ) : '' ?>
+            </td>
+            <?php endif; ?>
+            <?php if (!empty($task_state_column)) : ?>
+            <td><?= $task->task_state !== null ?
+                $this->Html->link(
+                    $task->task_state->name ?? '(' . $task->task_state->id . ')',
+                    ['controller' => 'TaskStates', 'action' => 'view', $task->task_state->id],
+                ) : '' ?>
+            </td>
+            <?php endif; ?>
+            <td><?= h($task->getPriorityName()) ?></td>
+            <td><?= $task->user !== null ?
+                $this->Html->link(
+                    $task->user->name ?? '(' . $task->user->id . ')',
+                    ['controller' => 'Users', 'action' => 'view', $task->user->id],
+                ) : '' ?>
+                <?php if ($task->collaborator_names !== '') : ?>
+                    <br><small title="<?= h(__d('app_tasks', 'Collaborators')) ?>">
+                        <?= h($task->collaborator_names) ?>
+                    </small>
+                <?php endif ?>
+            </td>
+            <td><?= h($task->subject) ?></td>
+            <td style="overflow-wrap: break-word; max-width: 600px;">
+                <?= nl2br(h($task->text ?? '')) ?>
+            </td>
+            <td><?= h($task->email) ?></td>
+            <td><?= h($task->phone) ?></td>
+            <td><?= $task->customer !== null ?
+                $this->Html->link(
+                    $task->customer->name ?? '(' . $task->customer->id . ')',
+                    ['controller' => 'Customers', 'action' => 'view', $task->customer->id],
+                ) : '' ?>
+            </td>
+            <td><?= $task->customer !== null ? h($task->customer->number) : '' ?></td>
+            <td><?= $this->element('AccessPoints/link', [
+                'id' => $task->access_point_id,
+                'name' => $task->access_point->data?->name,
+                'answer' => $task->access_point,
+            ]) ?></td>
+            <td><?= h($task->start_date) ?></td>
+            <td><?= h($task->estimated_date) ?></td>
+            <td><?= h($task->critical_date) ?></td>
+            <td><?= h($task->finish_date) ?></td>
+            <td class="actions">
+                <?= $this->AuthLink->link(
+                    __d('app_tasks', 'View'),
+                    ['controller' => 'Tasks', 'action' => 'view', $task->id],
+                ) ?>
+                <?= $this->AuthLink->link(
+                    __d('app_tasks', 'Edit'),
+                    ['controller' => 'Tasks', 'action' => 'edit', $task->id],
+                    ['class' => 'win-link'],
+                ) ?>
+                <?= $this->AuthLink->postLink(
+                    __d('app_tasks', 'Delete'),
+                    ['controller' => 'Tasks', 'action' => 'delete', $task->id],
+                    [
+                        'confirm' => __d(
+                            'app_tasks',
+                            'Are you sure you want to delete # {0}?',
+                            $task->number,
+                        ),
+                    ],
+                ) ?>
+            </td>
+        </tr>
+        <?php endforeach; ?>
+    </table>
+</div>
+    <?php if (count($tasks) >= TasksTable::SHOWN_ON_A_CARD) : ?>
+    <p><?= __d('app_tasks', 'Only the first {0} are shown.', TasksTable::SHOWN_ON_A_CARD) ?></p>
+    <?php endif; ?>
+    <?= $this->AuthLink->link(__('List Tasks'), [
+        'controller' => 'Tasks',
+        'action' => 'index',
+        // the listing keeps its filter between visits, so the whole of it is said here
+        '?' => $listing + [
+            'user_id' => '',
+            'pressing' => 0,
+            'stale' => 0,
+            'show_completed' => 1,
+            'task_type_ids' => '',
+            'task_state_ids' => '',
+            'access_point_id' => '',
+            'search' => '',
+        ],
+    ], ['class' => 'button']) ?>
+<?php endif; ?>

@@ -1,0 +1,1606 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Test\TestCase\Controller;
+
+use App\Controller\CustomerProposalsController;
+use App\Model\Entity\CustomerProposal;
+use App\Model\Enum\ContractDocumentType;
+use App\Model\Enum\CustomerDocumentType;
+use App\Model\Enum\CustomerProposalPurpose;
+use App\Model\Enum\DocumentsDeliveryType;
+use App\Model\Enum\DocumentVariant;
+use App\Model\Enum\ProposalPurpose;
+use App\Service\ContractPrint\ContractDocuments;
+use App\Service\CustomerPrint\CustomerDocuments;
+use App\Test\Traits\ControllerTestTrait;
+use Cake\Core\Configure;
+use Cake\I18n\Date;
+use Cake\I18n\DateTime;
+use Cake\TestSuite\IntegrationTestTrait;
+use Cake\TestSuite\TestCase;
+use Files\Model\Entity\FileLink;
+use Files\Service\FileStorage;
+use PHPUnit\Framework\Attributes\UsesClass;
+
+/**
+ * App\Controller\CustomerProposalsController Test Case
+ *
+ * A proposal put to the customer travels the same road a contract's proposal does, so what
+ * is asked of it is the road: that it can be drawn up, that sending locks it, that signing ends it,
+ * and that what has gone out cannot be taken back as though it never had.
+ */
+#[UsesClass(CustomerProposalsController::class)]
+class CustomerProposalsControllerTest extends TestCase
+{
+    use ControllerTestTrait;
+    use IntegrationTestTrait;
+
+    /**
+     * The customer the proposals hang on.
+     *
+     * @var string
+     */
+    private const CUSTOMER_ID = '403bab0e-52cd-4a8e-83f8-43c2457d0481';
+
+    /**
+     * A contract of theirs, which a proposal may be about as well.
+     *
+     * @var string
+     */
+    private const CONTRACT_ID = '7f76dc3f-a11b-4109-958b-4b0382545a66';
+    private const CONTRACT_VERSION_ID = '74824fba-20b2-46fc-806c-df795aa9e429';
+
+    /**
+     * And another of theirs, so a proposal may be about two.
+     *
+     * @var string
+     */
+    private const OTHER_CONTRACT_ID = '9c0d5e5c-2a6b-4f8e-9a3d-1b7c4e2f6a90';
+
+    /**
+     * Fixtures
+     *
+     * @var array<string>
+     */
+    protected array $fixtures = [
+        'app.Users',
+        'app.AccountingProfiles',
+        'app.Customers',
+        'app.Countries',
+        'app.Addresses',
+        'app.CustomerProposals',
+        'app.Commissions',
+        'app.ContractStates',
+        'app.ServiceTypes',
+        'app.Contracts',
+        'app.ContractVersions',
+        'app.ConnectionProfiles',
+        'app.Services',
+        'app.Billings',
+        'app.ContractProposals',
+        'app.EquipmentTypes',
+        'app.BorrowedEquipments',
+        'plugin.Files.Files',
+        'plugin.Files.FileLinks',
+        'plugin.Settings.Settings',
+    ];
+
+    /**
+     * A proposal with one contract's papers in it, drawn up the one way there is.
+     *
+     * @return \App\Model\Entity\CustomerProposal
+     */
+    private function drawOneUpWithPapers(): CustomerProposal
+    {
+        $proposal = $this->drawOneUp();
+
+        $this->post('/customers/' . self::CUSTOMER_ID . '/contract-proposals/add', [
+            'purpose' => ProposalPurpose::NewContract->value,
+            'contract_id' => self::CONTRACT_ID,
+            'customer_proposal_id' => $proposal->id,
+            'contract_version_id' => '',
+            'effective_from' => $proposal->effective_from->toDateString(),
+            'confirmations' => [
+                'fixed_term' => 1,
+                'own_equipment' => 1,
+                'does_not_use_ip_addresses' => 1,
+                'does_not_use_radius' => 1,
+            ],
+        ]);
+        $this->assertRedirectContains('/contract-proposals/view/');
+        $this->assertCount(1, $this->papersOf((string)$proposal->id));
+
+        // Asked again, because a proposal that now holds papers says so about itself.
+        /** @var \App\Model\Entity\CustomerProposal $held */
+        $held = $this->getTableLocator()->get('CustomerProposals')
+            ->get($proposal->id, contain: ['ContractProposals']);
+
+        return $held;
+    }
+
+    /**
+     * A proposal is drawn up against the customer the page was opened under.
+     *
+     * @link \App\Controller\CustomerProposalsController::add()
+     * @return void
+     */
+    public function testAProposalIsDrawnUp(): void
+    {
+        $proposal = $this->drawOneUp();
+
+        $this->assertSame(CustomerProposalPurpose::GdprConsent, $proposal->purpose);
+        $this->assertSame(self::CUSTOMER_ID, $proposal->customer_id);
+        $this->assertTrue($proposal->isOpen());
+        $this->assertSame(__('Being prepared'), $proposal->getState());
+    }
+
+    /**
+     * The detail and the forms render.
+     *
+     * @link \App\Controller\CustomerProposalsController::view()
+     * @return void
+     */
+    public function testTheDetailAndTheFormsRender(): void
+    {
+        $proposal = $this->drawOneUp();
+
+        foreach (['view', 'edit', 'send', 'conclude'] as $action) {
+            // under the customer, which is where these pages belong and where a bare address is sent
+            $this->get(sprintf(
+                '/customers/%s/customer-proposals/%s/%s',
+                $proposal->customer_id,
+                $action,
+                $proposal->id,
+            ));
+            $this->assertResponseOk(sprintf('%s did not render.', $action));
+        }
+    }
+
+    /**
+     * And they render for the roles that are asked the question rather than let straight through.
+     *
+     * Whether the Delete link is drawn is settled by reading the record, and the reading has to
+     * carry what the answer is worked out from: whether anything hangs on the proposal is looked up
+     * by the proposal's own id. Asked without it, the page of a proposal just drawn up - one neither
+     * sent nor signed, so the only one the question gets that far on - came back as an error.
+     *
+     * Everything else here logs in as an administrator, who never reaches the question at all.
+     *
+     * @link \App\Controller\CustomerProposalsController::view()
+     * @return void
+     */
+    public function testTheDetailRendersForWhoeverIsAskedWhetherItMayGo(): void
+    {
+        $proposal = $this->drawOneUp();
+
+        foreach (['sales-representative', 'sales-manager', 'network-manager', 'bookkeeper'] as $role) {
+            $this->login($role);
+            $this->get(sprintf(
+                '/customers/%s/customer-proposals/view/%s',
+                $proposal->customer_id,
+                $proposal->id,
+            ));
+
+            $this->assertResponseOk(sprintf('The detail did not render for a %s.', $role));
+        }
+    }
+
+    /**
+     * A signature corrected after the changes were applied reaches the version that took its day
+     * from it. The checks read the version, so otherwise they would go on reading the wrong day.
+     *
+     * @link \App\Proposals\WholeProposal::recordStep()
+     * @return void
+     */
+    public function testACorrectedSignatureReachesTheVersionThatTookItsDayFromIt(): void
+    {
+        [$proposal, $version] = $this->appliedProposal();
+
+        $this->post($this->conclude($proposal), ['conclusion_date' => '2026-10-04']);
+        $this->assertRedirectContains('/customer-proposals/view/' . $proposal->id);
+
+        $versions = $this->getTableLocator()->get('ContractVersions');
+        $this->assertSame('2026-10-04', $versions->get($version)->get('conclusion_date')->toDateString());
+    }
+
+    /**
+     * A version signed on another day was agreed on that day, whatever is corrected on an amendment.
+     *
+     * @link \App\Proposals\WholeProposal::recordStep()
+     * @return void
+     */
+    public function testAVersionSignedOnAnotherDayKeepsItsDay(): void
+    {
+        [$proposal, $version] = $this->appliedProposal();
+        $versions = $this->getTableLocator()->get('ContractVersions');
+        $versions->updateAll(['conclusion_date' => '2024-03-01'], ['id' => $version]);
+
+        $this->post($this->conclude($proposal), ['conclusion_date' => '2026-10-04']);
+
+        $this->assertSame('2024-03-01', $versions->get($version)->get('conclusion_date')->toDateString());
+    }
+
+    /**
+     * Before the changes are applied there is nothing to correct on the version yet.
+     *
+     * @link \App\Proposals\WholeProposal::recordStep()
+     * @return void
+     */
+    public function testAFirstSignatureTouchesNoVersion(): void
+    {
+        $proposal = $this->drawOneUpWithPapers();
+        $versions = $this->getTableLocator()->get('ContractVersions');
+        $before = $versions->find()->all()->extract('conclusion_date')->toList();
+
+        $this->post($this->conclude($proposal), ['conclusion_date' => '2026-10-05']);
+        $this->post($this->conclude($proposal), ['conclusion_date' => '2026-10-04']);
+
+        $this->assertEquals($before, $versions->find()->all()->extract('conclusion_date')->toList());
+    }
+
+    /**
+     * Sending is what locks a proposal: what stood behind a paper that has left the building is not
+     * rewritten afterwards.
+     *
+     * @link \App\Controller\CustomerProposalsController::send()
+     * @return void
+     */
+    public function testSendingLocksTheProposal(): void
+    {
+        $proposal = $this->drawOneUp();
+        $proposals = $this->getTableLocator()->get('CustomerProposals');
+
+        $this->assertTrue($proposals->mayBeEdited($proposal));
+
+        $this->post('/customer-proposals/send/' . $proposal->id, [
+            'sent_date' => '2026-10-01',
+            'delivery_type' => DocumentsDeliveryType::Post->value,
+        ]);
+        $this->assertRedirect();
+
+        $sent = $proposals->get($proposal->id);
+        $this->assertTrue($sent->hasBeenSent());
+        $this->assertFalse($proposals->mayBeEdited($sent));
+        $this->assertFalse($proposals->mayBeDeleted($sent));
+        $this->assertSame(__('Sent'), $sent->getState());
+    }
+
+    /**
+     * Every step taken on a proposal leaves the reader on the proposal. The card it hangs on is
+     * where the nesting would otherwise send them, and then what was just recorded is off screen.
+     *
+     * @link \App\Controller\CustomerProposalsController::send()
+     * @link \App\Controller\CustomerProposalsController::conclude()
+     * @link \App\Controller\CustomerProposalsController::applyChanges()
+     * @link \App\Controller\CustomerProposalsController::revoke()
+     * @return void
+     */
+    public function testEveryStepLeavesTheReaderOnTheProposal(): void
+    {
+        $proposal = $this->drawOneUpWithPapers();
+        $at = '/customers/' . self::CUSTOMER_ID . '/customer-proposals/';
+        $its = '/customer-proposals/view/' . $proposal->id;
+
+        $this->post($at . 'send/' . $proposal->id, [
+            'sent_date' => '2026-10-01',
+            'delivery_type' => DocumentsDeliveryType::Post->value,
+        ]);
+        $this->assertRedirectContains($its);
+
+        $this->post($at . 'conclude/' . $proposal->id, ['conclusion_date' => '2026-10-05']);
+        $this->assertRedirectContains($its);
+
+        $this->post($at . 'apply-changes/' . $proposal->id);
+        $this->assertRedirectContains($its);
+
+        $this->post($at . 'revoke/' . $proposal->id);
+        $this->assertRedirectContains($its);
+    }
+
+    /**
+     * Papers printed ahead and written down as sent can still change before they are handed over.
+     * The page lists what would go, and taking the sending back unlocks the proposal.
+     *
+     * @link \App\Controller\CustomerProposalsController::takeBackSending()
+     * @return void
+     */
+    public function testASendingInPersonIsTakenBack(): void
+    {
+        Configure::write('Files.root', TMP . 'take-back-' . uniqid());
+        $proposal = $this->drawOneUpWithPapers();
+        $part = $this->papersOf((string)$proposal->id)[0];
+        $drawn = $this->filed(
+            ContractDocuments::MODEL,
+            (string)$part->id,
+            ContractDocumentType::ContractAmendment->value,
+            DocumentVariant::Generated,
+        );
+        $received = $this->filed(
+            ContractDocuments::MODEL,
+            (string)$part->id,
+            ContractDocumentType::Other->value,
+            DocumentVariant::Received,
+        );
+        $this->sendAs($proposal, DocumentsDeliveryType::InPerson);
+
+        $this->get($this->takeBack($proposal));
+        $this->assertResponseOk();
+        $this->assertResponseContains(h(ContractDocumentType::ContractAmendment->label()));
+        $this->assertResponseContains('name="discard[' . $part->id . ']"');
+
+        $this->post($this->takeBack($proposal), ['discard' => [$part->id => '1']]);
+        $this->assertRedirectContains('/customer-proposals/view/' . $proposal->id);
+
+        $proposals = $this->getTableLocator()->get('CustomerProposals');
+        $back = $proposals->get($proposal->id);
+        $this->assertNull($back->sent_date);
+        $this->assertNull($back->delivery_type);
+        $this->assertTrue($proposals->mayBeEdited($back));
+
+        $links = $this->getTableLocator()->get('Files.FileLinks');
+        $this->assertFalse($links->exists(['id' => $drawn->id]));
+        $this->assertTrue($links->exists(['id' => $received->id]), 'What came back is not ours to discard.');
+
+        Configure::delete('Files.root');
+    }
+
+    /**
+     * Each record says for itself whether its documents go, so one left unticked keeps them.
+     *
+     * @link \App\Controller\CustomerProposalsController::takeBackSending()
+     * @return void
+     */
+    public function testAnUntickedRecordKeepsItsDocuments(): void
+    {
+        Configure::write('Files.root', TMP . 'take-back-' . uniqid());
+        $proposal = $this->drawOneUpWithPapers();
+        $part = $this->papersOf((string)$proposal->id)[0];
+        $kept = $this->filed(
+            ContractDocuments::MODEL,
+            (string)$part->id,
+            ContractDocumentType::ContractAmendment->value,
+            DocumentVariant::Generated,
+        );
+        $discarded = $this->filed(
+            CustomerDocuments::MODEL,
+            (string)$proposal->id,
+            CustomerDocumentType::GdprNew->value,
+            DocumentVariant::Generated,
+        );
+        $this->sendAs($proposal, DocumentsDeliveryType::InPerson);
+
+        $this->post($this->takeBack($proposal), [
+            'discard' => [$part->id => '0', $proposal->id => '1'],
+        ]);
+        $this->assertRedirect();
+
+        $links = $this->getTableLocator()->get('Files.FileLinks');
+        $this->assertTrue($links->exists(['id' => $kept->id]));
+        $this->assertFalse($links->exists(['id' => $discarded->id]));
+
+        Configure::delete('Files.root');
+    }
+
+    /**
+     * Papers sent any other way may already be with the customer. The page says so, offers nothing
+     * to submit, and a submission is refused anyway.
+     *
+     * @link \App\Controller\CustomerProposalsController::takeBackSending()
+     * @return void
+     */
+    public function testASendingByPostStands(): void
+    {
+        $proposal = $this->drawOneUpWithPapers();
+        $this->sendAs($proposal, DocumentsDeliveryType::Post);
+
+        $this->get($this->takeBack($proposal));
+        $this->assertResponseOk();
+        $this->assertResponseContains(__('Only papers handed over in person can be taken back'));
+        $this->assertResponseNotContains('type="submit"');
+
+        $this->post($this->takeBack($proposal));
+        $this->assertRedirect();
+        $this->assertNotNull(
+            $this->getTableLocator()->get('CustomerProposals')->get($proposal->id)->sent_date,
+        );
+    }
+
+    /**
+     * A signed copy on file means the customer has had the papers, however they were written down
+     * as sent.
+     *
+     * @link \App\Controller\CustomerProposalsController::takeBackSending()
+     * @return void
+     */
+    public function testASignedCopyKeepsTheSending(): void
+    {
+        Configure::write('Files.root', TMP . 'take-back-' . uniqid());
+        $proposal = $this->drawOneUpWithPapers();
+        $part = $this->papersOf((string)$proposal->id)[0];
+        $drawn = $this->filed(
+            ContractDocuments::MODEL,
+            (string)$part->id,
+            ContractDocumentType::ContractAmendment->value,
+            DocumentVariant::Generated,
+        );
+        $this->filed(
+            ContractDocuments::MODEL,
+            (string)$part->id,
+            ContractDocumentType::ContractAmendment->value,
+            DocumentVariant::ReceivedSignedByCustomer,
+        );
+        $this->sendAs($proposal, DocumentsDeliveryType::InPerson);
+
+        $this->get($this->takeBack($proposal));
+        $this->assertResponseOk();
+        $this->assertResponseContains(__('The customer has already signed a document from this proposal, so'));
+        $this->assertResponseNotContains('type="submit"');
+
+        $this->post($this->takeBack($proposal), ['discard' => [$part->id => '1']]);
+        $this->assertRedirect();
+        $this->assertNotNull(
+            $this->getTableLocator()->get('CustomerProposals')->get($proposal->id)->sent_date,
+        );
+        $this->assertTrue($this->getTableLocator()->get('Files.FileLinks')->exists(['id' => $drawn->id]));
+
+        Configure::delete('Files.root');
+    }
+
+    /**
+     * The step is offered only where there is a sending to take back, whichever way it went out, so
+     * that somebody looking for it is told why not rather than left searching.
+     *
+     * @link \App\Controller\CustomerProposalsController::view()
+     * @return void
+     */
+    public function testTheStepIsOfferedOnceThePapersAreSent(): void
+    {
+        $proposal = $this->drawOneUpWithPapers();
+        $detail = '/customers/' . self::CUSTOMER_ID . '/customer-proposals/view/' . $proposal->id;
+
+        $this->get($detail);
+        $this->assertResponseNotContains('take-back-sending');
+
+        $this->get($this->takeBack($proposal));
+        $this->assertRedirectContains('/customer-proposals/view/' . $proposal->id);
+
+        $this->sendAs($proposal, DocumentsDeliveryType::Post);
+        $this->get($detail);
+        $this->assertResponseContains('take-back-sending');
+
+        $this->post($this->conclude($proposal), ['conclusion_date' => '2026-10-05']);
+        $this->get($detail);
+        $this->assertResponseNotContains('take-back-sending');
+    }
+
+    /**
+     * The day and the way belong together, so a sending that does not say how is refused.
+     *
+     * @link \App\Model\Table\CustomerProposalsTable::buildRules()
+     * @return void
+     */
+    public function testASendingHasToSayHow(): void
+    {
+        $proposal = $this->drawOneUp();
+
+        $this->post('/customer-proposals/send/' . $proposal->id, ['sent_date' => '2026-10-01']);
+
+        $this->assertResponseOk();
+        $this->assertNull(
+            $this->getTableLocator()->get('CustomerProposals')->get($proposal->id)->sent_date,
+        );
+    }
+
+    /**
+     * Signing ends the proposal. Nothing stands behind it waiting to be applied, so there is
+     * nothing left to do with it afterwards.
+     *
+     * @link \App\Controller\CustomerProposalsController::conclude()
+     * @return void
+     */
+    public function testSigningEndsTheProposal(): void
+    {
+        $proposal = $this->drawOneUp();
+
+        $this->post('/customer-proposals/conclude/' . $proposal->id, [
+            'conclusion_date' => '2026-10-05',
+        ]);
+        $this->assertRedirect();
+
+        // Read with what it holds, because after the signature the proposal says what is left to do
+        // in it - and an empty one has nothing left.
+        $signed = $this->getTableLocator()->get('CustomerProposals')
+            ->get($proposal->id, contain: ['ContractProposals']);
+        $this->assertFalse($signed->isOpen());
+        $this->assertSame(__('Signed'), $signed->getState());
+
+        // And the steps that only apply while it is open say so rather than doing anything.
+        $this->post('/customer-proposals/send/' . $proposal->id, [
+            'sent_date' => '2026-10-06',
+            'delivery_type' => DocumentsDeliveryType::Email->value,
+        ]);
+        $this->assertRedirect();
+        $this->assertNull(
+            $this->getTableLocator()->get('CustomerProposals')->get($proposal->id)->sent_date,
+        );
+    }
+
+    /**
+     * A proposal is settled by the signature, but the day it was signed is a typed-in date like any
+     * other, so it stays correctable until the proposal is given up on.
+     *
+     * @link \App\Controller\CustomerProposalsController::conclude()
+     * @return void
+     */
+    public function testTheDayOfTheSignatureStaysCorrectable(): void
+    {
+        $proposal = $this->drawOneUp();
+        $proposals = $this->getTableLocator()->get('CustomerProposals');
+
+        $this->post('/customer-proposals/conclude/' . $proposal->id, ['conclusion_date' => '2026-10-05']);
+        $this->assertRedirect();
+
+        $this->post('/customer-proposals/conclude/' . $proposal->id, ['conclusion_date' => '2026-10-06']);
+        $this->assertRedirect();
+        $this->assertSame('2026-10-06', $proposals->get($proposal->id)->conclusion_date?->toDateString());
+
+        // Giving up on a proposal is the one thing that closes the door.
+        $abandoned = $this->drawOneUp();
+        $this->post('/customer-proposals/revoke/' . $abandoned->id);
+        $this->post('/customer-proposals/conclude/' . $abandoned->id, ['conclusion_date' => '2026-10-07']);
+        $this->assertRedirect();
+        $this->assertNull($proposals->get($abandoned->id)->conclusion_date);
+    }
+
+    /**
+     * A step is the recording of a day, so without one there is nothing to record. A day emptied on
+     * a proposal that already has one would otherwise read as recorded and quietly undo the step:
+     * the sending is what locks the papers, and the signature what carries them over.
+     *
+     * @link \App\Controller\CustomerProposalsController::send()
+     * @link \App\Controller\CustomerProposalsController::conclude()
+     * @return void
+     */
+    public function testAStepWithoutADayRecordsNothing(): void
+    {
+        $proposal = $this->drawOneUp();
+        $proposals = $this->getTableLocator()->get('CustomerProposals');
+
+        $this->post('/customer-proposals/send/' . $proposal->id, [
+            'sent_date' => '2026-10-01',
+            'delivery_type' => DocumentsDeliveryType::Post->value,
+        ]);
+        $this->post('/customer-proposals/conclude/' . $proposal->id, ['conclusion_date' => '2026-10-05']);
+
+        $this->post('/customer-proposals/conclude/' . $proposal->id, ['conclusion_date' => '']);
+        $this->assertResponseOk();
+        $this->assertSame('2026-10-05', $proposals->get($proposal->id)->conclusion_date?->toDateString());
+
+        $unsigned = $this->drawOneUp();
+        $this->post('/customer-proposals/send/' . $unsigned->id, [
+            'sent_date' => '2026-10-01',
+            'delivery_type' => DocumentsDeliveryType::Post->value,
+        ]);
+
+        $this->post('/customer-proposals/send/' . $unsigned->id, [
+            'sent_date' => '',
+            'delivery_type' => DocumentsDeliveryType::Post->value,
+        ]);
+        $this->assertResponseOk();
+        $this->assertTrue($proposals->get($unsigned->id)->hasBeenSent());
+    }
+
+    /**
+     * Giving up on a proposal settles it without pretending it never happened.
+     *
+     * @link \App\Controller\CustomerProposalsController::revoke()
+     * @return void
+     */
+    public function testGivingUpSettlesIt(): void
+    {
+        $proposal = $this->drawOneUp();
+
+        $this->post('/customer-proposals/revoke/' . $proposal->id);
+        $this->assertRedirect();
+
+        $revoked = $this->getTableLocator()->get('CustomerProposals')->get($proposal->id);
+        $this->assertFalse($revoked->isOpen());
+        $this->assertSame(__('Revoked'), $revoked->getState());
+    }
+
+    /**
+     * Papers signed with a mistake are torn up and signed anew, so an administrator can mark them
+     * as no longer counting. What was applied stays applied, and the page says so.
+     *
+     * @link \App\Controller\CustomerProposalsController::revoke()
+     * @return void
+     */
+    public function testAnAdministratorRevokesWhatHasBeenSigned(): void
+    {
+        [$proposal] = $this->appliedProposal();
+        $at = '/customers/' . self::CUSTOMER_ID . '/customer-proposals/';
+
+        $this->get($at . 'view/' . $proposal->id);
+        $this->assertResponseContains('customer-proposals/revoke/' . $proposal->id);
+
+        $this->enableRetainFlashMessages();
+        $this->post($at . 'revoke/' . $proposal->id);
+        $this->assertRedirect();
+        $this->assertFlashMessageAt(1, __(
+            'The changes already applied stay on the contract. Put them right with a new proposal.',
+        ));
+        $this->assertFlashMessageAt(2, __(
+            'The consent recorded by the signature stays on the customer. If it no longer holds,'
+            . ' correct it there.',
+        ));
+
+        $revoked = $this->getTableLocator()->get('CustomerProposals')->get($proposal->id);
+        $this->assertSame(__('Revoked'), $revoked->getState());
+
+        $part = $this->papersOf((string)$proposal->id)[0];
+        $this->assertTrue($part->hasBeenApplied());
+        $this->assertFalse($part->hasBeenRevoked(), 'What was applied did not stop being applied.');
+    }
+
+    /**
+     * What was signed stays for the operators. A manager is offered what an administrator is.
+     *
+     * @link \App\Controller\CustomerProposalsController::revoke()
+     * @return void
+     */
+    public function testOnlyWhoMayOverrideRevokesWhatHasBeenSigned(): void
+    {
+        $proposal = $this->signedProposal();
+        $at = '/customers/' . self::CUSTOMER_ID . '/customer-proposals/';
+        $proposals = $this->getTableLocator()->get('CustomerProposals');
+
+        $this->login('sales-representative');
+        $this->get($at . 'view/' . $proposal->id);
+        $this->assertResponseOk();
+        $this->assertResponseNotContains('customer-proposals/revoke/' . $proposal->id);
+
+        $this->post($at . 'revoke/' . $proposal->id);
+        $this->assertRedirect();
+        $this->assertFalse($proposals->get($proposal->id)->hasBeenRevoked());
+
+        $this->login('manager');
+        $this->get($at . 'view/' . $proposal->id);
+        $this->assertResponseContains('customer-proposals/revoke/' . $proposal->id);
+
+        $this->post($at . 'revoke/' . $proposal->id);
+        $this->assertRedirect();
+        $this->assertTrue($proposals->get($proposal->id)->hasBeenRevoked());
+    }
+
+    /**
+     * A revocation can be a mistake too. Nothing was lost by it, so the proposal goes back to where
+     * it stood, with the papers that went with it.
+     *
+     * @link \App\Controller\CustomerProposalsController::restore()
+     * @return void
+     */
+    public function testARevokedProposalIsRestored(): void
+    {
+        $proposal = $this->signedProposal();
+        $at = '/customers/' . self::CUSTOMER_ID . '/customer-proposals/';
+        $proposals = $this->getTableLocator()->get('CustomerProposals');
+
+        $this->get($at . 'view/' . $proposal->id);
+        $this->assertResponseNotContains('customer-proposals/restore/' . $proposal->id);
+
+        $this->post($at . 'revoke/' . $proposal->id);
+        $this->assertTrue($this->papersOf((string)$proposal->id)[0]->hasBeenRevoked());
+
+        $this->get($at . 'view/' . $proposal->id);
+        $this->assertResponseContains('customer-proposals/restore/' . $proposal->id);
+
+        $this->post($at . 'restore/' . $proposal->id);
+        $this->assertRedirectContains('/customer-proposals/view/' . $proposal->id);
+
+        $back = $proposals->get($proposal->id);
+        $this->assertFalse($back->hasBeenRevoked());
+        $this->assertNull($back->revoked_by);
+        $this->assertSame('2026-10-05', $back->conclusion_date?->toDateString());
+
+        $part = $this->papersOf((string)$proposal->id)[0];
+        $this->assertFalse($part->hasBeenRevoked());
+        $this->assertNull($part->revoked_by);
+        $this->assertTrue($part->isStillToBeApplied());
+    }
+
+    /**
+     * Papers given up on by themselves were not revoked with the proposal, so they do not come back
+     * with it.
+     *
+     * @link \App\Model\Table\CustomerProposalsTable::restoreTheProposal()
+     * @return void
+     */
+    public function testPapersGivenUpOnEarlierStayGivenUp(): void
+    {
+        $proposal = $this->drawOneUpWithPapers();
+        $papers = $this->getTableLocator()->get('ContractProposals');
+        $of = $papers->get($this->papersOf((string)$proposal->id)[0]->id);
+
+        $of->revoked = new DateTime('2026-09-01 08:00:00');
+        $papers->saveOrFail($of, ['checkRules' => false]);
+
+        $at = '/customers/' . self::CUSTOMER_ID . '/customer-proposals/';
+        $this->post($at . 'revoke/' . $proposal->id);
+        $this->post($at . 'restore/' . $proposal->id);
+        $this->assertRedirect();
+
+        $this->assertFalse($this->getTableLocator()->get('CustomerProposals')->get($proposal->id)->hasBeenRevoked());
+        $this->assertSame('2026-09-01 08:00:00', $papers->get($of->id)->revoked?->format('Y-m-d H:i:s'));
+    }
+
+    /**
+     * Restoring is for those who may override, so a proposal an operator revoked goes to them.
+     *
+     * @link \App\Controller\CustomerProposalsController::restore()
+     * @return void
+     */
+    public function testOnlyWhoMayOverrideRestores(): void
+    {
+        $proposal = $this->drawOneUp();
+        $at = '/customers/' . self::CUSTOMER_ID . '/customer-proposals/';
+        $proposals = $this->getTableLocator()->get('CustomerProposals');
+        $this->post($at . 'revoke/' . $proposal->id);
+
+        $this->login('sales-representative');
+        $this->get($at . 'view/' . $proposal->id);
+        $this->assertResponseOk();
+        $this->assertResponseNotContains('customer-proposals/restore/' . $proposal->id);
+
+        $this->post($at . 'restore/' . $proposal->id);
+        $this->assertRedirect();
+        $this->assertTrue($proposals->get($proposal->id)->hasBeenRevoked());
+
+        $this->login('manager');
+        $this->post($at . 'restore/' . $proposal->id);
+        $this->assertRedirect();
+        $this->assertFalse($proposals->get($proposal->id)->hasBeenRevoked());
+    }
+
+    /**
+     * The proposal that replaced a revoked one is not touched, but two of them waiting on the same
+     * contract is something the operator has to know about.
+     *
+     * @link \App\Controller\CustomerProposalsController::restore()
+     * @return void
+     */
+    public function testRestoringSaysWhatElseWaitsOnTheContract(): void
+    {
+        $revoked = $this->drawOneUpWithPapers();
+        $at = '/customers/' . self::CUSTOMER_ID . '/customer-proposals/';
+        $this->post($at . 'revoke/' . $revoked->id);
+
+        $this->drawOneUpWithPapers();
+
+        $this->enableRetainFlashMessages();
+        $this->post($at . 'restore/' . $revoked->id);
+        $this->assertRedirect();
+
+        $number = (string)$this->getTableLocator()->get('Contracts')->get(self::CONTRACT_ID)->number;
+        $this->assertFlashMessageAt(1, __(
+            'Contract {0} has another proposal waiting. Check which of them is to count.',
+            $number,
+        ));
+    }
+
+    /**
+     * The point of revoking what was signed is telling which papers count, so the papers of a
+     * contract go with the proposal even where its changes were applied.
+     *
+     * @link \App\View\Cell\DocumentsCell
+     * @return void
+     */
+    public function testThePapersOfARevokedProposalStopCounting(): void
+    {
+        Configure::write('Files.root', TMP . 'revoked-papers-' . uniqid());
+        [$proposal] = $this->appliedProposal();
+        $part = $this->papersOf((string)$proposal->id)[0];
+        $this->filed(
+            ContractDocuments::MODEL,
+            (string)$part->id,
+            ContractDocumentType::ContractAmendment->value,
+            DocumentVariant::ReceivedSignedByCustomer,
+        );
+        $at = '/customers/' . self::CUSTOMER_ID . '/documents/manage';
+
+        // The table of the proposals above greys what is dealt with on its own account.
+        $tableOfPapers = fn(): string => (string)strstr($this->_getBodyAsString(), 'files-documents');
+
+        $this->get($at);
+        $this->assertResponseOk();
+        $this->assertResponseContains('paper.pdf');
+        $this->assertStringNotContainsString('color: darkgray;', $tableOfPapers());
+
+        $this->post('/customers/' . self::CUSTOMER_ID . '/customer-proposals/revoke/' . $proposal->id);
+        $this->assertRedirect();
+
+        $this->get($at);
+        $this->assertResponseOk();
+        $this->assertResponseNotContains('paper.pdf');
+
+        $this->get($at . '?show_revoked=1');
+        $this->assertResponseOk();
+        $this->assertResponseContains('paper.pdf');
+        $this->assertResponseContains('(' . __('Revoked') . ')');
+        $this->assertStringContainsString('color: darkgray;', $tableOfPapers());
+
+        Configure::delete('Files.root');
+    }
+
+    /**
+     * A proposal that went out is history and stays. One that never went anywhere is somebody's
+     * mistake and may go.
+     *
+     * @link \App\Controller\CustomerProposalsController::delete()
+     * @return void
+     */
+    public function testOnlyAProposalThatWentNowhereIsRemoved(): void
+    {
+        $proposals = $this->getTableLocator()->get('CustomerProposals');
+
+        $stays = $this->drawOneUp();
+        $proposals->saveOrFail(
+            $proposals->patchEntity($stays, [
+                'sent_date' => '2026-10-01',
+                'delivery_type' => DocumentsDeliveryType::Post->value,
+            ]),
+        );
+
+        $this->post('/customer-proposals/delete/' . $stays->id);
+        $this->assertRedirectContains('/customer-proposals/view/' . $stays->id);
+        $this->assertNotNull($proposals->find()->where(['id' => $stays->id])->first());
+
+        $goes = $this->drawOneUp();
+        $this->post('/customer-proposals/delete/' . $goes->id);
+        $this->assertRedirectContains('/customers/' . self::CUSTOMER_ID . '/documents/manage');
+        $this->assertNull($proposals->find()->where(['id' => $goes->id])->first());
+    }
+
+    /**
+     * Draws a proposal up the way the page does, and hands back what was saved.
+     *
+     * @return \App\Model\Entity\CustomerProposal
+     */
+
+    /**
+     * A proposal may be for nothing of the customer's own and hold only the papers of their
+     * contracts - a new contract needs an envelope whether or not anything is asked beside it.
+     *
+     * @link \App\Controller\CustomerProposalsController::add()
+     * @return void
+     */
+    public function testAProposalNeedNotBeForAnythingOfTheCustomersOwn(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $before = $this->idsIn('CustomerProposals');
+
+        $this->post('/customers/' . self::CUSTOMER_ID . '/customer-proposals/add', [
+            'customer_id' => self::CUSTOMER_ID,
+            'purpose' => '',
+            'effective_from' => '2026-09-30',
+        ]);
+        $this->assertRedirect();
+
+        /** @var \App\Model\Entity\CustomerProposal $proposal */
+        $proposal = $this->addedRecord('CustomerProposals', $before);
+
+        $this->assertNull($proposal->purpose);
+    }
+
+    /**
+     * Papers of a contract are drawn up on the form that draws papers up, and opened from inside a
+     * proposal they start out in it and speak about the day it does - which is what makes the two
+     * sets of papers one envelope.
+     *
+     * @link \App\Controller\ContractProposalsController::add()
+     * @return void
+     */
+    public function testPapersDrawnUpFromInsideAProposalGoOutInIt(): void
+    {
+        $proposal = $this->drawOneUp();
+
+        $this->get('/customers/' . self::CUSTOMER_ID . '/contract-proposals/add'
+            . '?proposal_id=' . $proposal->id);
+        $this->assertResponseOk();
+
+        $drawn = $this->viewVariable('contractProposal');
+        $this->assertSame($proposal->id, $drawn->customer_proposal_id);
+        $this->assertSame(
+            $proposal->effective_from->toDateString(),
+            $drawn->effective_from->toDateString(),
+        );
+    }
+
+    /**
+     * The listing lists proposals. What one does for a contract is a part of it, so it is named on
+     * the proposal's own row rather than listed beside it as a second kind of thing.
+     *
+     * @link \App\Controller\DocumentsController::manage()
+     * @return void
+     */
+    public function testOnlyTheProposalIsListedAndItsContractsAreNamedOnItsRow(): void
+    {
+        $proposal = $this->drawOneUpWithPapers();
+        $papers = $this->papersOf((string)$proposal->id)[0];
+        $papers = $this->getTableLocator()->get('ContractProposals')
+            ->get($papers->id, contain: ['Contracts']);
+
+        $this->get('/customers/' . self::CUSTOMER_ID . '/documents/manage');
+        $this->assertResponseOk();
+
+        // Asked of the listing itself: the papers of a contract are all over the page, because
+        // that is what the documents hang on - they are just not one of the things listed.
+        $listed = array_column((array)$this->viewVariable('proposals'), 'id');
+        $this->assertContains((string)$proposal->id, $listed);
+        $this->assertNotContains(
+            (string)$papers->id,
+            $listed,
+            'The papers of a contract stand beside the proposal they are a part of.',
+        );
+
+        // The row says which contract its papers are about, from when and what they ask of it.
+        $this->assertResponseContains(h(__(
+            '{0} ({1} - {2})',
+            $papers->contract->number,
+            (string)$papers->effective_from,
+            $papers->purpose->label(),
+        )));
+    }
+
+    /**
+     * The proposal's own page says what it does for each contract, and offers the same way to
+     * change it - so a billing line is edited where the rest of the proposal is read.
+     *
+     * @link \App\Controller\CustomerProposalsController::view()
+     * @return void
+     */
+    public function testTheProposalSaysWhatItDoesForEachContract(): void
+    {
+        $proposal = $this->drawOneUpWithPapers();
+        $papers = $this->papersOf((string)$proposal->id)[0];
+
+        $this->get('/customers/' . self::CUSTOMER_ID . '/customer-proposals/view/' . $proposal->id);
+        $this->assertResponseOk();
+
+        $this->assertResponseContains(__('Billing after the change'));
+        $this->assertResponseContains('billing-line/' . $papers->id);
+    }
+
+    /**
+     * A proposal holding the papers of a contract is not removed either. They keep their sending and
+     * their signature in it, so letting it go would leave them saying nothing about either.
+     *
+     * @link \App\Controller\CustomerProposalsController::delete()
+     * @return void
+     */
+    public function testAProposalWithPapersInItIsNotRemoved(): void
+    {
+        $proposals = $this->getTableLocator()->get('CustomerProposals');
+        $proposal = $this->drawOneUpWithPapers();
+
+        $this->post('/customer-proposals/delete/' . $proposal->id);
+
+        $this->assertNotNull($proposals->find()->where(['id' => $proposal->id])->first());
+    }
+
+    /**
+     * A proposal about two contracts is one proposal, and is listed once - which is what a join
+     * to what is inside it would quietly get wrong.
+     *
+     * @link \App\Controller\DocumentsController::manage()
+     * @return void
+     */
+    public function testAProposalAboutTwoContractsIsListedOnce(): void
+    {
+        $proposal = $this->drawOneUpWithPapers();
+
+        // Papers for a second contract of the same customer, in the same proposal.
+        $papers = $this->getTableLocator()->get('ContractProposals');
+        $first = $this->papersOf((string)$proposal->id)[0]->toArray();
+        // The envelope came along to be read; copied on, it would be marshalled as a record of
+        // its own. What the copy needs is which envelope, which it already has.
+        unset($first['id'], $first['customer_proposal']);
+        $first['contract_id'] = self::OTHER_CONTRACT_ID;
+        $papers->saveOrFail($papers->newEntity($first), ['checkRules' => false]);
+
+        $this->assertCount(2, $this->papersOf((string)$proposal->id));
+
+        foreach (['', '/contracts/' . self::CONTRACT_ID] as $nesting) {
+            $this->get('/customers/' . self::CUSTOMER_ID . $nesting . '/documents/manage');
+            $this->assertResponseOk();
+
+            $listed = array_column((array)$this->viewVariable('proposals'), 'id');
+            $this->assertSame(
+                array_unique($listed),
+                $listed,
+                'The proposal is listed once for each contract it is about.',
+            );
+        }
+    }
+
+    /**
+     * Papers drawn up from a contract get a proposal of their own, and the form says what that one
+     * asks of the customer themselves - nothing, unless somebody says so.
+     *
+     * @link \App\Controller\ContractProposalsController::add()
+     * @return void
+     */
+    public function testPapersDrawnUpOnTheirOwnSayWhatTheirProposalIsFor(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $drawnUp = function (array $said): CustomerProposal {
+            $before = $this->idsIn('CustomerProposals');
+
+            $this->post('/customers/' . self::CUSTOMER_ID . '/contract-proposals/add', $said + [
+                'purpose' => ProposalPurpose::NewContract->value,
+                'contract_id' => self::CONTRACT_ID,
+                'contract_version_id' => '',
+                'effective_from' => '2026-09-30',
+                'confirmations' => [
+                    'fixed_term' => 1,
+                    'own_equipment' => 1,
+                    'does_not_use_ip_addresses' => 1,
+                    'does_not_use_radius' => 1,
+                ],
+            ]);
+            $this->assertRedirectContains('/contract-proposals/view/');
+
+            /** @var \App\Model\Entity\CustomerProposal $proposal */
+            $proposal = $this->addedRecord('CustomerProposals', $before);
+
+            return $proposal;
+        };
+
+        $this->assertNull($drawnUp([])->purpose);
+        $this->assertSame(
+            CustomerProposalPurpose::GdprConsent,
+            $drawnUp(['new_proposal_purpose' => CustomerProposalPurpose::GdprConsent->value])->purpose,
+        );
+    }
+
+    /**
+     * A proposal opened while standing on a contract holds nothing yet, and that is exactly the
+     * one somebody is about to put the contract into - so the contract's workbench lists it.
+     *
+     * Hiding it made a dead end: the proposal existed and there was nowhere to reach it from.
+     *
+     * @link \App\Controller\DocumentsController::manage()
+     * @return void
+     */
+    public function testAProposalWithNothingInItIsStillListedOnAContract(): void
+    {
+        $proposal = $this->drawOneUp();
+        $this->assertSame([], $this->papersOf((string)$proposal->id));
+
+        $this->get('/customers/' . self::CUSTOMER_ID . '/contracts/' . self::CONTRACT_ID
+            . '/documents/manage');
+        $this->assertResponseOk();
+
+        $this->assertContains(
+            (string)$proposal->id,
+            array_column((array)$this->viewVariable('proposals'), 'id'),
+            'A proposal with nothing in it cannot be reached from the contract it was opened on.',
+        );
+
+        // A version is narrower than that: a proposal that says nothing about any contract says
+        // nothing about one of its versions either, and the page would only be the longer for it.
+        $this->get('/customers/' . self::CUSTOMER_ID . '/contracts/' . self::CONTRACT_ID
+            . '/contract-versions/' . self::CONTRACT_VERSION_ID . '/documents/manage');
+        $this->assertResponseOk();
+
+        $this->assertNotContains(
+            (string)$proposal->id,
+            array_column((array)$this->viewVariable('proposals'), 'id'),
+        );
+
+        // And once it is settled it is waiting for nothing, so the contract stops offering it.
+        $proposals = $this->getTableLocator()->get('CustomerProposals');
+        $proposals->saveOrFail(
+            $proposals->patchEntity($proposals->get($proposal->id), ['conclusion_date' => '2026-10-05']),
+            ['checkRules' => false, 'validate' => false],
+        );
+
+        $this->get('/customers/' . self::CUSTOMER_ID . '/contracts/' . self::CONTRACT_ID
+            . '/documents/manage');
+        $this->assertResponseOk();
+
+        $this->assertNotContains(
+            (string)$proposal->id,
+            array_column((array)$this->viewVariable('proposals'), 'id'),
+        );
+    }
+
+    /**
+     * Papers of a contract are a part of a proposal, so the way out of them runs through it - the
+     * proposal is a step of the path even when what is open is one of its parts.
+     *
+     * @link \App\Controller\DocumentsController::manage()
+     * @return void
+     */
+    public function testThePathThroughAContractsPapersRunsThroughTheProposal(): void
+    {
+        $proposal = $this->drawOneUpWithPapers();
+        $papers = $this->papersOf((string)$proposal->id)[0];
+
+        $asked = '?agenda=ContractProposals&proposal_id=' . $papers->id;
+
+        // The papers say which contract they are about, so the address is filled in before the
+        // page is drawn - what was asked for is there, only at the address that says where it is.
+        $this->get('/customers/' . self::CUSTOMER_ID . '/documents/manage' . $asked);
+        $this->assertRedirectContains(
+            '/customers/' . self::CUSTOMER_ID . '/contracts/' . self::CONTRACT_ID . '/documents/manage',
+        );
+        $this->assertRedirectContains('proposal_id=' . $papers->id);
+
+        $this->get('/customers/' . self::CUSTOMER_ID . '/contracts/' . self::CONTRACT_ID
+            . '/documents/manage' . $asked);
+        $this->assertResponseOk();
+
+        // The proposal stands in the path, and stands there as the way back up to it.
+        $this->assertResponseContains('proposal_id=' . $proposal->id);
+        $this->assertResponseContains(h($proposal->whatItIsFor()));
+    }
+
+    /**
+     * The envelope goes out in one piece, so what it holds is among its papers - and the one
+     * switch above the table is what takes the parts back out of view.
+     *
+     * @link \App\Controller\DocumentsController::manage()
+     * @return void
+     */
+    public function testThePapersOfTheContractsAreInViewWithTheProposalsOwn(): void
+    {
+        $proposal = $this->drawOneUpWithPapers();
+        $papers = $this->papersOf((string)$proposal->id)[0];
+
+        $at = '/customers/' . self::CUSTOMER_ID . '/documents/manage'
+            . '?agenda=CustomerProposals&proposal_id=' . $proposal->id;
+        // Asked of the table of papers itself: a way to draw one is a row of it and nowhere else.
+        $drawn = 'generate.pdf?proposal_id=' . $papers->id;
+
+        $this->get($at);
+        $this->assertResponseOk();
+        $this->assertResponseContains($drawn, 'The papers of the contract are asked for nowhere.');
+
+        $this->get($at . '&with_contracts=0');
+        $this->assertResponseOk();
+        $this->assertResponseNotContains($drawn);
+    }
+
+    /**
+     * The envelope went out in one piece, so the day it went out is written on everything in it.
+     *
+     * @link \App\Controller\CustomerProposalsController::send()
+     * @return void
+     */
+    public function testSendingTheProposalSendsEverythingInIt(): void
+    {
+        $proposal = $this->drawOneUpWithPapers();
+
+        $this->post('/customers/' . self::CUSTOMER_ID . '/customer-proposals/send/' . $proposal->id, [
+            'sent_date' => '2026-10-01',
+            'delivery_type' => DocumentsDeliveryType::Email->value,
+        ]);
+        $this->assertRedirect();
+
+        foreach ($this->papersOf((string)$proposal->id) as $papers) {
+            $this->assertSame('2026-10-01', $papers->sent_date?->toDateString());
+            $this->assertSame(DocumentsDeliveryType::Email, $papers->delivery_type);
+        }
+    }
+
+    /**
+     * And it came back in one piece, so the signature reaches all of it - and a signed consent is
+     * what the customer's own record has been waiting for.
+     *
+     * @link \App\Controller\CustomerProposalsController::conclude()
+     * @return void
+     */
+    public function testSigningTheProposalSignsEverythingInItAndRecordsTheConsent(): void
+    {
+        $proposal = $this->drawOneUpWithPapers();
+
+        $customers = $this->getTableLocator()->get('Customers');
+        $customers->saveOrFail(
+            $customers->patchEntity($customers->get(self::CUSTOMER_ID), ['agree_gdpr' => false]),
+        );
+
+        $this->post('/customers/' . self::CUSTOMER_ID . '/customer-proposals/conclude/' . $proposal->id, [
+            'conclusion_date' => '2026-10-05',
+        ]);
+        $this->assertRedirect();
+
+        foreach ($this->papersOf((string)$proposal->id) as $papers) {
+            $this->assertSame('2026-10-05', $papers->conclusion_date?->toDateString());
+        }
+
+        $this->assertTrue(
+            $customers->get(self::CUSTOMER_ID)->agree_gdpr,
+            'A signed consent left the customer reading as having refused.',
+        );
+    }
+
+    /**
+     * Giving up on the proposal gives up on the papers it holds: they went out in it and there is
+     * nothing left for them to travel in, so they stop waiting for anybody.
+     *
+     * @link \App\Model\Table\CustomerProposalsTable::giveUpOnTheProposal()
+     * @return void
+     */
+    public function testGivingUpOnTheProposalGivesUpOnThePapersInIt(): void
+    {
+        $proposal = $this->drawOneUpWithPapers();
+
+        $this->post('/customers/' . self::CUSTOMER_ID . '/customer-proposals/revoke/' . $proposal->id);
+        $this->assertRedirect();
+
+        $papers = $this->papersOf((string)$proposal->id);
+        $this->assertNotSame([], $papers);
+
+        foreach ($papers as $of) {
+            $this->assertTrue($of->hasBeenRevoked(), 'The papers were left waiting in an envelope nobody sent.');
+            $this->assertFalse($of->isOpen());
+        }
+    }
+
+    /**
+     * Applying the changes is offered while something is left to apply, and a proposal given up on has
+     * nothing - so neither the page nor the action lead anywhere from it.
+     *
+     * @link \App\Model\Entity\CustomerProposal::hasChangesToApply()
+     * @link \App\Controller\CustomerProposalsController::applyChanges()
+     * @return void
+     */
+    public function testARevokedProposalOffersNothingToApply(): void
+    {
+        $proposal = $this->drawOneUpWithPapers();
+        $at = '/customers/' . self::CUSTOMER_ID . '/customer-proposals/';
+        $applyChanges = 'customer-proposals/apply-changes/' . $proposal->id;
+
+        $this->get($at . 'view/' . $proposal->id);
+        $this->assertResponseContains($applyChanges);
+
+        $this->post($at . 'revoke/' . $proposal->id);
+
+        $this->get($at . 'view/' . $proposal->id);
+        $this->assertResponseOk();
+        $this->assertResponseNotContains($applyChanges);
+
+        $this->get($at . 'apply-changes/' . $proposal->id);
+        $this->assertRedirectContains('/customer-proposals/view/' . $proposal->id);
+    }
+
+    /**
+     * Applying the package passes by the papers given up on inside it: they stay given up
+     * on, and the rest of the package is applied all the same.
+     *
+     * @link \App\Controller\CustomerProposalsController::applyChanges()
+     * @return void
+     */
+    public function testApplyingTheChangesPassesByThePapersGivenUpOn(): void
+    {
+        $proposal = $this->drawOneUpWithPapers();
+        $given_up = $this->papersOf((string)$proposal->id)[0];
+
+        $this->post('/customers/' . self::CUSTOMER_ID . '/contract-proposals/add', [
+            'purpose' => ProposalPurpose::NewContract->value,
+            'contract_id' => self::OTHER_CONTRACT_ID,
+            'customer_proposal_id' => $proposal->id,
+            'contract_version_id' => '',
+            'effective_from' => $proposal->effective_from->toDateString(),
+            'confirmations' => [
+                'fixed_term' => 1,
+                'own_equipment' => 1,
+                'does_not_use_ip_addresses' => 1,
+                'does_not_use_radius' => 1,
+            ],
+        ]);
+        $this->assertRedirectContains('/contract-proposals/view/');
+
+        $this->post('/contract-proposals/revoke/' . $given_up->id);
+
+        $at = '/customers/' . self::CUSTOMER_ID . '/customer-proposals/';
+        $this->post($at . 'send/' . $proposal->id, [
+            'sent_date' => '2026-10-01',
+            'delivery_type' => DocumentsDeliveryType::Post->value,
+        ]);
+        $this->post($at . 'conclude/' . $proposal->id, ['conclusion_date' => '2026-10-05']);
+
+        $this->get($at . 'apply-changes/' . $proposal->id);
+        $this->assertResponseOk();
+        $offered = array_map(
+            fn(array $part): string => (string)$part['papers']->id,
+            (array)$this->viewVariable('parts'),
+        );
+        $this->assertNotContains((string)$given_up->id, $offered, 'The preview offered papers given up on.');
+        $this->assertCount(1, $offered);
+
+        $this->post($at . 'apply-changes/' . $proposal->id);
+        $this->assertRedirectContains('/customer-proposals/view/' . $proposal->id);
+
+        foreach ($this->papersOf((string)$proposal->id) as $papers) {
+            if ($papers->id === $given_up->id) {
+                $this->assertTrue($papers->hasBeenRevoked());
+                $this->assertFalse($papers->hasBeenApplied(), 'Papers given up on were carried over.');
+            } else {
+                $this->assertTrue($papers->hasBeenApplied(), 'The rest of the package was not carried over.');
+            }
+        }
+    }
+
+    /**
+     * A manager applying the changes is offered the boxes an administrator is, and the other roles
+     * are not.
+     *
+     * @link \App\Controller\CustomerProposalsController::applyChanges()
+     * @return void
+     */
+    public function testAManagerIsOfferedTheBoxesOnApplyingTheChanges(): void
+    {
+        $proposal = $this->drawOneUpWithPapers();
+        $at = '/customers/' . self::CUSTOMER_ID . '/customer-proposals/';
+        $this->post($at . 'send/' . $proposal->id, [
+            'sent_date' => '2026-10-01',
+            'delivery_type' => DocumentsDeliveryType::Post->value,
+        ]);
+        $this->post($at . 'conclude/' . $proposal->id, ['conclusion_date' => '2026-10-05']);
+
+        $this->login('manager');
+        $this->get($at . 'apply-changes/' . $proposal->id);
+        $this->assertResponseOk();
+        $this->assertTrue($this->viewVariable('closed_period_override'));
+        $this->assertTrue($this->viewVariable('below_minimum_override'));
+        $this->assertFalse($this->viewVariable('catching_up_override'), 'There is no exchange to catch up on.');
+
+        $this->login('bookkeeper');
+        $this->get($at . 'apply-changes/' . $proposal->id);
+        $this->assertResponseOk();
+        $this->assertFalse($this->viewVariable('closed_period_override'));
+        $this->assertFalse($this->viewVariable('below_minimum_override'));
+    }
+
+    /**
+     * Equipment the papers lend is recorded on the day it changed hands, which the operator says
+     * when applying them - never a day still to come.
+     *
+     * @link \App\Controller\CustomerProposalsController::applyChanges()
+     * @return void
+     */
+    public function testEquipmentIsRecordedOnTheDayItChangedHands(): void
+    {
+        $proposal = $this->drawOneUpWithPapers();
+        $papers = $this->papersOf((string)$proposal->id)[0];
+
+        $this->post('/contract-proposals/equipment-line/' . $papers->id, [
+            'equipment_type_id' => '582ff5cb-62c6-42bd-a1bb-7f3d167124a4',
+            'serial_number' => 'SN-NEW-1',
+        ]);
+        $this->assertRedirect();
+
+        $at = '/customers/' . self::CUSTOMER_ID . '/customer-proposals/';
+        $this->post($at . 'send/' . $proposal->id, [
+            'sent_date' => '2026-10-01',
+            'delivery_type' => DocumentsDeliveryType::Post->value,
+        ]);
+        $this->post($at . 'conclude/' . $proposal->id, ['conclusion_date' => '2026-10-05']);
+
+        $this->get($at . 'apply-changes/' . $proposal->id);
+        $this->assertResponseOk();
+        $this->assertResponseContains('name="handed_over_on[' . $papers->id . ']"');
+        $this->assertSame('2026-09-30', $this->viewVariable('parts')[0]['handedOverOn']->toDateString());
+
+        $this->post($at . 'apply-changes/' . $proposal->id, [
+            'handed_over_on' => [$papers->id => Date::today()->addDays(1)->toDateString()],
+        ]);
+        $this->assertResponseOk();
+        $this->assertSame([], $this->lentAs('SN-NEW-1'), 'Equipment was recorded on a day still to come.');
+
+        $this->post($at . 'apply-changes/' . $proposal->id, [
+            'handed_over_on' => [$papers->id => '2026-10-03'],
+        ]);
+        $this->assertRedirectContains('/customer-proposals/view/' . $proposal->id);
+
+        $recorded = $this->lentAs('SN-NEW-1');
+        $this->assertCount(1, $recorded);
+        $this->assertSame('2026-10-03', $recorded[0]->borrowed_from?->toDateString());
+    }
+
+    /**
+     * The equipment on file under a serial number, as it stands now.
+     *
+     * @param string $serial_number The serial number.
+     * @return list<\App\Model\Entity\BorrowedEquipment>
+     * @phpstan-impure
+     */
+    private function lentAs(string $serial_number): array
+    {
+        /** @var list<\App\Model\Entity\BorrowedEquipment> $lent */
+        $lent = $this->getTableLocator()->get('BorrowedEquipments')
+            ->find()
+            ->where(['serial_number' => $serial_number])
+            ->all()
+            ->toList();
+
+        return $lent;
+    }
+
+    /**
+     * Papers given up on by themselves keep the day and the name that are against them, because
+     * that is when somebody gave up on those papers.
+     *
+     * @link \App\Model\Table\CustomerProposalsTable::giveUpOnTheProposal()
+     * @return void
+     */
+    public function testPapersGivenUpOnEarlierKeepTheirOwnDay(): void
+    {
+        $proposal = $this->drawOneUpWithPapers();
+        $papers = $this->getTableLocator()->get('ContractProposals');
+        $of = $papers->get($this->papersOf((string)$proposal->id)[0]->id);
+
+        $of->revoked = new DateTime('2026-09-01 08:00:00');
+        $papers->saveOrFail($of, ['checkRules' => false]);
+
+        $this->post('/customers/' . self::CUSTOMER_ID . '/customer-proposals/revoke/' . $proposal->id);
+        $this->assertRedirect();
+
+        $this->assertSame(
+            '2026-09-01 08:00:00',
+            $papers->get($of->id)->revoked?->format('Y-m-d H:i:s'),
+        );
+    }
+
+    /**
+     * The papers that went out in one envelope.
+     *
+     * @param string $proposal_id Which envelope.
+     * @return array<\App\Model\Entity\ContractProposal>
+     */
+    private function papersOf(string $proposal_id): array
+    {
+        /** @var array<\App\Model\Entity\ContractProposal> $papers */
+        $papers = $this->getTableLocator()->get('ContractProposals')
+            ->find()
+            // What went out and when is the envelope's, so the papers are read with it.
+            ->contain(['CustomerProposals'])
+            ->where(['ContractProposals.customer_proposal_id' => $proposal_id])
+            ->toArray();
+
+        return $papers;
+    }
+
+    private function drawOneUp(): CustomerProposal
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $before = $this->idsIn('CustomerProposals');
+
+        $this->post('/customers/' . self::CUSTOMER_ID . '/customer-proposals/add', [
+            'customer_id' => self::CUSTOMER_ID,
+            'purpose' => CustomerProposalPurpose::GdprConsent->value,
+            'effective_from' => '2026-09-30',
+        ]);
+        // A proposal is read where it now stands, not on the card it was opened from.
+        $this->assertRedirectContains('/customer-proposals/view/');
+
+        /** @var \App\Model\Entity\CustomerProposal $proposal */
+        $proposal = $this->addedRecord('CustomerProposals', $before);
+
+        return $proposal;
+    }
+
+    /**
+     * A proposal with papers in it, sent and signed and not yet applied.
+     *
+     * @return \App\Model\Entity\CustomerProposal
+     */
+    private function signedProposal(): CustomerProposal
+    {
+        $proposal = $this->drawOneUpWithPapers();
+        $this->sendAs($proposal, DocumentsDeliveryType::Post);
+        $this->post($this->conclude($proposal), ['conclusion_date' => '2026-10-05']);
+        $this->assertRedirect();
+
+        return $proposal;
+    }
+
+    /**
+     * Where the sending of a proposal is taken back.
+     *
+     * @param \App\Model\Entity\CustomerProposal $proposal The proposal.
+     * @return string
+     */
+    private function takeBack(CustomerProposal $proposal): string
+    {
+        return '/customers/' . self::CUSTOMER_ID . '/customer-proposals/take-back-sending/' . $proposal->id;
+    }
+
+    /**
+     * Records that the proposal went out.
+     *
+     * @param \App\Model\Entity\CustomerProposal $proposal The proposal.
+     * @param \App\Model\Enum\DocumentsDeliveryType $how How it went.
+     * @return void
+     */
+    private function sendAs(CustomerProposal $proposal, DocumentsDeliveryType $how): void
+    {
+        $this->post('/customers/' . self::CUSTOMER_ID . '/customer-proposals/send/' . $proposal->id, [
+            'sent_date' => '2026-10-01',
+            'delivery_type' => $how->value,
+        ]);
+        $this->assertRedirect();
+    }
+
+    /**
+     * Puts a paper on file against a record of the proposal.
+     *
+     * @param string $model What it hangs on.
+     * @param string $id Which record.
+     * @param string $document_type Which document it is.
+     * @param \App\Model\Enum\DocumentVariant $variant Whose hand it is in.
+     * @return \Files\Model\Entity\FileLink
+     */
+    private function filed(string $model, string $id, string $document_type, DocumentVariant $variant): FileLink
+    {
+        $storage = new FileStorage();
+
+        return $storage->link(
+            $storage->store('%PDF-1.7 ' . uniqid(), 'application/pdf'),
+            $model,
+            $id,
+            $document_type,
+            $variant->value,
+            ['name' => 'paper.pdf'],
+        );
+    }
+
+    /**
+     * Where the signature of a proposal is recorded.
+     *
+     * @param \App\Model\Entity\CustomerProposal $proposal The proposal.
+     * @return string
+     */
+    private function conclude(CustomerProposal $proposal): string
+    {
+        return '/customers/' . self::CUSTOMER_ID . '/customer-proposals/conclude/' . $proposal->id;
+    }
+
+    /**
+     * Papers for a new contract, signed on 5 October and applied, which brings a version into being.
+     *
+     * @return array{\App\Model\Entity\CustomerProposal, string} The proposal and the version.
+     */
+    private function appliedProposal(): array
+    {
+        $proposal = $this->drawOneUpWithPapers();
+        $at = '/customers/' . self::CUSTOMER_ID . '/customer-proposals/';
+
+        $this->post($at . 'send/' . $proposal->id, [
+            'sent_date' => '2026-10-01',
+            'delivery_type' => DocumentsDeliveryType::Post->value,
+        ]);
+        $this->post($this->conclude($proposal), ['conclusion_date' => '2026-10-05']);
+        $this->post($at . 'apply-changes/' . $proposal->id);
+
+        $version = (string)$this->papersOf((string)$proposal->id)[0]->contract_version_id;
+        $this->assertSame(
+            '2026-10-05',
+            $this->getTableLocator()->get('ContractVersions')->get($version)
+                ->get('conclusion_date')->toDateString(),
+        );
+
+        return [$proposal, $version];
+    }
+}

@@ -1,0 +1,32 @@
+# LANGUAGE translation of CakePHP Application
+# Copyright YEAR NAME <EMAIL@ADDRESS>
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"POT-Creation-Date: 2026-08-12 20:30+0200\n"
+"PO-Revision-Date: 2026-08-12 20:35+0200\n"
+"Last-Translator: Martin Patočka <mapik@mapik.net>\n"
+"Language-Team: LANGUAGE <EMAIL@ADDRESS>\n"
+"Language: cs_CZ\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n==1 ? 0 : n>=2 && n<=4 ? 1 : 2);\n"
+"X-Generator: Poedit 3.9\n"
+
+#: src/Model/Entity/Address.php:148
+msgid "Reg. No."
+msgstr "č.ev."
+
+#: src/Model/Entity/Address.php:150
+msgid "No."
+msgstr "č.p."
+
+#: src/Model/Entity/Address.php:215
+msgid "entrance"
+msgstr "vchod"
+
+#: src/Model/Entity/Address.php:219
+msgid "unit"
+msgstr "byt"

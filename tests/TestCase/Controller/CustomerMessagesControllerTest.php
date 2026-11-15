@@ -1,0 +1,858 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Test\TestCase\Controller;
+
+use App\BulkMessages\BulkRecipientFilterRegistry;
+use App\BulkMessages\BulkRecipients;
+use App\BulkMessages\BulkSendSummary;
+use App\Controller\CustomerMessagesController;
+use App\Model\Enum\CustomerMessageBodyFormat;
+use App\Model\Enum\CustomerMessageDeliveryStatus;
+use App\Model\Enum\CustomerMessageDirection;
+use App\Model\Enum\CustomerMessagePurpose;
+use App\Model\Enum\CustomerMessageType;
+use App\Model\Enum\ServiceCriticalityLevel;
+use App\Test\Traits\ControllerTestTrait;
+use Cake\TestSuite\IntegrationTestTrait;
+use Cake\TestSuite\TestCase;
+use Cake\Utility\Text;
+use PHPUnit\Framework\Attributes\UsesClass;
+
+/**
+ * App\Controller\CustomerMessagesController Test Case
+ */
+#[UsesClass(CustomerMessagesController::class)]
+class CustomerMessagesControllerTest extends TestCase
+{
+    use ControllerTestTrait;
+    use IntegrationTestTrait;
+
+    /**
+     * Customer with a single contract in the seeded contract state
+     * (active_services = billed = true).
+     *
+     * @var string
+     */
+    private const CUSTOMER_WITH_CONTRACT = '403bab0e-52cd-4a8e-83f8-43c2457d0481';
+
+    /**
+     * Customer that consents to mailing but has no contract at all.
+     *
+     * @var string
+     */
+    private const CUSTOMER_WITHOUT_CONTRACT = 'ae128a49-82fd-4b80-921f-f11af75fd113';
+
+    /**
+     * Service type of the seeded contract.
+     *
+     * @var string
+     */
+    private const SERVICE_TYPE = '907cbc5c-af88-43b6-b535-959b4fa2ce3d';
+
+    /**
+     * Service the seeded contract only billed historically (billing_until in 2021).
+     *
+     * @var string
+     */
+    private const SERVICE_BILLED_HISTORICALLY = 'eaacfeb3-1430-43ce-842e-497c5c95d953';
+
+    /**
+     * Service the seeded contract still bills (billing_until IS NULL).
+     *
+     * @var string
+     */
+    private const SERVICE_BILLED_OPEN_ENDED = '5f6a2f47-0a4d-4c05-9bcb-2f0dc0a3f0d2';
+
+    /**
+     * Fixtures
+     *
+     * @var array<string>
+     */
+    protected array $fixtures = [
+        'app.Users',
+        'app.AccountingProfiles',
+        'app.Customers',
+        'app.Countries',
+        'app.Addresses',
+        'app.Commissions',
+        'app.ContractStates',
+        'app.ServiceTypes',
+        'app.Contracts',
+        'app.ConnectionProfiles',
+        'app.Services',
+        'app.Billings',
+        'app.Emails',
+        'app.Phones',
+        'app.CustomerMessages',
+    ];
+
+    /**
+     * The listing renders.
+     *
+     * @return void
+     * @link \App\Controller\CustomerMessagesController::index()
+     */
+    public function testIndex(): void
+    {
+        $this->login();
+        $this->get('/customer-messages');
+
+        $this->assertResponseOk();
+    }
+
+    /**
+     * The listing renders with the search filled in, which builds a different query than the plain
+     * listing does and is therefore worth requesting on its own.
+     *
+     * @return void
+     * @link \App\Controller\CustomerMessagesController::index()
+     */
+    public function testIndexWithSearch(): void
+    {
+        $this->login();
+        $this->get('/customer-messages?search=Lorem');
+
+        $this->assertResponseOk();
+    }
+
+    /**
+     * The detail of a message renders.
+     *
+     * @return void
+     * @link \App\Controller\CustomerMessagesController::view()
+     */
+    public function testView(): void
+    {
+        $this->login();
+        $this->get('/customer-messages/view/' . $this->firstId('CustomerMessages'));
+
+        $this->assertResponseOk();
+    }
+
+    /**
+     * The form for a new message renders.
+     *
+     * @return void
+     * @link \App\Controller\CustomerMessagesController::add()
+     */
+    public function testAdd(): void
+    {
+        $this->login();
+        $this->get('/customer-messages/add');
+
+        $this->assertResponseOk();
+    }
+
+    /**
+     * Under a customer the form offers nobody else, and a message goes to them whatever the request
+     * names.
+     *
+     * @return void
+     * @link \App\Controller\CustomerMessagesController::add()
+     */
+    public function testAddUnderACustomerFilesItUnderThem(): void
+    {
+        $url = '/customers/' . self::CUSTOMER_WITH_CONTRACT . '/customer-messages/add';
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $this->get($url);
+        $this->assertResponseOk();
+        $this->assertResponseNotContains('name="customer_id"');
+
+        $before = $this->idsIn('CustomerMessages');
+        $this->post($url, [
+            'customer_id' => self::CUSTOMER_WITHOUT_CONTRACT,
+            'type' => CustomerMessageType::Email->value,
+            'direction' => CustomerMessageDirection::Outgoing->value,
+            'recipients' => 'customer@example.com',
+            'subject' => 'Planned maintenance',
+            'body' => 'The network will be down at night.',
+            'body_format' => CustomerMessageBodyFormat::Plaintext->value,
+            'delivery_status' => CustomerMessageDeliveryStatus::Pending->value,
+        ]);
+
+        $this->assertRedirect();
+        $added = $this->addedRecord('CustomerMessages', $before);
+        $this->assertSame(self::CUSTOMER_WITH_CONTRACT, $added->get('customer_id'));
+    }
+
+    /**
+     * The form of an existing message renders.
+     *
+     * @return void
+     * @link \App\Controller\CustomerMessagesController::edit()
+     */
+    public function testEdit(): void
+    {
+        $this->login();
+        $this->get('/customer-messages/edit/' . $this->firstId('CustomerMessages'));
+
+        $this->assertResponseOk();
+    }
+
+    /**
+     * The delete action runs and redirects. Whether the message really goes depends on what else
+     * still references it, which is the application rules' business rather than this test's.
+     *
+     * @return void
+     * @link \App\Controller\CustomerMessagesController::delete()
+     */
+    public function testDelete(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+        $this->post('/customer-messages/delete/' . $this->firstId('CustomerMessages'));
+
+        $this->assertRedirect();
+    }
+
+    /**
+     * With an active contract-scoped filter, a customer with no qualifying
+     * contract (here: no contract at all) is not offered as a recipient.
+     *
+     * @return void
+     * @link \App\BulkMessages\BulkRecipients::findCustomers()
+     */
+    public function testContractScopedFilterExcludesCustomersWithoutQualifyingContract(): void
+    {
+        $ids = $this->resolveBulkCustomers(
+            CustomerMessagePurpose::Outages,
+            ['active_services_contract' => true],
+        );
+
+        $this->assertContains(self::CUSTOMER_WITH_CONTRACT, $ids);
+        $this->assertNotContains(self::CUSTOMER_WITHOUT_CONTRACT, $ids);
+    }
+
+    /**
+     * The billing flavour behaves the same way against the `billed` state flag.
+     *
+     * @return void
+     * @link \App\BulkMessages\BulkRecipients::findCustomers()
+     */
+    public function testBilledFilterExcludesCustomersWithoutBilledContract(): void
+    {
+        $ids = $this->resolveBulkCustomers(
+            CustomerMessagePurpose::Billing,
+            ['billed_contract' => true],
+        );
+
+        $this->assertContains(self::CUSTOMER_WITH_CONTRACT, $ids);
+        $this->assertNotContains(self::CUSTOMER_WITHOUT_CONTRACT, $ids);
+    }
+
+    /**
+     * Without any contract-scoped filter active, recipient eligibility does not
+     * depend on contracts, so a consenting customer with no contract is offered.
+     *
+     * @return void
+     * @link \App\BulkMessages\BulkRecipients::findCustomers()
+     */
+    public function testNoContractFilterIncludesCustomersWithoutContracts(): void
+    {
+        $ids = $this->resolveBulkCustomers(CustomerMessagePurpose::Outages, []);
+
+        $this->assertContains(self::CUSTOMER_WITH_CONTRACT, $ids);
+        $this->assertContains(self::CUSTOMER_WITHOUT_CONTRACT, $ids);
+    }
+
+    /**
+     * Turning the contract-scoped filter off (unchecked, stored as false) must
+     * behave like no filter — contractless customers stay eligible.
+     *
+     * @return void
+     * @link \App\BulkMessages\BulkRecipients::findCustomers()
+     */
+    public function testContractScopedFilterOffIncludesCustomersWithoutContracts(): void
+    {
+        $ids = $this->resolveBulkCustomers(
+            CustomerMessagePurpose::Outages,
+            ['active_services_contract' => false],
+        );
+
+        $this->assertContains(self::CUSTOMER_WITH_CONTRACT, $ids);
+        $this->assertContains(self::CUSTOMER_WITHOUT_CONTRACT, $ids);
+    }
+
+    /**
+     * The service type filter matches a customer through the service type of one
+     * of their contracts, and offers nobody for a type nothing is contracted for.
+     *
+     * @return void
+     * @link \App\BulkMessages\Filter\ServiceTypesFilter::containedContractConditions()
+     */
+    public function testServiceTypesFilterMatchesContractServiceType(): void
+    {
+        $matched = $this->resolveBulkCustomers(
+            CustomerMessagePurpose::Outages,
+            ['service_type_ids' => [self::SERVICE_TYPE]],
+        );
+
+        $this->assertContains(self::CUSTOMER_WITH_CONTRACT, $matched);
+        // being contract-scoped, it can never match a customer without contracts
+        $this->assertNotContains(self::CUSTOMER_WITHOUT_CONTRACT, $matched);
+
+        $unmatched = $this->resolveBulkCustomers(
+            CustomerMessagePurpose::Outages,
+            ['service_type_ids' => ['8a2a4a6c-0e3f-4b1d-9d59-7e0a1c2b3d4e']],
+        );
+
+        $this->assertNotContains(self::CUSTOMER_WITH_CONTRACT, $unmatched);
+    }
+
+    /**
+     * The services filter looks at what the contract actually bills, and counts
+     * only active or future billings — a service billed until 2021 is history and
+     * must not make its customer a recipient.
+     *
+     * @return void
+     * @link \App\BulkMessages\Filter\ServicesFilter::containedContractConditions()
+     */
+    public function testServicesFilterMatchesOnlyActiveOrFutureBillings(): void
+    {
+        $matched = $this->resolveBulkCustomers(
+            CustomerMessagePurpose::Outages,
+            ['service_ids' => [self::SERVICE_BILLED_OPEN_ENDED]],
+        );
+
+        $this->assertContains(self::CUSTOMER_WITH_CONTRACT, $matched);
+        $this->assertNotContains(self::CUSTOMER_WITHOUT_CONTRACT, $matched);
+
+        $historical = $this->resolveBulkCustomers(
+            CustomerMessagePurpose::Outages,
+            ['service_ids' => [self::SERVICE_BILLED_HISTORICALLY]],
+        );
+
+        $this->assertNotContains(self::CUSTOMER_WITH_CONTRACT, $historical);
+    }
+
+    /**
+     * Both service filters are inactive unless something valid was selected, so a
+     * junk or empty submission must not narrow the recipients (nor reach the DB
+     * with a malformed uuid).
+     *
+     * @return void
+     * @link \App\BulkMessages\Filter\ServicesFilter::buildValue()
+     */
+    public function testServiceFiltersIgnoreInvalidSelections(): void
+    {
+        $registry = new BulkRecipientFilterRegistry($this->getTableLocator()->get('CustomerMessages'));
+
+        foreach (['service_ids', 'service_type_ids'] as $key) {
+            $filter = $registry->get($key);
+            $this->assertNotNull($filter, $key . ' must be registered');
+            $this->assertNull($filter->buildValue([]), $key . ' must be inactive when unsubmitted');
+            $this->assertNull(
+                $filter->buildValue([$key => ['', 'not-a-uuid', 42]]),
+                $key . ' must drop values that are not uuids',
+            );
+        }
+    }
+
+    /**
+     * Both filters must offer the seeded records as selectable options, the
+     * services one grouped by service type (optgroups in the multiselect).
+     *
+     * @return void
+     * @link \App\BulkMessages\Filter\ServicesFilter::controls()
+     */
+    public function testServiceFilterControlsOfferSeededOptions(): void
+    {
+        $registry = new BulkRecipientFilterRegistry($this->getTableLocator()->get('CustomerMessages'));
+
+        $serviceTypeControls = $registry->get('service_type_ids')?->controls(null) ?? [];
+        $this->assertCount(1, $serviceTypeControls);
+        $this->assertArrayHasKey(self::SERVICE_TYPE, $serviceTypeControls[0]['options']['options']);
+
+        $serviceControls = $registry->get('service_ids')?->controls(null) ?? [];
+        $this->assertCount(1, $serviceControls);
+
+        // one optgroup per service type, holding both seeded services
+        $grouped = $serviceControls[0]['options']['options'];
+        $this->assertCount(1, $grouped);
+        $services = reset($grouped);
+        $this->assertArrayHasKey(self::SERVICE_BILLED_HISTORICALLY, $services);
+        $this->assertArrayHasKey(self::SERVICE_BILLED_OPEN_ENDED, $services);
+    }
+
+    /**
+     * A preview row carries the two flags the operator must notice: the VIP flag
+     * of its contract, and the highest criticality level among the services that
+     * contract *currently* bills — a historically billed service says nothing
+     * about the customer today, however critical it was.
+     *
+     * @return void
+     * @link \App\BulkMessages\BulkRecipients::groupByAccessPoint()
+     */
+    public function testPreviewRowsCarryContractAndServiceFlags(): void
+    {
+        $rows = $this->resolveBulkPreviewRows(CustomerMessagePurpose::Outages, []);
+
+        $withContract = $rows[self::CUSTOMER_WITH_CONTRACT] ?? null;
+        $this->assertNotNull($withContract);
+        $this->assertTrue($withContract['vip'], 'the seeded contract is flagged VIP');
+        // Important comes from the open-ended billing; the historical billing's
+        // Critical service must not win (nor show up at all)
+        $this->assertSame(ServiceCriticalityLevel::Important, $withContract['criticality']);
+        // and for the same reason the row lists only the service still billed
+        $this->assertSame(['Sed do eiusmod tempor'], $withContract['services']);
+
+        $withoutContract = $rows[self::CUSTOMER_WITHOUT_CONTRACT] ?? null;
+        $this->assertNotNull($withoutContract);
+        $this->assertFalse($withoutContract['vip']);
+        $this->assertNull($withoutContract['criticality']);
+    }
+
+    /**
+     * The warning counts people, not rows — and only those whose flags are set.
+     *
+     * @return void
+     * @link \App\BulkMessages\BulkRecipients::countFlagged()
+     */
+    public function testFlaggedRecipientsAreCountedPerCustomer(): void
+    {
+        $customers = $this->findBulkCustomers(CustomerMessagePurpose::Outages, []);
+
+        $this->assertSame(
+            ['vip' => 1, 'critical' => 1],
+            (new BulkRecipients())->countFlagged($customers),
+        );
+    }
+
+    /**
+     * A filter that restricts by default must say so through defaultValue(), so
+     * picking a purpose seeds the restriction into the wizard state. Without it,
+     * a wizard that never submits the filter step would send unrestricted.
+     *
+     * @return void
+     * @link \App\BulkMessages\BulkRecipientFilterRegistry::defaultsForPurpose()
+     */
+    public function testPurposeDefaultsSeedTheRestrictingFilters(): void
+    {
+        $registry = new BulkRecipientFilterRegistry($this->getTableLocator()->get('CustomerMessages'));
+
+        $this->assertSame(
+            ['active_services_contract' => true],
+            $registry->defaultsForPurpose(CustomerMessagePurpose::Outages),
+        );
+        $this->assertSame(
+            ['billed_contract' => true],
+            $registry->defaultsForPurpose(CustomerMessagePurpose::Billing),
+        );
+
+        // and the seeded defaults must resolve the same way an explicit
+        // submission of the same values does
+        $this->assertSame(
+            $this->resolveBulkCustomers(
+                CustomerMessagePurpose::Outages,
+                $registry->defaultsForPurpose(CustomerMessagePurpose::Outages),
+            ),
+            $this->resolveBulkCustomers(
+                CustomerMessagePurpose::Outages,
+                ['active_services_contract' => true],
+            ),
+        );
+    }
+
+    /**
+     * The post-send report has to explain how the recipients were picked, so
+     * every active filter contributes a readable line, in the order the purpose
+     * offers them. Inactive filters stay silent.
+     *
+     * @return void
+     * @link \App\BulkMessages\BulkRecipientFilterRegistry::describeFilters()
+     */
+    public function testActiveFiltersDescribeThemselvesForTheReport(): void
+    {
+        $registry = new BulkRecipientFilterRegistry($this->getTableLocator()->get('CustomerMessages'));
+
+        // the locale is not fixed for tests, so the expectation goes through the
+        // same translation the filters do
+        $this->assertSame(
+            [
+                __('Service types') . ': Lorem ipsum dolor sit amet',
+                __('Only customers with an active contract (provides active services)'),
+            ],
+            $registry->describeFilters(CustomerMessagePurpose::Outages, [
+                'service_type_ids' => [self::SERVICE_TYPE],
+                'active_services_contract' => true,
+            ]),
+        );
+
+        // an unchecked flag narrowed nothing, so it must not claim to have
+        $this->assertSame(
+            [],
+            $registry->describeFilters(CustomerMessagePurpose::Outages, [
+                'active_services_contract' => false,
+                'service_type_ids' => [],
+            ]),
+        );
+    }
+
+    /**
+     * Recipients the operator approved but that no longer resolve at send time
+     * must be reported by name, not silently left out.
+     *
+     * @return void
+     * @link \App\BulkMessages\BulkRecipients::findDropped()
+     */
+    public function testRecipientsLostBetweenPreviewAndSendAreReported(): void
+    {
+        // only the contracted customer still resolves; the other one was
+        // approved in the preview and has since fallen out
+        $customers = $this->findBulkCustomers(
+            CustomerMessagePurpose::Outages,
+            ['active_services_contract' => true],
+        );
+
+        /** @var list<array{number: string|null, name: string}> $dropped */
+        $dropped = (new BulkRecipients())->findDropped(
+            [self::CUSTOMER_WITH_CONTRACT, self::CUSTOMER_WITHOUT_CONTRACT],
+            $customers,
+        );
+
+        $this->assertCount(1, $dropped);
+        $this->assertNotSame('', $dropped[0]['name']);
+
+        // nothing was lost when every selected customer still resolves
+        $this->assertSame(
+            [],
+            (new BulkRecipients())->findDropped([self::CUSTOMER_WITH_CONTRACT], $customers),
+        );
+    }
+
+    /**
+     * A contact is whatever somebody wrote down, so the list of recipients shows it as text.
+     *
+     * @return void
+     * @link \App\Controller\CustomerMessagesController::addBulk()
+     */
+    public function testTheContactsOfTheRecipientsAreText(): void
+    {
+        $this->contactsWithMarkup();
+
+        $this->login();
+        $this->session([
+            'CustomerMessages.bulkWizard' => [
+                'purpose' => CustomerMessagePurpose::Outages->value,
+                'filters' => [],
+                'ignore_customer_consent' => true,
+                'ignore_contact_use' => true,
+            ],
+        ]);
+        $this->get('/customer-messages/add-bulk?step=compose');
+
+        $this->assertResponseOk();
+        $this->assertContactsAreText();
+    }
+
+    /**
+     * Contacts that would come out as markup if they were not escaped.
+     *
+     * @return void
+     */
+    private function contactsWithMarkup(): void
+    {
+        $this->fetchTable('Emails')->updateAll(['email' => '<i>mail</i>'], ['1 = 1']);
+        $this->fetchTable('Phones')->updateAll(['phone' => '<i>phone</i>'], ['1 = 1']);
+    }
+
+    /**
+     * What was written as a contact is on the page as text.
+     *
+     * @return void
+     */
+    private function assertContactsAreText(): void
+    {
+        $this->assertResponseContains('&lt;i&gt;mail&lt;/i&gt;');
+        $this->assertResponseContains('&lt;i&gt;phone&lt;/i&gt;');
+        $this->assertResponseNotContains('<i>mail</i>');
+        $this->assertResponseNotContains('<i>phone</i>');
+    }
+
+    /**
+     * The whole wizard, the way an operator goes through it: a purpose, the filters, the message,
+     * and a summary at the end of what was queued.
+     *
+     * @return void
+     * @link \App\Controller\CustomerMessagesController::addBulk()
+     * @link \App\BulkMessages\BulkSendSummary::build()
+     */
+    public function testTheWizardQueuesTheMessageAndSaysWhatWentOut(): void
+    {
+        $wizard = [
+            'CustomerMessages.bulkWizard' => [
+                'purpose' => CustomerMessagePurpose::Outages->value,
+                'filters' => [],
+                'ignore_customer_consent' => true,
+                'ignore_contact_use' => true,
+            ],
+        ];
+
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $this->session($wizard);
+        $this->get('/customer-messages/add-bulk?step=compose');
+        $this->assertResponseOk();
+
+        $before = $this->idsIn('CustomerMessages');
+        $this->session($wizard);
+        $this->post('/customer-messages/add-bulk?step=compose', [
+            'type' => CustomerMessageType::EmailSupport->value,
+            'subject' => 'A planned outage',
+            'body' => 'Tonight, for an hour.',
+            'body_format' => CustomerMessageBodyFormat::Plaintext->value,
+            'send_to' => [self::CUSTOMER_WITH_CONTRACT],
+        ]);
+        $this->assertRedirectContains('step=done');
+
+        $queued = $this->addedRecord('CustomerMessages', $before);
+        $this->assertSame(self::CUSTOMER_WITH_CONTRACT, $queued->get('customer_id'));
+        $this->assertSame('A planned outage', $queued->get('subject'));
+        $this->assertSame(['customer@example.com'], $queued->get('recipients'));
+
+        $summary = $_SESSION['CustomerMessages']['bulkResult'];
+        $this->assertSame(1, $summary['sent']);
+        $this->assertSame('A planned outage', $summary['subject']);
+
+        $this->session(['CustomerMessages.bulkResult' => $summary]);
+        $this->get('/customer-messages/add-bulk?step=done');
+        $this->assertResponseOk();
+        $this->assertResponseContains('A planned outage');
+    }
+
+    /**
+     * A second click comes with the state the first one has not cleared yet, and queues nothing
+     * more. A batch that was refused is still there to be sent.
+     *
+     * @return void
+     * @link \App\Controller\CustomerMessagesController::addBulk()
+     */
+    public function testASecondClickQueuesTheBatchOnlyOnce(): void
+    {
+        $wizard = [
+            'CustomerMessages.bulkWizard' => [
+                'purpose' => CustomerMessagePurpose::Outages->value,
+                // the lock outlives the test, so every run is a batch of its own
+                'batch' => Text::uuid(),
+                'filters' => [],
+                'ignore_customer_consent' => true,
+                'ignore_contact_use' => true,
+            ],
+        ];
+        $message = [
+            'type' => CustomerMessageType::EmailSupport->value,
+            'subject' => 'A planned outage',
+            'body' => 'Tonight, for an hour.',
+            'body_format' => CustomerMessageBodyFormat::Plaintext->value,
+            'send_to' => [self::CUSTOMER_WITH_CONTRACT],
+        ];
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $before = $this->idsIn('CustomerMessages');
+        $this->session($wizard);
+        $this->post('/customer-messages/add-bulk?step=compose', ['type' => ''] + $message);
+        $this->assertResponseOk();
+        $this->assertSame($before, $this->idsIn('CustomerMessages'));
+
+        $this->session($wizard);
+        $this->post('/customer-messages/add-bulk?step=compose', $message);
+        $this->assertRedirectContains('step=done');
+        $sent = $this->idsIn('CustomerMessages');
+        $this->assertCount(count($before) + 1, $sent);
+
+        $this->session($wizard);
+        $this->post('/customer-messages/add-bulk?step=compose', $message);
+        $this->assertRedirectContains('step=done');
+        $this->assertSame($sent, $this->idsIn('CustomerMessages'));
+    }
+
+    /**
+     * The run that sends SMS takes plain text only, so one in HTML would be reported as queued and
+     * never go. It comes back beside the field, once and not for every customer.
+     *
+     * @return void
+     * @link \App\Controller\CustomerMessagesController::addBulk()
+     */
+    public function testTheWizardRefusesAnSmsInHtml(): void
+    {
+        $this->login();
+        $this->enableCsrfToken();
+        $this->enableSecurityToken();
+
+        $before = $this->idsIn('CustomerMessages');
+        $this->session([
+            'CustomerMessages.bulkWizard' => [
+                'purpose' => CustomerMessagePurpose::Outages->value,
+                'filters' => [],
+                'ignore_customer_consent' => true,
+                'ignore_contact_use' => true,
+            ],
+        ]);
+        $this->post('/customer-messages/add-bulk?step=compose', [
+            'type' => CustomerMessageType::Sms->value,
+            'subject' => 'A planned outage',
+            'body' => '<p>Tonight, for an hour.</p>',
+            'body_format' => CustomerMessageBodyFormat::Html->value,
+            'send_to' => [self::CUSTOMER_WITH_CONTRACT],
+        ]);
+
+        $this->assertResponseOk();
+        $this->assertResponseContains('An SMS can only be sent as plain text.');
+        $this->assertNull($this->viewVariable('saveFailures'));
+        $this->assertSame($before, $this->idsIn('CustomerMessages'));
+    }
+
+    /**
+     * The summary e-mail body must carry everything the send is judged by: the
+     * filters, every recipient with the addresses it went to, and the text.
+     *
+     * @return void
+     * @link \App\BulkMessages\BulkSendSummary::render()
+     */
+    public function testSummaryEmailBodyCarriesTheWholeSend(): void
+    {
+        $body = (new BulkSendSummary())->render([
+            'sent' => 1,
+            'channel' => 'E-mail (support)',
+            'is_sms' => false,
+            'purpose' => 'Outage notification',
+            'subject' => 'Planned outage',
+            'body' => 'We are replacing a radio unit.',
+            'filters' => ['Access Points: Hilltop (including sub access points)'],
+            'ignored_customer_consent' => false,
+            'ignored_contact_use' => true,
+            'groups' => [
+                [
+                    'ap_id' => '11111111-1111-1111-1111-111111111111',
+                    'ap_name' => 'Hilltop',
+                    'customers' => [
+                        [
+                            'number' => 'C-1',
+                            'name' => 'Acme s.r.o.',
+                            'contract_number' => 'S-42',
+                            'services' => ['Internet 100/100'],
+                            'vip' => true,
+                            'criticality' => 'Critical',
+                            'recipients' => ['it@acme.example'],
+                        ],
+                    ],
+                ],
+            ],
+            'skipped' => [['id' => 'x', 'number' => 'C-2', 'name' => 'No Contact Ltd.']],
+            'dropped' => [['number' => 'C-3', 'name' => 'Gone Away Ltd.']],
+            'flagged' => ['vip' => 1, 'critical' => 1],
+            'summary_mailed' => false,
+        ]);
+
+        foreach (
+            [
+                'Outage notification',
+                'Access Points: Hilltop (including sub access points)',
+                // rendered through __(), unlike the values above
+                __('Per-contact routing flag was ignored.'),
+                __('VIP'),
+                'Hilltop',
+                'C-1 Acme s.r.o.',
+                'S-42',
+                'Internet 100/100',
+                'it@acme.example',
+                'Critical',
+                'No Contact Ltd.',
+                'Gone Away Ltd.',
+                'Planned outage',
+                'We are replacing a radio unit.',
+            ] as $expected
+        ) {
+            $this->assertStringContainsString($expected, $body);
+        }
+    }
+
+    /**
+     * Resolve the eligible recipient customer ids for a purpose/filter set by
+     * invoking the controller's private recipient resolver against the fixtures.
+     *
+     * @param \App\Model\Enum\CustomerMessagePurpose $purpose Selected purpose.
+     * @param array<string, mixed> $filters Stored filter values keyed by filter id.
+     * @return array<string> Matched customer ids.
+     */
+    private function resolveBulkCustomers(CustomerMessagePurpose $purpose, array $filters): array
+    {
+        $customers = $this->findBulkCustomers(
+            $purpose,
+            $filters,
+        );
+
+        return array_map(static fn($customer): string => (string)$customer->id, $customers);
+    }
+
+    /**
+     * Resolve the preview rows for a purpose/filter set, flattened and keyed by
+     * customer id (the fixtures give every customer at most one row).
+     *
+     * @param \App\Model\Enum\CustomerMessagePurpose $purpose Selected purpose.
+     * @param array<string, mixed> $filters Stored filter values keyed by filter id.
+     * @return array<string, array<string, mixed>> Rows keyed by customer id.
+     */
+    private function resolveBulkPreviewRows(CustomerMessagePurpose $purpose, array $filters): array
+    {
+        $customers = $this->findBulkCustomers($purpose, $filters);
+
+        /** @var list<array{rows: list<array<string, mixed>>}> $groups */
+        $groups = (new BulkRecipients())->groupByAccessPoint($customers, []);
+
+        $rows = [];
+        foreach ($groups as $group) {
+            foreach ($group['rows'] as $row) {
+                $rows[(string)$row['customer']->id] = $row;
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Invoke the controller's private recipient resolver against the fixtures.
+     *
+     * @param \App\Model\Enum\CustomerMessagePurpose $purpose Selected purpose.
+     * @param array<string, mixed> $filters Stored filter values keyed by filter id.
+     * @return array<\App\Model\Entity\Customer> Matched customers.
+     */
+    private function findBulkCustomers(CustomerMessagePurpose $purpose, array $filters): array
+    {
+        $registry = new BulkRecipientFilterRegistry($this->getTableLocator()->get('CustomerMessages'));
+
+        return (new BulkRecipients())->findCustomers($purpose, $filters, $registry, false, true);
+    }
+
+    /**
+     * Recipients are free text somebody typed, and the listing and the detail write them out as text.
+     *
+     * @return void
+     * @link \App\Controller\CustomerMessagesController::index()
+     */
+    public function testRecipientsAreWrittenOutAsText(): void
+    {
+        $this->login();
+        $id = $this->firstId('CustomerMessages');
+        $this->getTableLocator()->get('CustomerMessages')->updateAll(
+            ['recipients' => ['<img src=x onerror=alert(1)>']],
+            ['id' => $id],
+        );
+
+        foreach (['/customer-messages', '/customer-messages/view/' . $id] as $page) {
+            $this->get($page);
+            $this->assertResponseOk();
+            $this->assertResponseNotContains('<img src=x');
+        }
+    }
+}

@@ -1,0 +1,247 @@
+<?php
+declare(strict_types=1);
+
+namespace Bookkeeping\Service;
+
+use App\Model\Entity\AccountingProfile;
+use App\Model\Entity\Billing;
+use App\Model\Entity\Contract;
+use App\Model\Entity\Customer;
+use App\Model\Table\CustomersTable;
+use App\Service\CustomerPrint\MonthlyInvoice;
+use App\Service\CustomerPrint\MonthlyInvoices;
+use Bookkeeping\Model\ValueObject\InvoiceDraft;
+use Cake\I18n\Date;
+use PhpCollective\DecimalObject\Decimal;
+use Settings\Utility\Settings;
+
+/**
+ * InvoiceGenerationService
+ *
+ * Generates invoice drafts for a given invoiced month and accounting profile
+ * based on CRM billing data.
+ *
+ * This service:
+ * - aggregates billing data per customer and contract
+ * - applies business rules for separate invoices
+ * - calculates invoice numbers, totals and due dates
+ * - produces InvoiceDraft value objects
+ *
+ * It does NOT:
+ * - persist invoices
+ * - export invoices
+ * - perform UI logic
+ */
+final readonly class InvoiceGenerationService
+{
+    /**
+     * Constructor
+     */
+    public function __construct(
+        private CustomersTable $customers,
+    ) {
+    }
+
+    /**
+     * Generate invoice drafts.
+     *
+     * @return list<\Bookkeeping\Model\ValueObject\InvoiceDraft>
+     */
+    public function generate(
+        Date $invoicedMonth,
+        AccountingProfile $accountingProfile,
+        ?int $customerMinNumber = null,
+        ?int $customerMaxNumber = null,
+    ): array {
+        $prefix = $this->calculateInvoicePrefix($invoicedMonth, $accountingProfile);
+        $index = 1;
+        $drafts = [];
+
+        /** @var \Cake\Collection\CollectionInterface<array-key, \App\Model\Entity\Customer> $customers */
+        $customers = $this->customers->find(
+            'billingDataForMonth',
+            invoicedMonth: $invoicedMonth,
+            accountingProfileId: $accountingProfile->id,
+        )->all();
+
+        if ($customerMinNumber !== null) {
+            $customers = $customers->filter(function (Customer $customer) use ($customerMinNumber): bool {
+                return (int)$customer->number >= $customerMinNumber;
+            });
+        }
+
+        if ($customerMaxNumber !== null) {
+            $customers = $customers->filter(function (Customer $customer) use ($customerMaxNumber): bool {
+                return (int)$customer->number <= $customerMaxNumber;
+            });
+        }
+
+        $split = new MonthlyInvoices();
+
+        foreach ($customers as $customer) {
+            $invoices = $split->split(
+                $customer->contracts,
+                fn(Contract $contract): array => $contract->billings,
+                fn(Billing $billing): Decimal => $billing->period_total,
+            );
+
+            foreach ($invoices as $invoice) {
+                $drafts[] = $this->draftOf($invoice, $customer, (string)($prefix + $index++), $invoicedMonth);
+            }
+        }
+
+        return $drafts;
+    }
+
+    /**
+     * The draft of one invoice, written according to what the invoice is for.
+     *
+     * @param \App\Service\CustomerPrint\MonthlyInvoice $invoice The invoice.
+     * @param \App\Model\Entity\Customer $customer Whose it is.
+     * @param string $number Its number.
+     * @param \Cake\I18n\Date $invoicedMonth The month it is for.
+     * @return \Bookkeeping\Model\ValueObject\InvoiceDraft
+     */
+    private function draftOf(
+        MonthlyInvoice $invoice,
+        Customer $customer,
+        string $number,
+        Date $invoicedMonth,
+    ): InvoiceDraft {
+        $contract = $invoice->contract;
+        $billing = $invoice->billing;
+
+        if ($contract !== null && $billing !== null) {
+            return $this->createDraft(
+                number: $number,
+                customer: $customer,
+                total: $invoice->total,
+                items: $contract->isInvoiceWithItems() || $customer->isInvoiceWithItems() ? $invoice->items : [],
+                text: $this->buildSeparateBillingText($billing, $invoicedMonth),
+                invoicedMonth: $invoicedMonth,
+                internalNote: 'separate',
+            );
+        }
+
+        if ($contract !== null) {
+            return $this->createDraft(
+                number: $number,
+                customer: $customer,
+                total: $invoice->total,
+                items: $contract->isInvoiceWithItems() ? $invoice->items : [],
+                text: $this->buildContractInvoiceText($contract, $invoicedMonth),
+                invoicedMonth: $invoicedMonth,
+                internalNote: 'separate',
+            );
+        }
+
+        return $this->createDraft(
+            number: $number,
+            customer: $customer,
+            total: $invoice->total,
+            items: $customer->isInvoiceWithItems() ? $invoice->items : [],
+            text: $this->buildCustomerInvoiceText($customer, $invoicedMonth),
+            invoicedMonth: $invoicedMonth,
+        );
+    }
+
+    /**
+     * Create and populate InvoiceDraft.
+     *
+     * @param list<\App\Model\Entity\Billing> $items
+     */
+    private function createDraft(
+        string $number,
+        Customer $customer,
+        Decimal $total,
+        array $items,
+        string $text,
+        Date $invoicedMonth,
+        ?string $internalNote = null,
+    ): InvoiceDraft {
+        $draft = new InvoiceDraft();
+
+        $draft->number = $number;
+        $draft->customer = $customer;
+        $draft->customerNumber = $customer->number;
+        $draft->variableSymbol = $customer->number;
+        $draft->creationDate = $invoicedMonth->lastOfMonth();
+        $draft->dueDate = $this->calculateDueDate($customer, $invoicedMonth);
+        $draft->text = $text;
+        $draft->internalNote = $internalNote;
+        $draft->total = $total;
+        $draft->debt = $total;
+        $draft->items = $items;
+
+        return $draft;
+    }
+
+    /**
+     * Calculate invoice number prefix.
+     */
+    private function calculateInvoicePrefix(Date $month, AccountingProfile $accountingProfile): int
+    {
+        return 10000000 * ($month->year - 1980)
+            + 1000000 * ($accountingProfile->reverse_charge ? 8 : 9)
+            + 10000 * $month->month;
+    }
+
+    /**
+     * Calculate invoice due date.
+     */
+    private function calculateDueDate(Customer $customer, Date $month): Date
+    {
+        return $month
+            ->lastOfMonth()
+            ->addDays($customer->individual_maturity_period ?? 10);
+    }
+
+    /**
+     * Build invoice text for separate billing item.
+     */
+    private function buildSeparateBillingText(Billing $billing, Date $month): string
+    {
+        return strtr(
+            Settings::getString('bookkeeping.invoices.texts.separate'),
+            [
+                '{service_name}' => $billing->name,
+                '{invoiced_month}' => $month->i18nFormat('MM/yyyy'),
+            ],
+        );
+    }
+
+    /**
+     * Build invoice text for contract invoice.
+     */
+    private function buildContractInvoiceText(Contract $contract, Date $month): string
+    {
+        if ($contract->getInvoiceText()) {
+            return strtr($contract->getInvoiceText(), [
+                '{contract_number}' => $contract->number,
+                '{invoiced_month}' => $month->i18nFormat('MM/yyyy'),
+            ]);
+        }
+
+        return strtr(
+            Settings::getString('bookkeeping.invoices.texts.default'),
+            [
+                '{contract_number}' => $contract->number,
+                '{invoiced_month}' => $month->i18nFormat('MM/yyyy'),
+            ],
+        );
+    }
+
+    /**
+     * Build invoice text for customer-level invoice.
+     */
+    private function buildCustomerInvoiceText(Customer $customer, Date $month): string
+    {
+        return strtr(
+            Settings::getString('bookkeeping.invoices.texts.default'),
+            [
+                '{contract_number}' => $customer->number,
+                '{invoiced_month}' => $month->i18nFormat('MM/yyyy'),
+            ],
+        );
+    }
+}

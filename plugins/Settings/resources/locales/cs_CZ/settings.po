@@ -1,0 +1,80 @@
+# LANGUAGE translation of CakePHP Application
+# Copyright YEAR NAME <EMAIL@ADDRESS>
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"POT-Creation-Date: 2026-09-23 00:12+0200\n"
+"PO-Revision-Date: 2026-08-11 09:35+0200\n"
+"Last-Translator: Martin Patočka <mapik@mapik.net>\n"
+"Language-Team: LANGUAGE <EMAIL@ADDRESS>\n"
+"Language: cs_CZ\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n==1 ? 0 : n>=2 && n<=4 ? 1 : 2);\n"
+"X-Generator: Poedit 3.9\n"
+
+#: plugins/Settings/src/Controller/Trait/SettingsControllerTrait.php:30
+msgid "Invalid settings path: {path}"
+msgstr "Neplatná cesta k nastavení: {path}"
+
+#: plugins/Settings/src/Controller/Trait/SettingsControllerTrait.php:39
+msgid "Unknown settings block: {path}"
+msgstr "Neznámý blok nastavení: {path}"
+
+#: plugins/Settings/src/Controller/Trait/SettingsControllerTrait.php:47
+msgid "Not a settings block, but a setting of its own: {path}"
+msgstr "Není to blok nastavení, ale samostatné nastavení: {path}"
+
+#: plugins/Settings/src/Controller/Trait/SettingsControllerTrait.php:64
+msgid "The setting has been saved."
+msgstr "Nastavení bylo uloženo."
+
+#: plugins/Settings/src/Controller/Trait/SettingsControllerTrait.php:72
+msgid "The setting could not be saved. Please, try again."
+msgstr "Nastavení nelze uložit. Zkuste to prosím znovu."
+
+#: plugins/Settings/src/Controller/Trait/SettingsControllerTrait.php:81
+msgid "The setting {path} could not be saved: {reason}"
+msgstr "Nastavení {path} se nepodařilo uložit: {reason}"
+
+#: plugins/Settings/src/ValueObject/Type/ChoiceType.php:109
+msgid "One of the answers on offer was expected."
+msgstr "Očekávala se některá z nabízených odpovědí."
+
+#: plugins/Settings/src/ValueObject/Type/DateType.php:175
+msgid "A day in the form YYYY-MM-DD was expected."
+msgstr "Očekával se den ve tvaru RRRR-MM-DD."
+
+#: plugins/Settings/src/ValueObject/Type/ListType.php:178
+msgid "A list was expected."
+msgstr "Očekával se seznam."
+
+#: plugins/Settings/src/ValueObject/Type/ListType.php:191
+msgid "The list is not valid JSON: {reason}"
+msgstr "Seznam není platným JSON: {reason}"
+
+#: plugins/Settings/src/ValueObject/Type/ListType.php:198
+msgid "A list was expected, not a single value."
+msgstr "Očekával se seznam, nikoli jednotlivá hodnota."
+
+#: plugins/Settings/src/ValueObject/Type/ListType.php:215
+msgid "A list of items was expected, but the value is keyed."
+msgstr "Očekával se seznam položek, ale hodnota je zadána s klíčem."
+
+#: plugins/Settings/src/ValueObject/Type/ListType.php:225
+msgid "Item {position} of the list is not of type {type}."
+msgstr "Položka {position} v seznamu není typu {type}."
+
+#: plugins/Settings/src/ValueObject/Type/NumberType.php:175
+msgid "A number was expected."
+msgstr "Očekávalo se číslo."
+
+#: plugins/Settings/src/ValueObject/Type/NumberType.php:182
+msgid "A whole number was expected."
+msgstr "Očekávalo se celé číslo."
+
+#: plugins/Settings/src/ValueObject/Type/NumberType.php:189
+msgid "At most {scale} decimal places were expected."
+msgstr "Očekávalo se maximálně {scale} desetinných míst."

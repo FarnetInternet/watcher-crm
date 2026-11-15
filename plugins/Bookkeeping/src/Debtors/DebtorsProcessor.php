@@ -1,0 +1,1142 @@
+<?php
+declare(strict_types=1);
+
+namespace Bookkeeping\Debtors;
+
+use App\Agent\ApiClient as AgentApiClient;
+use App\Agent\Dto\AddressListChanges;
+use App\Contracts\Unsigned\UnsignedPaperwork;
+use App\Contracts\Unsigned\UnsignedWaits;
+use App\Messages\Messages;
+use App\Model\Audit\AuditTrail;
+use App\Model\Entity\Customer;
+use App\Model\Entity\CustomerLabel;
+use App\Model\Table\ContractsTable;
+use App\Model\Table\ContractVersionsTable;
+use App\Model\Table\CustomerLabelsTable;
+use App\Model\Table\CustomersTable;
+use App\SledovaniTV\ApiClient as SledovaniTVApiClient;
+use App\SledovaniTV\Dto\TvUser;
+use App\Utility\Strings;
+use Bookkeeping\Model\Table\InvoicesTable;
+use Cake\Collection\CollectionInterface;
+use Cake\Core\Configure;
+use Cake\Database\Expression\IdentifierExpression;
+use Cake\Database\Expression\QueryExpression;
+use Cake\I18n\Date;
+use Cake\I18n\DateTime;
+use Cake\Log\Log;
+use Cake\ORM\Association;
+use Cake\ORM\Locator\LocatorAwareTrait;
+use Cake\ORM\Query\SelectQuery;
+use InvalidArgumentException;
+use RuntimeException;
+use Settings\Utility\Settings;
+use Throwable;
+
+class DebtorsProcessor
+{
+    use LocatorAwareTrait;
+
+    /**
+     * Where the settings say how long a running service may go without a signed contract.
+     */
+    private const UNSIGNED_PATH = 'core.contracts.paperwork.unsigned';
+
+    /**
+     * @var \Cake\Collection\CollectionInterface<string, \Bookkeeping\Debtors\Debtor>|null
+     */
+    private static ?CollectionInterface $debtors = null;
+
+    private int $allowed_payment_delay;
+
+    private float $allowed_total_overdue_debt;
+
+    private Messages $messages;
+
+    /**
+     * Constructor
+     */
+    public function __construct(
+        int $allowed_payment_delay = 0,
+        float $allowed_total_overdue_debt = 0,
+    ) {
+        $this->allowed_payment_delay = $allowed_payment_delay;
+        $this->allowed_total_overdue_debt = $allowed_total_overdue_debt;
+
+        $this->messages = new Messages();
+    }
+
+    /**
+     * The buffer of what processing had to say, for whoever is above to drain.
+     *
+     * The buffer itself is handed over rather than its contents, so that `handleMessages()` can
+     * empty it and nobody is told the same thing twice.
+     *
+     * @return \App\Messages\Messages
+     */
+    public function getMessages(): Messages
+    {
+        return $this->messages;
+    }
+
+    /**
+     * Safely call a function and handle any exceptions
+     *
+     * What comes back is escaped: it carries comments as a router had them, not just what was sent.
+     *
+     * @return void
+     */
+    private function safeCall(callable $fn, string $label): void
+    {
+        try {
+            $result = $fn();
+            $this->messages->success(
+                '<strong>' . $label . '</strong><br>'
+                    . ($result ? nl2br(h((string)$result)) : __d('bookkeeping', 'Nothing has changed.')),
+                ['escape' => false],
+            );
+        } catch (Throwable $e) {
+            Log::error(
+                sprintf(
+                    '%s failed: %s',
+                    $label,
+                    $e->getMessage(),
+                ),
+            );
+
+            $errorLabel = __d(
+                'bookkeeping',
+                '{0} failed',
+                $label,
+            );
+            $errorMessage = $e->getMessage();
+
+            $this->messages->error(
+                '<strong>' . $errorLabel . '</strong><br>'
+                    . ($errorMessage ? nl2br(h($errorMessage)) : __d('bookkeeping', 'Unknown error.')),
+                ['escape' => false],
+            );
+        }
+    }
+
+    /**
+     * Load Debtors from Database
+     *
+     * @return void
+     */
+    private function loadDebtorsFromDatabase(): void
+    {
+        self::$debtors = $this->fetchTable(InvoicesTable::class)
+            ->find()
+            ->contain([
+                'Customers' => [
+                    'strategy' => Association::STRATEGY_SELECT,
+                    'Contracts' => [
+                        'ContractStates',
+                    ],
+                    'Emails',
+                    'Phones',
+                ],
+            ])
+            ->where([
+                'Invoices.debt >' => 0,
+                'Invoices.customer_id IS NOT NULL',
+            ])
+            ->orderBy([
+                'Invoices.customer_id' => 'ASC',
+                'Invoices.creation_date' => 'DESC',
+                'Invoices.number' => 'DESC',
+            ])
+            ->all()
+            ->groupBy('customer.id')
+            ->map(
+                function ($invoices, $_customer_id): Debtor {
+                    return new Debtor($invoices);
+                },
+            )
+            ->sortBy(
+                function (Debtor $debtor): float {
+                    return $debtor->getTotalDebt();
+                },
+            );
+    }
+
+    /**
+     * Get Debtors
+     *
+     * All debtors, even those who are not overdue.
+     *
+     * @return \Cake\Collection\CollectionInterface<string, \Bookkeeping\Debtors\Debtor>
+     */
+    public function getDebtors(): CollectionInterface
+    {
+        // Load debtors if not already loaded
+        if (!isset(self::$debtors)) {
+            $this->loadDebtorsFromDatabase();
+        }
+
+        // Return debtors
+        if (isset(self::$debtors)) {
+            return self::$debtors;
+        }
+        throw new RuntimeException(__d('bookkeeping', 'Debtors data is not available.'));
+    }
+
+    /**
+     * Get Overdue Debtors
+     *
+     * Debtors who are overdue (ignoring exceptions).
+     *
+     * @return \Cake\Collection\CollectionInterface<string, \Bookkeeping\Debtors\Debtor>
+     */
+    public function getOverdueDebtors(): CollectionInterface
+    {
+        // Return filtered debtors
+        return $this
+            ->getDebtors()
+            ->filter(
+                function (Debtor $debtor): bool {
+                    return $debtor->getDueDate() < Date::now()
+                        && $debtor->getTotalOverdueDebt() > 0;
+                },
+            );
+    }
+
+    /**
+     * Get Filtered Overdue Debtors
+     *
+     * Debtors who are overdue and do not even meet the set exceptions.
+     *
+     * @return \Cake\Collection\CollectionInterface<string, \Bookkeeping\Debtors\Debtor>
+     */
+    public function getFilteredOverdueDebtors(): CollectionInterface
+    {
+        // Return filtered debtors
+        return $this
+            ->getDebtors()
+            ->filter(
+                function (Debtor $debtor): bool {
+                    // virtual day in the past to allow for payment delays
+                    $date = Date::now()->subDays($this->allowed_payment_delay);
+
+                    return $debtor->getDueDate() < $date
+                        && $debtor->getTotalOverdueDebtForDate($date) > $this->allowed_total_overdue_debt;
+                },
+            );
+    }
+
+    /**
+     * The same debtors {@see self::getFilteredOverdueDebtors()} yields, as a query over
+     * their customer ids and overdue amounts rather than as hydrated invoices.
+     *
+     * Reading them the usual way loads every unpaid invoice with its customer, contracts,
+     * e-mails and phones, which is far too much for a dashboard card that only wants a
+     * number. The thresholds are the same ones, expressed in SQL - keep the two in step.
+     *
+     * @return \Cake\ORM\Query\SelectQuery<array<string, mixed>>
+     */
+    public function findFilteredOverdueDebtorIds(): SelectQuery
+    {
+        // virtual day in the past to allow for payment delays
+        $date = Date::now()->subDays($this->allowed_payment_delay);
+
+        $query = $this->fetchTable(InvoicesTable::class)->find();
+
+        // The date is typed by hand rather than left to the schema: read as a subquery the
+        // type map does not reach it, and an untyped date is bound as the locale writes
+        // it, which PostgreSQL rejects.
+        $overdue_debt = $query->func()->sum(
+            $query->expr()
+                ->case()
+                ->when(['Invoices.due_date <' => $date], ['Invoices.due_date' => 'date'])
+                ->then(new IdentifierExpression('Invoices.debt'))
+                ->else(0),
+        );
+
+        return $query
+            ->disableHydration()
+            ->select([
+                'customer_id' => 'Invoices.customer_id',
+                'overdue_debt' => $overdue_debt,
+            ])
+            ->where([
+                'Invoices.debt >' => 0,
+                'Invoices.customer_id IS NOT NULL',
+            ])
+            ->groupBy('Invoices.customer_id')
+            ->having(
+                fn(QueryExpression $exp): QueryExpression => $exp
+                    ->lt($query->func()->min('Invoices.due_date'), $date, 'date')
+                    ->gt($overdue_debt, $this->allowed_total_overdue_debt, 'decimal'),
+            );
+    }
+
+    /**
+     * How many debtors {@see self::getFilteredOverdueDebtors()} would yield.
+     *
+     * @return int
+     */
+    public function countFilteredOverdueDebtors(): int
+    {
+        return $this->findFilteredOverdueDebtorIds()->count();
+    }
+
+    /**
+     * Determine whether automatic debtor blocking is enabled.
+     *
+     * This method checks the global debtor blocking configuration and,
+     * optionally, the configuration for a specific blocking service.
+     *
+     * Behaviour:
+     * - If global blocking is disabled, returns false regardless of service.
+     * - If no service is specified and global blocking is enabled, returns true.
+     * - If a service is specified, returns true only if that service is enabled.
+     *
+     * Configuration keys:
+     * - bookkeeping.debtors.blocking.enabled
+     * - bookkeeping.debtors.blocking.services.<service>.enabled
+     *
+     * @param string|null $service Optional blocking service identifier
+     *                             (e.g. "sledovani_tv", "routers").
+     *                             If null, only the global blocking flag is evaluated.
+     * @return bool True if debtor blocking is enabled for the given context.
+     */
+    public function isDebtorBlockingEnabled(?string $service = null): bool
+    {
+        if (!(bool)Settings::get('bookkeeping.debtors.blocking.enabled', false)) {
+            return false;
+        }
+
+        if ($service === null) {
+            return true;
+        }
+
+        return (bool)Settings::get(sprintf('bookkeeping.debtors.blocking.services.%s.enabled', $service), false);
+    }
+
+    /**
+     * Block Debtor
+     *
+     * @param string|null $id Customer ID.
+     * @return void
+     * @throws \Cake\Datasource\Exception\RecordNotFoundException When record not found.
+     */
+    public function block(?string $id): void
+    {
+        $this->setBlocked($id, true);
+    }
+
+    /**
+     * Unblock Debtor
+     *
+     * @param string|null $id Customer ID.
+     * @return void
+     * @throws \Cake\Datasource\Exception\RecordNotFoundException When record not found.
+     */
+    public function unblock(?string $id): void
+    {
+        $this->setBlocked($id, false);
+    }
+
+    /**
+     * Blocks a debtor by hand or lets them back in.
+     *
+     * @param string|null $id Customer ID.
+     * @param bool $block Whether they are blocked rather than let back in.
+     * @return void
+     * @throws \Cake\Datasource\Exception\RecordNotFoundException When record not found.
+     */
+    private function setBlocked(?string $id, bool $block): void
+    {
+        if (!$this->isDebtorBlockingEnabled()) {
+            $this->messages->warning(__d(
+                'bookkeeping',
+                'Debtor blocking is globally disabled by settings. No external systems were modified.',
+            ));
+            // stop execution
+            return;
+        }
+
+        if ($id === null) {
+            $this->messages->error(__d(
+                'bookkeeping',
+                'Customer ID of the debtor must be provided.',
+            ));
+            // stop execution
+            return;
+        }
+
+        $customerIps = $this->getCustomerIps($id, 'MANUAL ENTRY - ', false);
+
+        if ($block) {
+            $this->addLabel($id);
+        } else {
+            $this->removeLabel($id);
+        }
+
+        if ($this->isDebtorBlockingEnabled('sledovani_tv')) {
+            $this->safeCall(
+                fn(): string => $this->updateSledovaniTV(
+                    ids: [$id],
+                    block: $block,
+                    clear: false,
+                ),
+                __d('bookkeeping', 'SledovaniTV blocking update'),
+            );
+        }
+
+        if ($this->isDebtorBlockingEnabled('routers')) {
+            $this->safeCall(
+                fn(): string => $this->updateRouters(
+                    ips: $customerIps,
+                    block: $block,
+                    clear: false,
+                ),
+                __d('bookkeeping', 'Routers blocking update'),
+            );
+        }
+    }
+
+    /**
+     * Automatic Update of Debtor Blocking
+     *
+     * Whoever is blocked has to be worked out in one pass, whatever the reasons. The address
+     * list on each router is made to hold exactly this set rather than added to - that is how
+     * anybody who has paid gets let back in - so a second pass over a second set of customers
+     * would not add to this one, it would undo it.
+     *
+     * Which is why the other reasons are gathered here rather than handed in. This runs from
+     * the nightly command and from a button on the debtor listing, and a set passed in by one
+     * of those callers would be missing from the other - leaving whoever pressed the button
+     * to quietly reconnect everybody the night before had cut off.
+     *
+     * @return void
+     * @throws \Cake\Datasource\Exception\RecordNotFoundException When record not found.
+     */
+    public function blockingUpdate(): void
+    {
+        if (!$this->isDebtorBlockingEnabled()) {
+            $this->messages->warning(__d(
+                'bookkeeping',
+                'Debtor blocking is globally disabled by settings. No external systems were modified.',
+            ));
+            // stop execution
+            return;
+        }
+
+        $start_time = DateTime::now();
+
+        $blocked = $this->contractsToBlock();
+
+        // Nobody left to block is the lists being emptied, so both families are always there.
+        $customerIps = ['ipv4' => [], 'ipv6' => []];
+
+        foreach (array_keys($blocked) as $contract_id) {
+            $customerIps = array_merge_recursive(
+                $customerIps,
+                $this->getContractIps($contract_id),
+            );
+        }
+
+        foreach ($this->labelNotes($blocked) as $customer_id => $note) {
+            $this->addLabel($customer_id, $note);
+        }
+
+        $this->clearLabel($start_time);
+
+        $customerIds = $this->customersLeftWithNothing(array_keys($blocked));
+
+        if ($this->isDebtorBlockingEnabled('sledovani_tv')) {
+            $this->safeCall(
+                fn(): string => $this->updateSledovaniTV(
+                    ids: $customerIds,
+                    block: true,
+                    clear: true,
+                ),
+                __d('bookkeeping', 'SledovaniTV blocking update'),
+            );
+        }
+
+        if ($this->isDebtorBlockingEnabled('routers')) {
+            $this->safeCall(
+                fn(): string => $this->updateRouters(
+                    ips: $customerIps,
+                    block: true,
+                    clear: true,
+                ),
+                __d('bookkeeping', 'Routers blocking update'),
+            );
+        }
+    }
+
+    /**
+     * The contracts to block, each with the reason it is blocked for.
+     *
+     * Contracts rather than customers. Owing money is a reason to cut off everything somebody has,
+     * so a debtor names all of theirs - but an unsigned contract says nothing about the two beside
+     * it that are signed and paid for, and neither does a state an operator has put one contract
+     * into.
+     *
+     * A contract blocked twice over is one blocked contract, and the reason it keeps is the debt,
+     * which is what gets paid off to be let back in.
+     *
+     * @return array<string, string> The reason, by the id of the contract.
+     */
+    private function contractsToBlock(): array
+    {
+        $blocked = [];
+
+        foreach ($this->getFilteredOverdueDebtors() as $debtor) {
+            foreach ($debtor->getCustomer()->contracts as $contract) {
+                $blocked[$contract->id] = __d('bookkeeping', 'debtor');
+            }
+        }
+
+        return $blocked + $this->unsignedToBlock() + $this->statedAsBlocked();
+    }
+
+    /**
+     * The contracts an operator has put into a state that says they are blocked.
+     *
+     * Contract states have carried a `blocked` flag since they were written, and the office
+     * has been able to set it all along, but nothing ever read it - a contract could sit in a
+     * state called blocked and go on serving. This is what makes the flag mean something.
+     *
+     * It is a decision somebody made rather than a deadline that ran out, so there is no
+     * setting to switch it off: a state that says blocked is the operator saying so.
+     *
+     * @return array<string, string> Contract id to the reason it is being cut off.
+     */
+    private function statedAsBlocked(): array
+    {
+        $contracts = $this->fetchTable(ContractsTable::class)
+            ->find()
+            ->select(['Contracts.id'])
+            ->innerJoinWith(
+                'ContractStates',
+                fn(SelectQuery $states): SelectQuery => $states->where(['ContractStates.blocked' => true]),
+            )
+            ->all();
+
+        $blocked = [];
+
+        /** @var \App\Model\Entity\Contract $contract */
+        foreach ($contracts as $contract) {
+            $blocked[$contract->id] = __d('bookkeeping', 'blocked state');
+        }
+
+        return $blocked;
+    }
+
+    /**
+     * What each customer's label should say, given the contracts of theirs that are blocked.
+     *
+     * The label sits on the customer rather than on the contract, so somebody whose contracts
+     * are blocked for different reasons still carries one - and it says the debt, because
+     * that is the reason that has to be settled before anything is restored.
+     *
+     * @param array<string, string> $blocked Contract id to the reason it is blocked.
+     * @return array<string, string> Customer id to what their label should say.
+     */
+    private function labelNotes(array $blocked): array
+    {
+        if ($blocked === []) {
+            return [];
+        }
+
+        $notes = [];
+
+        $contracts = $this->fetchTable(ContractsTable::class)
+            ->find()
+            ->select(['Contracts.id', 'Contracts.customer_id'])
+            ->where(['Contracts.id IN' => array_keys($blocked)])
+            ->all();
+
+        /** @var \App\Model\Entity\Contract $contract */
+        foreach ($contracts as $contract) {
+            $note = $blocked[$contract->id];
+
+            // the debt outranks anything else the same customer is blocked for
+            if (($notes[$contract->customer_id] ?? null) !== __d('bookkeeping', 'debtor')) {
+                $notes[$contract->customer_id] = $note;
+            }
+        }
+
+        return $notes;
+    }
+
+    /**
+     * The customers whose every contract is in the blocked set.
+     *
+     * Television is sold to a person rather than to one of their contracts - the provider
+     * knows them by their customer number and nothing finer - so it can only be switched off
+     * when there is nothing of theirs left running. Cutting one contract of three does not
+     * take the television with it, and neither does cutting anybody whose television is VIP.
+     *
+     * @param list<string> $blocked_contract_ids The contracts being blocked.
+     * @return list<string> Customer ids.
+     * @throws \Cake\Datasource\Exception\RecordNotFoundException When record not found.
+     */
+    private function customersLeftWithNothing(array $blocked_contract_ids): array
+    {
+        if ($blocked_contract_ids === []) {
+            return [];
+        }
+
+        $contracts = $this->fetchTable(ContractsTable::class);
+
+        $customer_ids = $contracts
+            ->find()
+            ->select(['Contracts.customer_id'])
+            ->distinct(['Contracts.customer_id'])
+            ->where(['Contracts.id IN' => $blocked_contract_ids])
+            ->all()
+            ->extract('customer_id')
+            ->toList();
+
+        $left = [];
+
+        foreach ($customer_ids as $customer_id) {
+            $still_running = $contracts
+                ->find()
+                ->find('withActiveServices')
+                ->where([
+                    'Contracts.customer_id' => $customer_id,
+                    'Contracts.id NOT IN' => $blocked_contract_ids,
+                ])
+                ->count();
+
+            if ($still_running === 0 && !$this->holdsAVipTelevision((string)$customer_id)) {
+                $left[] = (string)$customer_id;
+            }
+        }
+
+        return $left;
+    }
+
+    /**
+     * Whether the customer's television runs on a VIP contract.
+     *
+     * VIP goes by the contract, and the television service knows nothing of contracts, so this is
+     * where the two meet. Which contracts are for television is a setting: nothing else says so.
+     * Only a contract that still provides its services counts.
+     *
+     * @param string $customer_id The customer.
+     * @return bool
+     */
+    private function holdsAVipTelevision(string $customer_id): bool
+    {
+        $serviceTypes = (array)Settings::get(
+            'bookkeeping.debtors.blocking.services.sledovani_tv.service_type_ids',
+            [],
+        );
+
+        return $serviceTypes !== [] && $this->fetchTable(ContractsTable::class)
+            ->find('withActiveServices')
+            ->where([
+                'Contracts.customer_id' => $customer_id,
+                'Contracts.service_type_id IN' => $serviceTypes,
+                'Contracts.vip' => true,
+            ])
+            ->count() > 0;
+    }
+
+    /**
+     * The contracts to cut off for want of a signed contract.
+     *
+     * Paperwork is the contracts' business rather than the accounting's, so what comes back
+     * is a finished list of identifiers: this asks who, and never why. Switched off, or with
+     * nobody past the deadline, it is simply empty and the pass is the debtor pass it always
+     * was.
+     *
+     * @return array<string, string> Contract id to the reason it is being cut off.
+     */
+    private function unsignedToBlock(): array
+    {
+        if (!(bool)Settings::get(self::UNSIGNED_PATH . '.blocking.enabled', false)) {
+            return [];
+        }
+
+        /** @var \App\Model\Table\ContractVersionsTable $versions */
+        $versions = $this->fetchTable(ContractVersionsTable::class);
+
+        return (new UnsignedPaperwork($versions))->contractIdsToBlock(UnsignedWaits::beforeBlocking(), Date::now());
+    }
+
+    /**
+     * Adds a label for the customer
+     *
+     * The note is not part of what is looked for. A customer already carrying this label for
+     * one reason and now blocked for another is still one blocked customer with one label,
+     * and searching by the note as well would leave them holding two - which would then take
+     * two payments, or two signatures, to clear.
+     *
+     * @param string $id Customer ID.
+     * @param string|null $note What the label says about why, or null for the debt.
+     * @psalm-suppress UnusedReturnValue
+     */
+    private function addLabel(string $id, ?string $note = null): CustomerLabel|false
+    {
+        // check that the label is configured
+        $labelId = Settings::getString('bookkeeping.debtors.blocking.blocked_label_id');
+        if ($labelId === '') {
+            return false;
+        }
+        /** @var \App\Model\Table\CustomerLabelsTable $customerLabelsTable */
+        $customerLabelsTable = $this->fetchTable(CustomerLabelsTable::class);
+        /** @var \App\Model\Entity\CustomerLabel $customerLabel */
+        $customerLabel = $customerLabelsTable->findOrNewEntity([
+            'label_id' => $labelId,
+            'customer_id' => $id,
+            'contract_id IS' => null,
+        ]);
+
+        $customerLabel->note = $note ?? __d('bookkeeping', 'debtor');
+
+        // update modification time
+        $customerLabel->modified = DateTime::now();
+
+        return $customerLabelsTable->saveOrFail($customerLabel);
+    }
+
+    /**
+     * Removes the label for the customer
+     *
+     * @param string $id Customer ID.
+     * @return iterable<\App\Model\Entity\CustomerLabel>|false Entities list
+     *   on success, false on failure.
+     * @psalm-suppress UnusedReturnValue
+     */
+    private function removeLabel(string $id): iterable|false
+    {
+        // check that the label is configured
+        $labelId = Settings::getString('bookkeeping.debtors.blocking.blocked_label_id');
+        if ($labelId === '') {
+            return false;
+        }
+        /** @var \App\Model\Table\CustomerLabelsTable $customerLabelsTable */
+        $customerLabelsTable = $this->fetchTable(CustomerLabelsTable::class);
+
+        /** @var array<\App\Model\Entity\CustomerLabel> $customerLabelsToDelete */
+        $customerLabelsToDelete = $customerLabelsTable
+            ->find()
+            ->where([
+                'label_id' => $labelId,
+                'customer_id' => $id,
+            ])
+            ->all();
+
+        return $customerLabelsTable->deleteMany(
+            $customerLabelsToDelete,
+            AuditTrail::batchOptions(),
+        );
+    }
+
+    /**
+     * Removes the label for all customers
+     *
+     * @param \Cake\I18n\DateTime $older_than Only labels with last modification older than this parameter.
+     * @return iterable<\App\Model\Entity\CustomerLabel>|false Entities list
+     *   on success, false on failure.
+     * @psalm-suppress UnusedReturnValue
+     */
+    private function clearLabel(DateTime $older_than): iterable|false
+    {
+        // check that the label is configured
+        $labelId = Settings::getString('bookkeeping.debtors.blocking.blocked_label_id');
+        if ($labelId === '') {
+            return false;
+        }
+        /** @var \App\Model\Table\CustomerLabelsTable $customerLabelsTable */
+        $customerLabelsTable = $this->fetchTable(CustomerLabelsTable::class);
+
+        /** @var array<\App\Model\Entity\CustomerLabel> $customerLabelsToDelete */
+        $customerLabelsToDelete = $customerLabelsTable
+            ->find()
+            ->where([
+                'label_id' => $labelId,
+                'modified <' => $older_than,
+            ])
+            ->all();
+
+        return $customerLabelsTable->deleteMany(
+            $customerLabelsToDelete,
+            AuditTrail::batchOptions(),
+        );
+    }
+
+    /**
+     * Get Customer IPs
+     *
+     * Only what is the customer's own. A technology address is our equipment rather than
+     * theirs, so blocking it would cut off the device instead of the service.
+     *
+     * Return example: ['ipv4' => ['0.0.0.0' => 'comment'], 'ipv6' => ['0::1/128' => 'comment']]
+     *
+     * @param string|null $id Customer ID.
+     * @param string $comment_prefix IP comment prefix.
+     * @param bool $skip_vip Skip VIP contracts.
+     * @return array<string, mixed> List of IPv4 and IPv6 adresses/networks.
+     * @throws \Cake\Datasource\Exception\RecordNotFoundException When record not found.
+     */
+    private function getCustomerIps(?string $id, string $comment_prefix = '', bool $skip_vip = true): array
+    {
+        $customer = $this->fetchTable(CustomersTable::class)->get($id, contain: [
+            'IpAddresses' => [
+                'Contracts',
+            ],
+            'IpNetworks' => [
+                'Contracts',
+            ],
+        ]);
+
+        return $this->collectIps(
+            $customer,
+            $customer->ip_addresses,
+            $customer->ip_networks,
+            $comment_prefix,
+            $skip_vip,
+        );
+    }
+
+    /**
+     * Get the IPs of one contract
+     *
+     * The same addresses, asked for by the contract they hang on rather than by the person
+     * who holds it. A reason to cut somebody off is not always a reason to cut off
+     * everything they have: an unsigned contract, or one an operator has put into a blocked
+     * state, says nothing about the other two contracts the same customer is paying for.
+     *
+     * Where the reason is the person rather than the contract - money owed - every contract
+     * they hold is named, and this comes to the same thing as asking by customer.
+     *
+     * @param string $contract_id Contract ID.
+     * @param string $comment_prefix IP comment prefix.
+     * @param bool $skip_vip Skip VIP contracts.
+     * @return array<string, mixed> List of IPv4 and IPv6 adresses/networks.
+     * @throws \Cake\Datasource\Exception\RecordNotFoundException When record not found.
+     */
+    private function getContractIps(string $contract_id, string $comment_prefix = '', bool $skip_vip = true): array
+    {
+        $contract = $this->fetchTable(ContractsTable::class)->get($contract_id, contain: [
+            'Customers',
+            'IpAddresses',
+            'IpNetworks',
+        ]);
+
+        // The address carries the contract in the comment written onto the router, and it is
+        // this contract - so it is put back on each one rather than read off the association
+        // a fetch by contract has no reason to load.
+        foreach ([...$contract->ip_addresses, ...$contract->ip_networks] as $address) {
+            $address->contract = $contract;
+        }
+
+        return $this->collectIps(
+            $contract->customer,
+            $contract->ip_addresses,
+            $contract->ip_networks,
+            $comment_prefix,
+            $skip_vip,
+        );
+    }
+
+    /**
+     * Sort a customer's addresses into what may go onto a firewall list and what may not.
+     *
+     * @param \App\Model\Entity\Customer $customer Who they belong to.
+     * @param array<\App\Model\Entity\IpAddress> $ip_addresses Addresses to consider.
+     * @param array<\App\Model\Entity\IpNetwork> $ip_networks Networks to consider.
+     * @param string $comment_prefix IP comment prefix.
+     * @param bool $skip_vip Skip VIP contracts.
+     * @return array<string, mixed> List of IPv4 and IPv6 adresses/networks.
+     */
+    private function collectIps(
+        Customer $customer,
+        array $ip_addresses,
+        array $ip_networks,
+        string $comment_prefix,
+        bool $skip_vip,
+    ): array {
+        $ipv4s = [];
+        $ipv6s = [];
+
+        // IP addresses
+        foreach ($ip_addresses as $ipAddress) {
+            // skip our own equipment
+            if (!$ipAddress->type_of_use->isCustomer()) {
+                continue;
+            }
+            // skip VIP contracts
+            if ($skip_vip && $ipAddress->contract->vip === true) {
+                continue;
+            }
+            // split address and mask
+            [$address] = explode('/', $ipAddress->ip_address);
+            // prepare comment
+            $comment = $comment_prefix . ($ipAddress->contract->number ?? $customer->number) . ' - ' . $customer->name;
+            // IPv4
+            if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                $ipv4s[$address] = $comment;
+            }
+            // IPv6
+            if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+                $ipv6s[$address] = $comment;
+            }
+        }
+        // IP networks
+        foreach ($ip_networks as $ipNetwork) {
+            // skip our own equipment
+            if (!$ipNetwork->type_of_use->isCustomer()) {
+                continue;
+            }
+            // skip VIP contracts
+            if ($skip_vip && $ipNetwork->contract->vip === true) {
+                continue;
+            }
+            // split address and mask
+            [$address, $mask] = explode('/', $ipNetwork->ip_network);
+            // prepare comment
+            $comment = $comment_prefix . ($ipNetwork->contract->number ?? $customer->number) . ' - ' . $customer->name;
+            // IPv4
+            if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+                $ipv4s[$address . '/' . $mask] = $comment;
+            }
+            // IPv6
+            if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+                $ipv6s[$address . '/' . $mask] = $comment;
+            }
+        }
+
+        // return resulting array
+        return [
+            'ipv4' => $ipv4s,
+            'ipv6' => $ipv6s,
+        ];
+    }
+
+    /**
+     * Update routers method
+     *
+     * Input example: ['ipv4' => ['0.0.0.0' => 'comment'], 'ipv6' => ['0::1/128' => 'comment']]
+     *
+     * The routers are changed by the Watcher Agent, which sits in their network. One that cannot be
+     * reached does not hold up the others: all of them are tried, and what failed is reported along
+     * with what was done on the rest.
+     *
+     * @param array<string, mixed> $ips List of IPv4 and IPv6 adresses/networks.
+     * @param bool $block Defaults to unblock (false) / block (true)
+     * @param bool $clear Make the address list hold exactly these addresses. Default (false).
+     * @return string List of performed changes
+     * @throws \InvalidArgumentException When incorrect IP addresses input format.
+     * @throws \RuntimeException When a router could not be updated.
+     */
+    private function updateRouters(array $ips, bool $block = false, bool $clear = false): string
+    {
+        if (!isset($ips['ipv4']) || !isset($ips['ipv6']) || !is_array($ips['ipv4']) || !is_array($ips['ipv6'])) {
+            throw new InvalidArgumentException('Incorrect IP addresses input format.');
+        }
+
+        $routersIpAddresses = (string)Configure::read('Bookkeeping.debtors.routersIpAddresses');
+        if ($routersIpAddresses === '') {
+            throw new InvalidArgumentException('No routers are configured to block debtors on.');
+        }
+
+        $addressList = Settings::getString('bookkeeping.debtors.blocking.services.routers.address_list');
+        if ($addressList === '') {
+            throw new InvalidArgumentException('No firewall address list is configured for debtors.');
+        }
+
+        $entries = [];
+        foreach ([$ips['ipv4'], $ips['ipv6']] as $family) {
+            foreach ($family as $address => $comment) {
+                // RouterOS does not read comments as UTF-8
+                $entries[(string)$address] = Strings::removeAccents((string)$comment);
+            }
+        }
+
+        $result = '';
+        $failures = [];
+
+        foreach (explode(' ', $routersIpAddresses) as $router) {
+            $answer = match (true) {
+                $clear => AgentApiClient::syncAddressList($router, $addressList, $entries),
+                $block => AgentApiClient::addToAddressList($router, $addressList, $entries),
+                default => AgentApiClient::removeFromAddressList($router, $addressList, array_keys($entries)),
+            };
+
+            if (!$answer->ok()) {
+                $failures[] = __d(
+                    'bookkeeping',
+                    'RouterOS device {0}: {1}',
+                    $router,
+                    $answer->failure ?? __d('bookkeeping', 'Watcher Agent is not configured.'),
+                );
+                continue;
+            }
+
+            $result .= $this->routerChangeNotes($router, $answer->data);
+        }
+
+        if ($failures !== []) {
+            throw new RuntimeException(trim(implode(PHP_EOL, $failures) . PHP_EOL . $result));
+        }
+
+        return $result;
+    }
+
+    /**
+     * What was done to the address list on one router, for the report the operator reads.
+     *
+     * @param string $router The router.
+     * @param \App\Agent\Dto\AddressListChanges $changes What the agent did there.
+     * @return string
+     */
+    private function routerChangeNotes(string $router, AddressListChanges $changes): string
+    {
+        $notes = '';
+
+        // Every sentence is written out in full: the extractor reads the literal it is given and a
+        // message picked inside the call would not reach the catalogue at all.
+        foreach ($changes->added as $entry) {
+            $notes .= ($entry->isIpv6()
+                ? __d(
+                    'bookkeeping',
+                    'Added IPv6 record {0} ({1}) to router {2}.',
+                    $entry->address,
+                    $entry->comment,
+                    $router,
+                )
+                : __d(
+                    'bookkeeping',
+                    'Added IPv4 record {0} ({1}) to router {2}.',
+                    $entry->address,
+                    $entry->comment,
+                    $router,
+                )
+            ) . PHP_EOL;
+        }
+
+        foreach ($changes->updated as $entry) {
+            $notes .= ($entry->isIpv6()
+                ? __d(
+                    'bookkeeping',
+                    'Updated IPv6 record {0} ({1}) on router {2}.',
+                    $entry->address,
+                    $entry->comment,
+                    $router,
+                )
+                : __d(
+                    'bookkeeping',
+                    'Updated IPv4 record {0} ({1}) on router {2}.',
+                    $entry->address,
+                    $entry->comment,
+                    $router,
+                )
+            ) . PHP_EOL;
+        }
+
+        foreach ($changes->removed as $entry) {
+            $notes .= ($entry->isIpv6()
+                ? __d('bookkeeping', 'Removed IPv6 record {0} from router {1}.', $entry->address, $router)
+                : __d('bookkeeping', 'Removed IPv4 record {0} from router {1}.', $entry->address, $router)
+            ) . PHP_EOL;
+        }
+
+        return $notes;
+    }
+
+    /**
+     * Update SledovaniTV method
+     *
+     * Input example: ['ipv4' => ['0.0.0.0' => 'comment'], 'ipv6' => ['0::1/128' => 'comment']]
+     *
+     * @param array<string> $ids List of customer IDs.
+     * @param bool $block Defaults to unblock (false) / block (true)
+     * @param bool $clear Before the operation, clear the blocks. Default (false).
+     * @return string List of performed changes
+     */
+    private function updateSledovaniTV(array $ids, bool $block = false, bool $clear = false): string
+    {
+        // A service that would not answer must leave every viewer as it found them: an empty list
+        // read as "nobody is registered" would put back everyone the blocking had switched off.
+        /** @var \Cake\Collection\CollectionInterface<int, \App\SledovaniTV\Dto\TvUser> $tvUsers */
+        $tvUsers = SledovaniTVApiClient::getUsers()->orFail(
+            __d('bookkeeping', 'SledovaniTV is not configured.'),
+        );
+
+        $customers = $this->fetchTable(CustomersTable::class)
+            ->find(
+                'list',
+                keyField: 'id',
+                valueField: 'number',
+            )
+            ->whereInList('id', $ids, ['allowEmpty' => true])
+            ->toArray();
+
+        $result = '';
+
+        foreach ($tvUsers as $tvUser) {
+            $ours = in_array($tvUser->partnerNumber, $customers);
+
+            // block = true and not suspended => block
+            if ($ours && $block && $tvUser->canBeSuspended() && $this->switchTv($tvUser, suspend: true)) {
+                $result .= $this->tvChangeNote($tvUser, suspended: true);
+                continue;
+            }
+
+            // ours and to be unblocked, or suspended and no longer on the list at all
+            $unblock = $tvUser->suspended && ($ours ? !$block : $clear);
+
+            if ($unblock && $this->switchTv($tvUser, suspend: false)) {
+                $result .= $this->tvChangeNote($tvUser, suspended: false);
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Switch one viewer off or back on.
+     *
+     * @param \App\SledovaniTV\Dto\TvUser $tvUser The viewer to switch.
+     * @param bool $suspend Whether to switch them off rather than back on.
+     * @return bool Whether the service says it did.
+     */
+    private function switchTv(TvUser $tvUser, bool $suspend): bool
+    {
+        $answer = $suspend
+            ? SledovaniTVApiClient::suspendUser($tvUser->id)
+            : SledovaniTVApiClient::unsuspendUser($tvUser->id);
+
+        return $answer->or(false);
+    }
+
+    /**
+     * What was done to one viewer, for the report the operator reads.
+     *
+     * @param \App\SledovaniTV\Dto\TvUser $tvUser The viewer that was switched.
+     * @param bool $suspended Whether they were switched off rather than back on.
+     * @return string
+     */
+    private function tvChangeNote(TvUser $tvUser, bool $suspended): string
+    {
+        // Both sentences are written out in full: the extractor reads the literal it is given
+        // and a message picked inside the call would not reach the catalogue at all.
+        $note = $suspended
+            ? __d(
+                'bookkeeping',
+                'SledovaniTV - Suspended user with ID: {0} (partner ID: {1}).',
+                $tvUser->id,
+                $tvUser->partnerNumber,
+            )
+            : __d(
+                'bookkeeping',
+                'SledovaniTV - Unsuspended user with ID: {0} (partner ID: {1}).',
+                $tvUser->id,
+                $tvUser->partnerNumber,
+            );
+
+        return $note . PHP_EOL;
+    }
+}

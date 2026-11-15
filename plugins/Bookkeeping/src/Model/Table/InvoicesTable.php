@@ -1,0 +1,171 @@
+<?php
+declare(strict_types=1);
+
+namespace Bookkeeping\Model\Table;
+
+use Bookkeeping\Model\Entity\Invoice;
+use Cake\ORM\RulesChecker;
+use Cake\ORM\Table;
+use Cake\Validation\Validator;
+use Override;
+
+/**
+ * Invoices Model
+ *
+ * @extends \Cake\ORM\Table<array<string, \Cake\ORM\Behavior>>
+ * @property \App\Model\Table\CustomersTable&\Cake\ORM\Association\BelongsTo $Customers
+ * @property \Access\Model\Table\UsersTable&\Cake\ORM\Association\BelongsTo $Creators
+ * @property \Access\Model\Table\UsersTable&\Cake\ORM\Association\BelongsTo $Modifiers
+ * @method \Bookkeeping\Model\Entity\Invoice newEmptyEntity()
+ * @method \Bookkeeping\Model\Entity\Invoice newEntity(array $data, array $options = [])
+ * @method \Bookkeeping\Model\Entity\Invoice[] newEntities(array $data, array $options = [])
+ * @method \Bookkeeping\Model\Entity\Invoice get(mixed $primaryKey, array|string $finder = 'all', null|\Psr\SimpleCache\CacheInterface|string $cache = null, null|\Closure|string $cacheKey = null, mixed ...$args)
+ * @method \Bookkeeping\Model\Entity\Invoice findOrCreate($search, callable|array|null $callback = null, $options = [])
+ * @method \Bookkeeping\Model\Entity\Invoice patchEntity(\Cake\Datasource\EntityInterface $entity, array $data, array $options = [])
+ * @method \Bookkeeping\Model\Entity\Invoice[] patchEntities(iterable $entities, array $data, array $options = [])
+ * @method \Bookkeeping\Model\Entity\Invoice|false save(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method \Bookkeeping\Model\Entity\Invoice saveOrFail(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method iterable<\Bookkeeping\Model\Entity\Invoice>|false saveMany(iterable $entities, $options = [])
+ * @method iterable<\Bookkeeping\Model\Entity\Invoice> saveManyOrFail(iterable $entities, $options = [])
+ * @method iterable<\Bookkeeping\Model\Entity\Invoice>|false deleteMany(iterable $entities, $options = [])
+ * @method iterable<\Bookkeeping\Model\Entity\Invoice> deleteManyOrFail(iterable $entities, $options = [])
+ * @mixin \Cake\ORM\Behavior\TimestampBehavior
+ */
+class InvoicesTable extends Table
+{
+    /**
+     * Initialize method
+     *
+     * @param array<string, mixed> $config The configuration for the Table.
+     * @return void
+     */
+    #[Override]
+    public function initialize(array $config): void
+    {
+        parent::initialize($config);
+
+        $this->setTable('invoices');
+        $this->setDisplayField('number');
+        $this->setPrimaryKey('id');
+
+        $this->addBehavior('Timestamp');
+        $this->addBehavior('Footprint');
+        $this->addBehavior('StringModifications');
+
+        $this->belongsTo('Customers', [
+            'foreignKey' => 'customer_id',
+            'className' => 'Customers',
+        ]);
+        $this->belongsTo('Creators', [
+            'className' => 'Users',
+            'foreignKey' => 'created_by',
+        ]);
+        $this->belongsTo('Modifiers', [
+            'className' => 'Users',
+            'foreignKey' => 'modified_by',
+        ]);
+    }
+
+    /**
+     * Default validation rules.
+     *
+     * @param \Cake\Validation\Validator $validator Validator instance.
+     * @return \Cake\Validation\Validator
+     */
+    #[Override]
+    public function validationDefault(Validator $validator): Validator
+    {
+        $validator
+            ->allowEmptyString('id', null, 'create');
+
+        $validator
+            ->requirePresence('number', 'create')
+            ->notEmptyString('number');
+
+        $validator
+            ->scalar('variable_symbol')
+            ->allowEmptyString('variable_symbol');
+
+        $validator
+            ->date('creation_date')
+            ->requirePresence('creation_date', 'create')
+            ->notEmptyDate('creation_date');
+
+        $validator
+            ->date('due_date')
+            ->requirePresence('due_date', 'create')
+            ->notEmptyDate('due_date');
+
+        $validator
+            ->scalar('text')
+            ->allowEmptyString('text');
+
+        $validator
+            ->decimal('total')
+            ->requirePresence('total', 'create')
+            ->notEmptyString('total');
+
+        $validator
+            ->decimal('debt')
+            ->requirePresence('debt', 'create')
+            ->notEmptyString('debt');
+
+        $validator
+            ->date('payment_date')
+            ->allowEmptyDate('payment_date');
+
+        $validator
+            ->boolean('send_by_email')
+            ->notEmptyString('send_by_email');
+
+        $validator
+            ->dateTime('email_sent')
+            ->allowEmptyDateTime('email_sent');
+
+        $validator
+            ->scalar('accounting_identifier')
+            ->allowEmptyString('accounting_identifier');
+
+        return $validator;
+    }
+
+    /**
+     * Returns a rules checker object that will be used for validating
+     * application integrity.
+     *
+     * @param \Cake\ORM\RulesChecker $rules The rules object to be modified.
+     * @return \Cake\ORM\RulesChecker
+     */
+    #[Override]
+    public function buildRules(RulesChecker $rules): RulesChecker
+    {
+        $rules->add($rules->existsIn('customer_id', 'Customers'), ['errorField' => 'customer_id']);
+        $rules->add($rules->isUnique(
+            ['accounting_identifier'],
+            'Accounting identifier must be unique',
+        ));
+
+        // the year is a generated column, so it is worked out here from the day of the invoice
+        $rules->add(
+            function (Invoice $invoice): bool {
+                if (!$invoice->isDirty('number') && !$invoice->isDirty('creation_date')) {
+                    return true;
+                }
+
+                $conditions = ['number' => $invoice->number, 'creation_year' => $invoice->creation_date->year];
+                if (!$invoice->isNew()) {
+                    $conditions['id !='] = $invoice->id;
+                }
+
+                return !$this->exists($conditions);
+            },
+            'numberOnceAYear',
+            [
+                'errorField' => 'number',
+                'message' => __d('bookkeeping', 'An invoice of the same year already has this number.'),
+            ],
+        );
+
+        return $rules;
+    }
+}

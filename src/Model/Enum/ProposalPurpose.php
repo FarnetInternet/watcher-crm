@@ -1,0 +1,204 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Model\Enum;
+
+use App\Model\Enum\Trait\EnumOptionsTrait;
+use Cake\Database\Type\EnumLabelInterface;
+use Override;
+
+/**
+ * What a proposal is being drawn up for.
+ *
+ * The papers a proposal produces used to carry this by themselves: whoever picked the document said
+ * what was meant by picking it. Once printing moved to the proposal, the intent had nowhere to live,
+ * and what the proposal holds does not say it - an end date on a version reads the same whether the
+ * contract runs for a fixed term or is being brought to an end, and those two want opposite things
+ * of the obligation.
+ *
+ * So it is asked once, at the top of the form. It decides what the form goes on to ask, which rules
+ * the proposal is held to, and which document is offered first.
+ */
+enum ProposalPurpose: string implements EnumLabelInterface
+{
+    use EnumOptionsTrait;
+
+    case NewContract = 'new-contract';
+    case ServiceChange = 'service-change';
+    case Termination = 'termination';
+    case EquipmentChange = 'equipment-change';
+
+    /**
+     * @return string
+     */
+    #[Override]
+    public function label(): string
+    {
+        return match ($this) {
+            self::NewContract => __('New contract'),
+            self::ServiceChange => __('Change of services'),
+            self::Termination => __('Contract termination'),
+            self::EquipmentChange => __('Exchange of borrowed equipments'),
+        };
+    }
+
+    /**
+     * Whether papers for this purpose take effect on a day of their own.
+     *
+     * A new contract starts with its version. A change is agreed while the version runs, so it says
+     * its own day. An end says the day it ends on, and the day it takes effect follows from that.
+     *
+     * @return bool
+     */
+    public function asksForItsOwnDay(): bool
+    {
+        return $this === self::ServiceChange;
+    }
+
+    /**
+     * Whether the day the proposal takes effect is asked for on the form.
+     *
+     * Everywhere else it is worked out, because asking twice would only invite the two to disagree.
+     * Without a version there is no day to take, so a new contract with none chosen says its own,
+     * and so does anything on a contract that keeps no versions - except an ending, which says the
+     * day it ends on, and an exchange, which is dated when the equipment changes hands.
+     *
+     * @param bool $keeps_versions Whether the contract's service keeps versions at all.
+     * @param bool $has_version Whether a version has been chosen.
+     * @return bool
+     */
+    public function asksForTheDay(bool $keeps_versions, bool $has_version): bool
+    {
+        if (!$this->needsAVersion()) {
+            return false;
+        }
+
+        return $this->asksForItsOwnDay()
+            || ($this->mayStartAVersion() && !$has_version)
+            || (!$keeps_versions && !$this->ends());
+    }
+
+    /**
+     * Whether a proposal for this purpose brings the version it belongs to to an end.
+     *
+     * @return bool
+     */
+    public function ends(): bool
+    {
+        return $this === self::Termination;
+    }
+
+    /**
+     * How far papers drawn up for this purpose travel before nobody waits for them any more.
+     *
+     * Everything a proposal of a contract asks for reaches the records by being applied, so
+     * every purpose here goes the whole way. A purpose that only hands a paper over would stop
+     * earlier, and the rest of the application would follow without being told twice.
+     *
+     * @return \App\Model\Enum\ProposalStep
+     */
+    public function lastStep(): ProposalStep
+    {
+        return match ($this) {
+            self::NewContract, self::ServiceChange, self::Termination, self::EquipmentChange => ProposalStep::Applied,
+        };
+    }
+
+    /**
+     * Whether a proposal for this purpose may bring a version into being rather than name one.
+     *
+     * Only a new contract can: a change amends a version that was agreed to and an ending ends one
+     * that is running, so neither has anything to start.
+     *
+     * @return bool
+     */
+    public function mayStartAVersion(): bool
+    {
+        return $this === self::NewContract;
+    }
+
+    /**
+     * Whether a proposal for this purpose may lend equipment or take it back.
+     *
+     * A new contract may, because that is where the equipment is set down, and an exchange of
+     * borrowed equipments is nothing else. A change of services hands nothing over, and an ending
+     * takes back everything by its own protocol.
+     *
+     * @return bool
+     */
+    public function movesEquipment(): bool
+    {
+        return $this === self::NewContract || $this === self::EquipmentChange;
+    }
+
+    /**
+     * Whether a proposal for this purpose belongs to a version of the contract.
+     *
+     * An exchange of borrowed equipments changes neither the contract nor its term, and works on a
+     * contract that has no version on record as well, so it names none.
+     *
+     * @return bool
+     */
+    public function needsAVersion(): bool
+    {
+        return $this !== self::EquipmentChange;
+    }
+
+    /**
+     * Whether a proposal for this purpose may change what is billed for.
+     *
+     * @return bool
+     */
+    public function changesBillings(): bool
+    {
+        return $this !== self::EquipmentChange;
+    }
+
+    /**
+     * Whether a signed copy of the given paper is the customer's agreement to these papers.
+     *
+     * The agreement itself everywhere, and the exchange protocol where it is the only paper there is.
+     *
+     * @param \App\Model\Enum\ContractDocumentType $type The paper.
+     * @return bool
+     */
+    public function isSignedBy(ContractDocumentType $type): bool
+    {
+        return $type->isTheAgreement()
+            || ($this === self::EquipmentChange && $type === ContractDocumentType::HandoverExchange);
+    }
+
+    /**
+     * Whether a proposal for this purpose may set the version's term and obligation.
+     *
+     * Only a new contract may. The customer agrees to a term by signing a contract that states it,
+     * and an amendment states only the services and their prices.
+     *
+     * @return bool
+     */
+    public function mayChangeTheTerm(): bool
+    {
+        return $this === self::NewContract;
+    }
+
+    /**
+     * The document to offer first, before the operator has chosen one.
+     *
+     * Only a suggestion: which documents may be printed at all is worked out from the proposal, so
+     * that a type added later still prints from what is already on file.
+     *
+     * @param bool $replaces Whether the proposal terminates an earlier version of the same contract.
+     * @return \App\Model\Enum\ContractDocumentType
+     */
+    public function suggests(bool $replaces): ContractDocumentType
+    {
+        return match ($this) {
+            self::NewContract => $replaces
+                ? ContractDocumentType::ContractNewX
+                : ContractDocumentType::ContractNew,
+            self::ServiceChange => ContractDocumentType::ContractAmendment,
+            self::Termination => ContractDocumentType::ContractTermination,
+            self::EquipmentChange => ContractDocumentType::HandoverExchange,
+        };
+    }
+}

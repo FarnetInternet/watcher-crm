@@ -1,0 +1,141 @@
+/*
+ * The dashboard grid.
+ *
+ * The cards sit on the same panel every other index page uses and are drawn as the
+ * grouped `.related` blocks are, so only the grid and the rows below are new here.
+ * Colors come from the theme variables the other stylesheets define.
+ */
+
+.dashboard-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(35rem, 1fr));
+    gap: 1.5rem;
+    /* cards in a row end level with each other rather than each stopping at its own rows */
+    align-items: stretch;
+}
+
+/*
+ * Each card is set off from the page panel it sits on by a background of its own, sitting
+ * between the panel and the tables. `.related` spaces itself vertically; inside the grid
+ * the gap already does.
+ */
+.dashboard-cards .related {
+    margin-top: 0;
+    padding: 1rem 1.5rem;
+    background-color: var(--color-card-bg, var(--color-table-bg));
+    border-radius: 0.4rem;
+    overflow-x: auto;
+}
+
+.dashboard-cards .loading {
+    opacity: 0.5;
+}
+
+/* A single number the card exists to report. */
+.dashboard-figure {
+    font-size: 3.2rem;
+    font-weight: bold;
+    line-height: 1.2;
+    margin-bottom: 0;
+    color: var(--color-headings);
+}
+
+/* Between the parts of a card that count different things, drawn as the card's heading is underlined. */
+.dashboard-cards hr {
+    border-top-color: var(--color-table-headings-bg);
+    margin: 1.5rem 0;
+}
+
+/*
+ * `cake.css` leaves a few pixels of margin beside a table so its shadow has room, pairing
+ * `calc(100% - 3px)` with a right margin. Taking the full width back without dropping that
+ * margin pushed the table past the card, and the card scrolled sideways over a gap nobody could
+ * see. Inside a card the card is the surface, so the margin goes.
+ */
+.dashboard-table {
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+    margin-bottom: 1rem;
+}
+
+.dashboard-table td {
+    padding: 0.6rem 0.8rem 0.6rem 0.4rem;
+    border-bottom: 1px solid var(--color-table-borders);
+    vertical-align: top;
+}
+
+/* The date, the priority and the count only need the room they take, and so do their headings. */
+.dashboard-table td + td,
+.dashboard-table th + th {
+    width: 1%;
+    white-space: nowrap;
+}
+
+/*
+ * A second cell carrying words rather than a number or a date. Held to the width it asks
+ * for, a name the length of a sentence pushes the card sideways and crushes the column
+ * beside it, so this one wraps instead.
+ */
+.dashboard-table td.dashboard-wrap {
+    width: auto;
+    white-space: normal;
+}
+
+/* The colour a contract state is drawn in elsewhere, beside its name. */
+.dashboard-swatch {
+    display: inline-block;
+    width: 0.9rem;
+    height: 0.9rem;
+    border: 1px solid var(--color-table-borders);
+    border-radius: 0.2rem;
+    vertical-align: baseline;
+    margin-right: 0.4rem;
+}
+
+/*
+ * The line under a heading saying what the row is about - a task's summary, a label's
+ * caption, the note on a contract state. Some of them run to a paragraph, so it is cut to
+ * two lines here and carried whole on the element's title, where hovering brings it out.
+ */
+.dashboard-hint {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    /* muted by transparency rather than by a colour of its own, so it holds up in every theme */
+    opacity: 0.75;
+}
+
+/*
+ * The priority of a task. The ordinary one is said quietly, as most tasks carry it; the two
+ * that ask for attention are set in a badge of their own, which has to read against the
+ * colour the row already carries from the task's state.
+ */
+.dashboard-priority-plain {
+    opacity: 0.7;
+}
+
+.dashboard-priority-high,
+.dashboard-priority-urgent {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 0.3rem;
+    font-weight: bold;
+}
+
+.dashboard-priority-high {
+    background-color: var(--color-message-warning-bg);
+    color: var(--color-message-warning-text);
+}
+
+.dashboard-priority-urgent {
+    background-color: var(--color-message-error-bg);
+    color: var(--color-message-error-text);
+}
+
+/* An expected date, which is a plan rather than a promise and is said more quietly. */
+.dashboard-date-estimated {
+    opacity: 0.7;
+}

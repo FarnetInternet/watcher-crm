@@ -1,0 +1,134 @@
+<?php
+declare(strict_types=1);
+
+namespace Bookkeeping\Debtors;
+
+use App\Model\Entity\Customer;
+use Bookkeeping\Model\Entity\Invoice;
+use Cake\Collection\Collection;
+use Cake\I18n\Date;
+use RuntimeException;
+
+class Debtor
+{
+    /**
+     * @var list<\Bookkeeping\Model\Entity\Invoice>
+     */
+    private readonly array $invoices;
+
+    private readonly Customer $customer;
+
+    private readonly Date $due_date;
+
+    private readonly float $total_debt;
+
+    private readonly float $total_overdue_debt;
+
+    /**
+     * Constructor
+     *
+     * @param list<\Bookkeeping\Model\Entity\Invoice> $invoices Invoices for a single debtor
+     */
+    public function __construct(array $invoices)
+    {
+        $this->invoices = $invoices;
+
+        $invoicesCollection = new Collection($this->invoices);
+
+        $first = $invoicesCollection->first();
+        if ($first === null || $first->customer === null) {
+            throw new RuntimeException('Debtor must contain at least one invoice with valid customer data.');
+        }
+
+        $this->customer = $first->customer;
+        $this->due_date = $invoicesCollection->min('due_date')->due_date;
+        $this->total_debt = $invoicesCollection->sumOf(
+            function (Invoice $invoice) {
+                return $invoice->debt->toFloat();
+            },
+        );
+        $this->total_overdue_debt = $invoicesCollection
+            ->filter(
+                function (Invoice $invoice): bool {
+                    return $invoice->due_date < Date::now();
+                },
+            )
+            ->sumOf(
+                function (Invoice $invoice) {
+                    return $invoice->debt->toFloat();
+                },
+            );
+    }
+
+    /**
+     * Get invoices
+     *
+     * @return list<\Bookkeeping\Model\Entity\Invoice>
+     */
+    public function getInvoices(): array
+    {
+        return $this->invoices;
+    }
+
+    /**
+     * Get customer
+     *
+     * @return \App\Model\Entity\Customer
+     */
+    public function getCustomer(): Customer
+    {
+        return $this->customer;
+    }
+
+    /**
+     * Get due date
+     *
+     * @return \Cake\I18n\Date
+     */
+    public function getDueDate(): Date
+    {
+        return $this->due_date;
+    }
+
+    /**
+     * Get total debt
+     *
+     * @return float
+     */
+    public function getTotalDebt(): float
+    {
+        return $this->total_debt;
+    }
+
+    /**
+     * Get total overdue debt
+     *
+     * @return float
+     */
+    public function getTotalOverdueDebt(): float
+    {
+        return $this->total_overdue_debt;
+    }
+
+    /**
+     * Get total overdue debt for specific date
+     *
+     * @return float
+     */
+    public function getTotalOverdueDebtForDate(Date $date): float
+    {
+        $invoicesCollection = new Collection($this->invoices);
+
+        return $invoicesCollection
+        ->filter(
+            function (Invoice $invoice) use ($date): bool {
+                return $invoice->due_date < $date;
+            },
+        )
+        ->sumOf(
+            function (Invoice $invoice) {
+                return $invoice->debt->toFloat();
+            },
+        );
+    }
+}

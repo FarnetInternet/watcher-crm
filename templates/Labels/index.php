@@ -1,0 +1,93 @@
+<?php
+/**
+ * @var \App\View\AppView $this
+ * @var iterable<\App\Model\Entity\Label> $labels
+ */
+?>
+<?= $this->Form->create(null, ['type' => 'get', 'valueSources' => ['query', 'context']]) ?>
+<div class="row">
+    <div class="column">
+        <?= $this->Form->control('search', [
+            'label' => __('Search'),
+            'type' => 'search',
+            'onchange' => $this::SUBMIT_ON_CHANGE,
+        ]) ?>
+    </div>
+</div>
+<?= $this->Form->end() ?>
+
+<div class="labels index content">
+    <?= $this->AuthLink->link(
+        __('New Label'),
+        ['action' => 'add'],
+        ['class' => 'button float-right win-link'],
+    ) ?>
+    <?= $this->AuthLink->postLink(
+        __('Update Related Customer Labels'),
+        ['action' => 'updateRelatedCustomerLabels'],
+        [
+            'confirm' => __('Are you sure you want to update related customer labels # {0}?', __('All')),
+            'class' => 'button float-right',
+        ],
+    ) ?>
+    <?= $this->heading(__('Labels')) ?>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th><?= $this->Paginator->sort('name') ?></th>
+                    <th><?= $this->Paginator->sort('caption') ?></th>
+                    <th><?= $this->Paginator->sort('color') ?></th>
+                    <th><?= $this->Paginator->sort('validity') ?></th>
+                    <th><?= $this->Paginator->sort('dynamic') ?></th>
+                    <th><?= $this->Paginator->sort('show_on_dashboard', __('Show on Dashboard')) ?></th>
+                    <th><?= __('Number Of Uses') ?></th>
+                    <th class="actions"><?= __('Actions') ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($labels as $label) : ?>
+                <tr>
+                    <td><?= h($label->name) ?></td>
+                    <td><?= h($label->caption) ?></td>
+                    <td style="background-color: <?= h($label->color) ?>;"><?= h($label->color) ?></td>
+                    <td><?= h($label->validity) ?></td>
+                    <td><?= $label->dynamic ? __('Yes') : __('No'); ?></td>
+                    <td>
+                        <?= $label->show_on_dashboard ? __('Yes') : __('No'); ?>
+                        <?php if ($label->show_on_dashboard && !empty($label->dashboard_roles)) : ?>
+                            <br><small><?= h(implode(', ', $label->dashboard_role_names)) ?></small>
+                        <?php endif ?>
+                    </td>
+                    <td>
+                        <?= $this->Number->format(count($label->customer_labels)) ?>
+                        <br>
+                        <?= $this->AuthLink->postLink(
+                            __('Update'),
+                            ['action' => 'updateRelatedCustomerLabels', $label->id],
+                            ['confirm' => __(
+                                'Are you sure you want to update related customer labels # {0}?',
+                                $label->id,
+                            )],
+                        ) ?>
+                    </td>
+                    <td class="actions">
+                        <?= $this->AuthLink->link(__('View'), ['action' => 'view', $label->id]) ?>
+                        <?= $this->AuthLink->link(
+                            __('Edit'),
+                            ['action' => 'edit', $label->id],
+                            ['class' => 'win-link'],
+                        ) ?>
+                        <?= $this->AuthLink->postLink(
+                            __('Delete'),
+                            ['action' => 'delete', $label->id],
+                            ['confirm' => __('Are you sure you want to delete # {0}?', $label->id)],
+                        ) ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?= $this->element('common/paginator') ?>
+</div>

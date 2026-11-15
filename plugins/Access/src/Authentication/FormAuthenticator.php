@@ -1,0 +1,152 @@
+<?php
+declare(strict_types=1);
+
+namespace Access\Authentication;
+
+use Access\Model\Table\UsersTable;
+use Authentication\Authenticator\FormAuthenticator as BaseFormAuthenticator;
+use Authentication\Authenticator\Result;
+use Authentication\Authenticator\ResultInterface;
+use Authentication\Identifier\IdentifierCollection;
+use Authentication\Identifier\PasswordIdentifier;
+use Cake\Core\Configure;
+use Cake\Datasource\EntityInterface;
+use Cake\Http\ServerRequest;
+use Cake\ORM\Locator\LocatorAwareTrait;
+use Override;
+use Psr\Http\Message\ServerRequestInterface;
+
+/**
+ * Signing in with a username and a password, with failures counted.
+ *
+ * An account that failed too often from one address, or an address that failed too often, is
+ * refused for a while without its password being looked at. Every failure and refusal is logged,
+ * and a failure is noted on the account too. A password hashed the old way is stored as Argon2id
+ * here, as a sign-in with a second step finishes somewhere else.
+ */
+class FormAuthenticator extends BaseFormAuthenticator
+{
+    use LocatorAwareTrait;
+
+    /**
+     * Refused for too many failures, without the password being looked at.
+     */
+    public const FAILURE_BLOCKED = 'FAILURE_BLOCKED';
+
+    /**
+     * @inheritDoc
+     */
+    #[Override]
+    public function authenticate(ServerRequestInterface $request): ResultInterface
+    {
+        $result = $this->authenticateCounted($request);
+
+        // checked now, the password and the one-time secret are not for the session to keep
+        $identity = $result->getData();
+        if ($identity instanceof EntityInterface) {
+            $identity->unset(UsersTable::SECRETS);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Checks the password, unless the account or the address failed too often.
+     *
+     * @param \Psr\Http\Message\ServerRequestInterface $request The request.
+     * @return \Authentication\Authenticator\ResultInterface
+     */
+    private function authenticateCounted(ServerRequestInterface $request): ResultInterface
+    {
+        $account = $this->attemptedAccount($request);
+        if ($account === null) {
+            return parent::authenticate($request);
+        }
+
+        $address = AuthLog::address($request);
+        $throttle = LoginThrottle::fromSettings();
+        if ($throttle->blocked($account, $address)) {
+            AuthLog::warning('sign-in blocked', ['user' => $account, 'ip' => $address]);
+
+            return new Result(null, self::FAILURE_BLOCKED);
+        }
+
+        // the database driver cuts text at a NUL byte, so such a name would reach the account past
+        // its counter, and the database refuses text that is not UTF-8
+        $typed = preg_match('/^\P{C}+$/u', $account) === 1;
+        $result = $typed ? parent::authenticate($request) : new Result(null, Result::FAILURE_CREDENTIALS_INVALID);
+        if ($result->isValid()) {
+            $throttle->succeeded($account, $address);
+            $this->rehashPassword($request, $result->getData());
+        } elseif ($result->getStatus() !== Result::FAILURE_CREDENTIALS_MISSING) {
+            $throttle->failed($account, $address);
+            if ($typed) {
+                $this->usersTable()->noteDenied($account, $address);
+            }
+            AuthLog::warning('sign-in failed', [
+                'user' => $account,
+                'ip' => $address,
+                'reason' => 'wrong username or password',
+            ]);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Stores a password hashed the old way as Argon2id, now that it is known.
+     *
+     * @param \Psr\Http\Message\ServerRequestInterface $request The request.
+     * @param mixed $identity The account signed in to.
+     * @return void
+     */
+    private function rehashPassword(ServerRequestInterface $request, mixed $identity): void
+    {
+        $identifiers = $this->getIdentifier();
+        $checker = $identifiers instanceof IdentifierCollection && $identifiers->has('Password')
+            ? $identifiers->get('Password')
+            : null;
+        $password = $this->_getData($request)['password'] ?? null;
+        if (
+            !$identity instanceof EntityInterface
+            || !is_string($password)
+            || !$checker instanceof PasswordIdentifier
+            || !$checker->needsPasswordRehash()
+        ) {
+            return;
+        }
+
+        $this->usersTable()->updateQuery()
+            ->set(['password' => (new Argon2idPasswordHasher())->hash($password)])
+            ->where(['id' => $identity->get('id')])
+            ->execute();
+    }
+
+    /**
+     * The accounts, as the application extends them.
+     *
+     * @return \Access\Model\Table\UsersTable
+     */
+    private function usersTable(): UsersTable
+    {
+        /** @var \Access\Model\Table\UsersTable */
+        return $this->fetchTable((string)Configure::read('Users.table'));
+    }
+
+    /**
+     * The account a request tries to sign in to, if it is a sign-in at all.
+     *
+     * @param \Psr\Http\Message\ServerRequestInterface $request The request.
+     * @return string|null
+     */
+    private function attemptedAccount(ServerRequestInterface $request): ?string
+    {
+        if (!$request instanceof ServerRequest || !$request->is('post') || !$this->_checkUrl($request)) {
+            return null;
+        }
+
+        $account = $request->getData('username');
+
+        return is_string($account) && $account !== '' ? $account : null;
+    }
+}

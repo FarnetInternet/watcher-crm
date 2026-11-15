@@ -1,0 +1,52 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Test\Fixture;
+
+use App\Model\Enum\AddressType;
+use Cake\TestSuite\Fixture\TestFixture;
+use Override;
+
+/**
+ * AddressesFixture
+ */
+class AddressesFixture extends TestFixture
+{
+    /**
+     * Init method
+     *
+     * @return void
+     */
+    #[Override]
+    public function init(): void
+    {
+        $this->records = [
+            [
+                'id' => 'ab4bab00-9fe8-48b1-beef-3832a4f933a8',
+                'type' => AddressType::Installation,
+                'customer_id' => '403bab0e-52cd-4a8e-83f8-43c2457d0481',
+                'title' => 'Lorem ipsum dolor sit amet',
+                'first_name' => 'Lorem ipsum dolor sit amet',
+                'last_name' => 'Lorem ipsum dolor sit amet',
+                'suffix' => 'Lorem ipsum dolor sit amet',
+                'company' => 'NETAIR, s.r.o.',
+                'street' => 'Jablonec nad Jizerou',
+                'number' => '299',
+                'entrance' => 'Lorem ipsum dolor sit amet',
+                'unit' => 'Lorem ipsum dolor sit amet',
+                'city' => 'Jablonec nad Jizerou',
+                'zip' => '512 43',
+                'country_id' => 'b490f1c9-ff7e-430a-bfb0-f400878e1617',
+                'created_by' => '11edb519-be76-4d66-aea0-34188d31eae1',
+                'created' => 1636113483,
+                'modified_by' => '11edb519-be76-4d66-aea0-34188d31eae1',
+                'modified' => 1636113483,
+                'address_registry_reference' => 'Lorem ipsum dolor sit amet',
+                'address_registry_source' => 'cz',
+                'gps_x' => 1,
+                'gps_y' => 1,
+            ],
+        ];
+        parent::init();
+    }
+}

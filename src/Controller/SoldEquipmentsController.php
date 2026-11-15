@@ -1,0 +1,191 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Controller;
+
+use App\Controller\Traits\CommonViewVarListsTrait;
+use Cake\Http\Response;
+
+/**
+ * SoldEquipments Controller
+ *
+ * @property \App\Model\Table\SoldEquipmentsTable $SoldEquipments
+ */
+class SoldEquipmentsController extends AppController
+{
+    use CommonViewVarListsTrait;
+
+    /**
+     * Index method
+     *
+     * @return void Renders view
+     */
+    public function index(): void
+    {
+        // filter
+        $conditions = [];
+        if ($this->customer_id !== null) {
+            $conditions += ['SoldEquipments.customer_id' => $this->customer_id];
+        }
+        if ($this->contract_id !== null) {
+            $conditions += ['SoldEquipments.contract_id' => $this->contract_id];
+        }
+
+        // search
+        $search = $this->getRequest()->getQuery('search');
+        if (!empty($search)) {
+            $conditions[] = [
+                'OR' => [
+                    'SoldEquipments.serial_number ILIKE' => '%' . trim((string)$search) . '%',
+                    'EquipmentTypes.name ILIKE' => '%' . trim((string)$search) . '%',
+                    'Contracts.number ILIKE' => '%' . trim((string)$search) . '%',
+                ],
+            ];
+        }
+
+        $this->paginate = [
+            'sortableFields' => $this->sortableWithCustomerNumber($this->SoldEquipments),
+        ];
+        $soldEquipments = $this->paginate($this->newestFirst($this->SoldEquipments->find(
+            'all',
+            contain: [
+                'Contracts',
+                'Customers',
+                'EquipmentTypes',
+            ],
+            conditions: $conditions,
+        )));
+
+        $this->set(compact('soldEquipments'));
+    }
+
+    /**
+     * View method
+     *
+     * @param string|null $id Sold Equipment id.
+     * @return void Renders view
+     * @throws \Cake\Datasource\Exception\RecordNotFoundException When record not found.
+     */
+    public function view(?string $id = null): void
+    {
+        $soldEquipment = $this->SoldEquipments->get($id, contain: [
+            'Customers',
+            'Contracts',
+            'EquipmentTypes',
+            'Creators',
+            'Modifiers',
+        ]);
+
+        $this->set(compact('soldEquipment'));
+    }
+
+    /**
+     * Add method
+     *
+     * @return \Cake\Http\Response|null Redirects on successful add, renders view otherwise.
+     */
+    public function add(): ?Response
+    {
+        $soldEquipment = $this->SoldEquipments->newEmptyEntity();
+
+        if ($this->customer_id !== null) {
+            $soldEquipment->customer_id = $this->customer_id;
+        }
+        if ($this->contract_id !== null) {
+            $soldEquipment->contract_id = $this->contract_id;
+        }
+
+        if ($this->getRequest()->is('post')) {
+            $soldEquipment = $this->SoldEquipments->patchEntity(
+                $soldEquipment,
+                $this->dataWithNesting($this->SoldEquipments, $this->getRequest()->getData()),
+            );
+
+            if ($this->SoldEquipments->save($soldEquipment)) {
+                $this->Flash->success(__('The sold equipment has been saved.'));
+
+                return $this->afterAddRedirect(['action' => 'view', $soldEquipment->id]);
+            }
+            $this->Flash->error(__('The sold equipment could not be saved. Please, try again.'));
+        }
+        $customers = $this->customersList();
+        $contracts = $this->contractsList();
+        $equipmentTypes = $this->SoldEquipments->EquipmentTypes->find('list', order: [
+        'name',
+        ]);
+
+        if ($this->customer_id !== null) {
+            $customers->where(['Customers.id' => $this->customer_id]);
+            $contracts->where(['Contracts.customer_id' => $this->customer_id]);
+        }
+        if ($this->contract_id !== null) {
+            $contracts->where(['Contracts.id' => $this->contract_id]);
+        }
+
+        $this->set(compact('soldEquipment', 'customers', 'contracts', 'equipmentTypes'));
+
+        return null;
+    }
+
+    /**
+     * Edit method
+     *
+     * @param string|null $id Sold Equipment id.
+     * @return \Cake\Http\Response|null Redirects on successful edit, renders view otherwise.
+     * @throws \Cake\Datasource\Exception\RecordNotFoundException When record not found.
+     */
+    public function edit(?string $id = null): ?Response
+    {
+        $soldEquipment = $this->SoldEquipments->get($id, contain: []);
+
+        if ($this->getRequest()->is(['patch', 'post', 'put'])) {
+            $soldEquipment = $this->SoldEquipments
+                ->patchEntity($soldEquipment, $this->getRequest()->getData());
+
+            if ($this->SoldEquipments->save($soldEquipment)) {
+                $this->Flash->success(__('The sold equipment has been saved.'));
+
+                return $this->afterEditRedirect(['action' => 'view', $soldEquipment->id]);
+            }
+            $this->Flash->error(__('The sold equipment could not be saved. Please, try again.'));
+        }
+        $customers = $this->customersList();
+        $contracts = $this->contractsList();
+        $equipmentTypes = $this->SoldEquipments->EquipmentTypes->find('list', order: [
+        'name',
+        ]);
+
+        if ($this->customer_id !== null) {
+            $customers->where(['Customers.id' => $this->customer_id]);
+            $contracts->where(['Contracts.customer_id' => $this->customer_id]);
+        }
+        if ($this->contract_id !== null) {
+            $contracts->where(['Contracts.id' => $this->contract_id]);
+        }
+
+        $this->set(compact('soldEquipment', 'customers', 'contracts', 'equipmentTypes'));
+
+        return null;
+    }
+
+    /**
+     * Delete method
+     *
+     * @param string|null $id Sold Equipment id.
+     * @return \Cake\Http\Response|null Redirects to index.
+     * @throws \Cake\Datasource\Exception\RecordNotFoundException When record not found.
+     */
+    public function delete(?string $id = null): ?Response
+    {
+        $this->getRequest()->allowMethod(['post', 'delete']);
+        $soldEquipment = $this->SoldEquipments->get($id);
+        if ($this->SoldEquipments->delete($soldEquipment)) {
+            $this->Flash->success(__('The sold equipment has been deleted.'));
+        } else {
+            $this->flashValidationErrors($soldEquipment->getErrors());
+            $this->Flash->error(__('The sold equipment could not be deleted. Please, try again.'));
+        }
+
+        return $this->afterDeleteRedirect(['action' => 'index']);
+    }
+}

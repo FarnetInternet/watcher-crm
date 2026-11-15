@@ -1,0 +1,56 @@
+<?php
+/**
+ * @var \App\View\AppView $this
+ * @var iterable<\Radius\Model\Entity\Radcheck> $radchecks
+ */
+?>
+<div class="radcheck index content">
+    <?= $this->AuthLink->link(
+        __d('radius', 'New RADIUS Check'),
+        ['action' => 'add'],
+        ['class' => 'button float-right win-link'],
+    ) ?>
+    <?= $this->heading(__d('radius', 'RADIUS Checks')) ?>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th><?= $this->Paginator->sort('username') ?></th>
+                    <th><?= $this->Paginator->sort('attribute') ?></th>
+                    <th><?= $this->Paginator->sort('op') ?></th>
+                    <th><?= $this->Paginator->sort('value') ?></th>
+                    <th class="actions"><?= __d('radius', 'Actions') ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($radchecks as $radcheck) : ?>
+                <tr>
+                    <td>
+                        <?= $radcheck->account !== null ? $this->Html->link(
+                            $radcheck->account->username,
+                            ['controller' => 'Accounts', 'action' => 'view', $radcheck->account->id],
+                        ) : h($radcheck->username) ?>
+                    </td>
+                    <td><?= h($radcheck->attribute) ?></td>
+                    <td><?= h($radcheck->op) ?></td>
+                    <td><?= h($radcheck->value) ?></td>
+                    <td class="actions">
+                        <?= $this->AuthLink->link(__d('radius', 'View'), ['action' => 'view', $radcheck->id]) ?>
+                        <?= $this->AuthLink->link(
+                            __d('radius', 'Edit'),
+                            ['action' => 'edit', $radcheck->id],
+                            ['class' => 'win-link'],
+                        ) ?>
+                        <?= $this->AuthLink->postLink(
+                            __d('radius', 'Delete'),
+                            ['action' => 'delete', $radcheck->id],
+                            ['confirm' => __d('radius', 'Are you sure you want to delete # {0}?', $radcheck->id)],
+                        ) ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?= $this->element('Radius.common/paginator') ?>
+</div>

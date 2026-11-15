@@ -1,0 +1,113 @@
+<?php
+declare(strict_types=1);
+
+namespace Radius\Model\Table;
+
+use App\Model\Table\AppTable;
+use Cake\Validation\Validator;
+use Override;
+
+/**
+ * Nas Model
+ *
+ * @method \Radius\Model\Entity\Nas newEmptyEntity()
+ * @method \Radius\Model\Entity\Nas newEntity(array $data, array $options = [])
+ * @method \Radius\Model\Entity\Nas[] newEntities(array $data, array $options = [])
+ * @method \Radius\Model\Entity\Nas get(mixed $primaryKey, array|string $finder = 'all', null|\Psr\SimpleCache\CacheInterface|string $cache = null, null|\Closure|string $cacheKey = null, mixed ...$args)
+ * @method \Radius\Model\Entity\Nas findOrCreate($search, callable|array|null $callback = null, $options = [])
+ * @method \Radius\Model\Entity\Nas patchEntity(\Cake\Datasource\EntityInterface $entity, array $data, array $options = [])
+ * @method \Radius\Model\Entity\Nas[] patchEntities(iterable $entities, array $data, array $options = [])
+ * @method \Radius\Model\Entity\Nas|false save(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method \Radius\Model\Entity\Nas saveOrFail(\Cake\Datasource\EntityInterface $entity, $options = [])
+ * @method iterable<\Radius\Model\Entity\Nas>|false saveMany(iterable $entities, $options = [])
+ * @method iterable<\Radius\Model\Entity\Nas> saveManyOrFail(iterable $entities, $options = [])
+ * @method iterable<\Radius\Model\Entity\Nas>|false deleteMany(iterable $entities, $options = [])
+ * @method iterable<\Radius\Model\Entity\Nas> deleteManyOrFail(iterable $entities, $options = [])
+ */
+class NasTable extends AppTable
+{
+    /**
+     * Initialize method
+     *
+     * @param array<string, mixed> $config The configuration for the Table.
+     * @return void
+     */
+    #[Override]
+    public function initialize(array $config): void
+    {
+        parent::initialize($config);
+
+        $this->setTable('nas');
+        $this->setDisplayField('id');
+        $this->setPrimaryKey('id');
+
+        // the audit log says that a secret changed, never what it is now
+        $this->getBehavior('AuditLog')->setConfig('sensitive', ['secret']);
+
+        $this->addBehavior('Timestamp');
+        $this->addBehavior('Footprint');
+        $this->addBehavior('StringModifications');
+    }
+
+    /**
+     * Default validation rules.
+     *
+     * @param \Cake\Validation\Validator $validator Validator instance.
+     * @return \Cake\Validation\Validator
+     */
+    #[Override]
+    public function validationDefault(Validator $validator): Validator
+    {
+        $validator
+            ->integer('id')
+            ->allowEmptyString('id', null, 'create');
+
+        $validator
+            ->scalar('nasname')
+            ->requirePresence('nasname', 'create')
+            ->notEmptyString('nasname');
+
+        $validator
+            ->scalar('shortname')
+            ->requirePresence('shortname', 'create')
+            ->notEmptyString('shortname');
+
+        $validator
+            ->scalar('type')
+            ->notEmptyString('type');
+
+        $validator
+            ->integer('ports')
+            ->allowEmptyString('ports');
+
+        $validator
+            ->scalar('secret')
+            ->requirePresence('secret', 'create')
+            ->notEmptyString('secret');
+
+        $validator
+            ->scalar('server')
+            ->allowEmptyString('server');
+
+        $validator
+            ->scalar('community')
+            ->allowEmptyString('community');
+
+        $validator
+            ->scalar('description')
+            ->allowEmptyString('description');
+
+        return $validator;
+    }
+
+    /**
+     * Returns the database connection name to use by default.
+     *
+     * @return string
+     */
+    #[Override]
+    public static function defaultConnectionName(): string
+    {
+        return 'radius';
+    }
+}

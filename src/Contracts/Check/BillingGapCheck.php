@@ -1,0 +1,183 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Contracts\Check;
+
+use App\Check\CheckScope;
+use App\Model\Table\BillingsTable;
+use Cake\ORM\Association;
+use Cake\ORM\Query\SelectQuery;
+use Override;
+
+/**
+ * A service that stops being billed and starts again later, with nothing in between.
+ *
+ * Billings of one service on one contract are meant to run end to end: one ends, the next
+ * begins the day after. A break means those months are invoiced to nobody, and nothing says
+ * so until the money fails to arrive. It is almost always a mistyped year on the billing that
+ * follows - seven contracts signed in one batch carry the same one.
+ *
+ * The billing reported is the one *before* the break, because that is what is either
+ * extended or whose successor is corrected.
+ *
+ * A service that was genuinely paused and later resumed looks exactly the same, which is why
+ * only breaks that have not finished yet are counted by default: those are the ones still
+ * worth doing something about.
+ *
+ * What counts as one run is the line rather than the service. A connection profile carries the speeds and
+ * the kind of service the regulator is told about - it is what says which line this is - so a
+ * contract has one such service at a time and a tariff giving way to another is a change of
+ * tariff, not a month nobody paid for. A service without a connection profile is a fee or an add-on
+ * standing beside the line: a static address or a television package running alongside does
+ * not pay for the connection, so it cannot fill a break in it either.
+ */
+class BillingGapCheck extends AbstractContractCheck
+{
+    /**
+     * Another billing of the same run picks up, but later than the day after this one ends.
+     */
+    private const RESUMES_LATER = <<<'SQL'
+        EXISTS (
+            SELECT 1 FROM billings other
+            LEFT JOIN services other_service ON other_service.id = other.service_id
+            WHERE other.id <> Billings.id
+              AND other.contract_id = Billings.contract_id
+              AND
+        SQL . ' ' . self::SAME_LINE . ' ' . <<<'SQL'
+              AND other.billing_from > Billings.billing_until + 1
+        )
+        SQL;
+
+    /**
+     * Nothing of the same run starts within the break, so this really is the last billing
+     * before it. Without this every earlier billing of a long run would be reported as well.
+     */
+    private const NOTHING_FOLLOWS_IT = <<<'SQL'
+        NOT EXISTS (
+            SELECT 1 FROM billings other
+            LEFT JOIN services other_service ON other_service.id = other.service_id
+            WHERE other.contract_id = Billings.contract_id
+              AND
+        SQL . ' ' . self::SAME_LINE . ' ' . <<<'SQL'
+              AND other.billing_from > Billings.billing_from
+              AND other.billing_from <= Billings.billing_until + 1
+        )
+        SQL;
+
+    /**
+     * Billing has not picked up again yet. Together with the clause above this says the break
+     * is still ahead: what is already behind cannot be invoiced after the fact.
+     */
+    private const BREAK_NOT_OVER = <<<'SQL'
+        NOT EXISTS (
+            SELECT 1 FROM billings other
+            LEFT JOIN services other_service ON other_service.id = other.service_id
+            WHERE other.id <> Billings.id
+              AND other.contract_id = Billings.contract_id
+              AND
+        SQL . ' ' . self::SAME_LINE . ' ' . <<<'SQL'
+              AND other.billing_from > Billings.billing_until + 1
+              AND other.billing_from <= CURRENT_DATE
+        )
+        SQL;
+
+    /**
+     * The day billing picks up again, so the listing can say how long the break is without
+     * asking a second time per row.
+     */
+    private const RESUMES_ON = <<<'SQL'
+        (
+            SELECT MIN(other.billing_from) FROM billings other
+            LEFT JOIN services other_service ON other_service.id = other.service_id
+            WHERE other.id <> Billings.id
+              AND other.contract_id = Billings.contract_id
+              AND
+        SQL . ' ' . self::SAME_LINE . ' ' . <<<'SQL'
+              AND other.billing_from > Billings.billing_until + 1
+        )
+        SQL;
+
+    /**
+     * @param \App\Model\Table\BillingsTable $billings Billings table.
+     * @param \App\Check\CheckScope $scope What is being asked about, and how widely.
+     */
+    public function __construct(
+        private BillingsTable $billings,
+        CheckScope $scope = new CheckScope(),
+    ) {
+        parent::__construct($scope);
+    }
+
+    /**
+     * @return string|null
+     */
+    #[Override]
+    protected function contractField(): ?string
+    {
+        return 'Billings.contract_id';
+    }
+
+    /**
+     * @return string
+     */
+    #[Override]
+    public function id(): string
+    {
+        return 'billing_gap';
+    }
+
+    /**
+     * @return string
+     */
+    #[Override]
+    public function title(): string
+    {
+        return __('Gap Between Consecutive Billings');
+    }
+
+    /**
+     * @return string
+     */
+    #[Override]
+    public function emptyMessage(): string
+    {
+        return __('No service stops being billed and starts again later.');
+    }
+
+    /**
+     * One row per billing that a break follows, with the day billing picks up again.
+     *
+     * @return \Cake\ORM\Query\SelectQuery<\Cake\Datasource\EntityInterface>
+     */
+    #[Override]
+    public function find(): SelectQuery
+    {
+        $query = $this->billings->find();
+
+        // the day is worked out by the database, so it arrives untyped unless it is said what
+        // it is - and a listing that prints one date differently from the next reads as a fault
+        $query->getSelectTypeMap()->addDefaults(['resumes_on' => 'date']);
+
+        $query
+            ->select(['resumes_on' => $query->expr(self::RESUMES_ON)])
+            ->select($this->billings)
+            ->select($this->billings->Contracts)
+            ->select($this->billings->Services)
+            // apart, as the join of the running contracts leaves the customer out of this query
+            ->contain(['Contracts' => ['Customers' => ['strategy' => Association::STRATEGY_SELECT]], 'Services'])
+            ->where([
+                'Billings.billing_until IS NOT' => null,
+                $query->expr(self::RESUMES_LATER),
+                $query->expr(self::NOTHING_FOLLOWS_IT),
+            ])
+            ->orderBy(['Billings.billing_until' => 'ASC']);
+
+        $this->onlyWhatIsRunning($query);
+
+        if ($this->scope->ignore_inactive) {
+            $query->where([$query->expr(self::BREAK_NOT_OVER)]);
+        }
+
+        return $this->scoped($query);
+    }
+}

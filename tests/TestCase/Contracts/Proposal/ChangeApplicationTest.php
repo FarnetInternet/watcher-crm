@@ -1,0 +1,1517 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Test\TestCase\Contracts\Proposal;
+
+use App\Contracts\Proposal\ChangeApplication;
+use App\Model\Entity\ContractProposal;
+use App\Model\Entity\ContractVersion;
+use App\Model\Enum\ProposalPurpose;
+use App\Model\Table\BillingsTable;
+use App\Proposals\WholeProposal;
+use App\Test\Traits\TableTestTrait;
+use Cake\I18n\Date;
+use Cake\TestSuite\TestCase;
+use PHPUnit\Framework\Attributes\CoversClass;
+use RuntimeException;
+
+/**
+ * App\Contracts\Proposal\ChangeApplication Test Case
+ */
+#[CoversClass(ChangeApplication::class)]
+class ChangeApplicationTest extends TestCase
+{
+    use TableTestTrait;
+
+    /**
+     * The contract everything hangs off.
+     */
+    private const CONTRACT_ID = '7f76dc3f-a11b-4109-958b-4b0382545a66';
+
+    /**
+     * A contract nothing here is about.
+     */
+    private const ANOTHER_CONTRACT_ID = '9c0d5e5c-2a6b-4f8e-9a3d-1b7c4e2f6a90';
+
+    /**
+     * A concluded version of it.
+     */
+    private const VERSION_ID = '74824fba-20b2-46fc-806c-df795aa9e429';
+
+    /**
+     * The proposal the fixture carries: open, unsent, changing nothing.
+     */
+    private const PROPOSAL_ID = 'c9a1f2b3-4d5e-4f60-8a71-9b2c3d4e5f60';
+
+    /**
+     * A billing that runs on, which the fixture snapshot knows.
+     */
+    private const OPEN_BILLING_ID = 'b2000000-0000-4000-8000-000000000002';
+
+    /**
+     * The line that acts on a billing nobody can find any more.
+     */
+    private const GONE_LINE_ID = 'l1000000-0000-4000-8000-000000000001';
+
+    private const EQUIPMENT_TYPE_ID = '582ff5cb-62c6-42bd-a1bb-7f3d167124a4';
+
+    /**
+     * Fixtures
+     *
+     * @var array<string>
+     */
+    protected array $fixtures = [
+        'app.Users',
+        'app.AccountingProfiles',
+        'app.Customers',
+        'app.Countries',
+        'app.Addresses',
+        'app.Commissions',
+        'app.ContractStates',
+        'app.ServiceTypes',
+        'app.Contracts',
+        'app.ContractVersions',
+        'app.ConnectionProfiles',
+        'app.Services',
+        'app.Billings',
+        'app.CustomerProposals',
+        'app.ContractProposals',
+        'app.EquipmentTypes',
+        'app.BorrowedEquipments',
+        'plugin.Settings.Settings',
+    ];
+
+    /**
+     * The proposal, with what the test wants it to say.
+     *
+     * @param array<string, mixed> $says What it says.
+     * @return \App\Model\Entity\ContractProposal
+     */
+    private function proposal(array $says = []): ContractProposal
+    {
+        $proposals = $this->getTableLocator()->get('ContractProposals');
+        $proposal = $proposals->get(self::PROPOSAL_ID);
+
+        // The sending and the signature are the envelope's, so that half of what a test says is
+        // said there.
+        $ofTheProposal = array_intersect_key(
+            $says,
+            array_flip(['sent_date', 'delivery_type', 'conclusion_date']),
+        );
+
+        if ($ofTheProposal !== []) {
+            $envelopes = $this->getTableLocator()->get('CustomerProposals');
+            $envelopes->saveOrFail(
+                $envelopes->patchEntity($envelopes->get($proposal->customer_proposal_id), $ofTheProposal),
+                ['checkRules' => false],
+            );
+        }
+
+        $says = array_diff_key($says, $ofTheProposal);
+
+        if ($says !== []) {
+            $proposals->saveOrFail(
+                $proposals->patchEntity($proposal, $says),
+                ['checkRules' => false],
+            );
+        }
+
+        // What it is read with is what asks about its state: the proposal it goes out in.
+        return $proposals->get(self::PROPOSAL_ID, contain: ['CustomerProposals']);
+    }
+
+    /**
+     * How many billings the contract has.
+     *
+     * @return int
+     */
+    private function billingCount(): int
+    {
+        return $this->getTableLocator()->get('Billings')
+            ->find()
+            ->where(['Billings.contract_id' => self::CONTRACT_ID])
+            ->count();
+    }
+
+    /**
+     * The first day of next month. Invoicing has not reached it whenever the tests run, so a
+     * billing may still be ended the day before it.
+     *
+     * @return \Cake\I18n\Date
+     */
+    private function nextMonth(): Date
+    {
+        return Date::today()->firstOfMonth()->addMonths(1);
+    }
+
+    /**
+     * The ordinary proposal behind a new contract's papers changes nothing, and is applied all
+     * the same - otherwise it would sit in the checks for ever as signed and not dealt with.
+     *
+     * @return void
+     */
+    public function testAProposalThatChangesNothingIsStillApplied(): void
+    {
+        $proposal = $this->proposal(['conclusion_date' => '2026-09-15']);
+        $before = $this->billingCount();
+
+        (new ChangeApplication())->apply($proposal);
+
+        $this->assertTrue(
+            $this->getTableLocator()->get('ContractProposals')
+                ->get(self::PROPOSAL_ID)
+                ->hasBeenApplied(),
+        );
+        $this->assertSame($before, $this->billingCount(), 'A proposal that asks for nothing wrote.');
+    }
+
+    /**
+     * Applying the changes refuses what nobody has signed. The table refuses it too, but the service is
+     * asked first, so it says so in its own words.
+     *
+     * @return void
+     */
+    public function testNothingIsAppliedBeforeItIsConcluded(): void
+    {
+        $this->expectException(RuntimeException::class);
+
+        (new ChangeApplication())->apply($this->proposal());
+    }
+
+    /**
+     * And what has already been settled one way or the other.
+     *
+     * @return void
+     */
+    public function testASettledProposalIsNotAppliedAgain(): void
+    {
+        $proposal = $this->proposal([
+            'conclusion_date' => '2026-09-15',
+            'revoked' => '2026-09-16 10:00:00',
+        ]);
+
+        $this->expectException(RuntimeException::class);
+
+        (new ChangeApplication())->apply($proposal);
+    }
+
+    /**
+     * Two windows open on one proposal both read it as open. The second to press the button is told
+     * it is settled and writes nothing, or the billing is replaced twice over.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ChangeApplication::apply()
+     */
+    public function testASecondWindowDoesNotApplyTheProposalAgain(): void
+    {
+        $proposal = $this->proposal([
+            'conclusion_date' => '2026-09-15',
+            'effective_from' => $this->nextMonth()->toDateString(),
+            'changes' => ['billings' => [[
+                'billing_id' => self::OPEN_BILLING_ID,
+                'terminates_only' => false,
+                'service_id' => 'eaacfeb3-1430-43ce-842e-497c5c95d953',
+                'quantity' => 1,
+                'price' => '299.00',
+            ]]],
+        ]);
+        $secondWindow = $this->getTableLocator()->get('ContractProposals')
+            ->get(self::PROPOSAL_ID, contain: ['CustomerProposals']);
+
+        (new ChangeApplication())->apply($proposal);
+        $billings = $this->billingCount();
+
+        $refused = null;
+
+        try {
+            (new ChangeApplication())->apply($secondWindow);
+        } catch (RuntimeException $failure) {
+            $refused = $failure->getMessage();
+        }
+
+        $this->assertSame('This proposal has already been settled.', $refused);
+        $this->assertSame($billings, $this->billingCount());
+    }
+
+    /**
+     * A package is written whole or not at all: one part refused takes back what the parts before
+     * it wrote, and nothing reads as applied.
+     *
+     * @return void
+     * @link \App\Proposals\WholeProposal::apply()
+     */
+    public function testOnePartRefusedTakesTheWholePackageBack(): void
+    {
+        $proposal = $this->proposal([
+            'conclusion_date' => '2026-09-15',
+            'effective_from' => $this->nextMonth()->toDateString(),
+            'changes' => ['billings' => [[
+                'billing_id' => self::OPEN_BILLING_ID,
+                'terminates_only' => false,
+                'service_id' => 'eaacfeb3-1430-43ce-842e-497c5c95d953',
+                'quantity' => 1,
+                'price' => '299.00',
+            ]]],
+        ]);
+        $billings = $this->billingCount();
+
+        $refused = null;
+
+        try {
+            // the same papers twice: the second is refused once the first has been written
+            (new WholeProposal())->apply([['papers' => $proposal], ['papers' => clone $proposal]], null);
+        } catch (RuntimeException $failure) {
+            $refused = $failure->getMessage();
+        }
+
+        $this->assertSame('This proposal has already been settled.', $refused);
+        $this->assertSame($billings, $this->billingCount());
+        $this->assertNull($this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID)->applied);
+    }
+
+    /**
+     * A replaced billing stops the day before its replacement starts - the two halves the preview
+     * showed, written as one act.
+     *
+     * @return void
+     */
+    public function testAReplacedBillingIsEndedAndItsReplacementStarted(): void
+    {
+        $takesEffect = $this->nextMonth();
+        $proposal = $this->proposal([
+            'conclusion_date' => '2026-09-15',
+            'effective_from' => $takesEffect->toDateString(),
+            'changes' => ['billings' => [[
+                'billing_id' => self::OPEN_BILLING_ID,
+                'terminates_only' => false,
+                'service_id' => 'eaacfeb3-1430-43ce-842e-497c5c95d953',
+                'quantity' => 1,
+                'price' => '299.00',
+            ]]],
+        ]);
+
+        (new ChangeApplication())->apply($proposal);
+
+        $billings = $this->getTableLocator()->get('Billings');
+
+        $ended = $billings->get(self::OPEN_BILLING_ID);
+        $this->assertSame($takesEffect->subDays(1)->toDateString(), $ended->billing_until?->toDateString());
+
+        $started = $billings->find()
+            ->where([
+                'Billings.contract_id' => self::CONTRACT_ID,
+                'Billings.billing_from' => $takesEffect->toDateString(),
+            ])
+            ->firstOrFail();
+        $this->assertSame('299.00', $started->get('price')?->toString());
+        $this->assertSame('eaacfeb3-1430-43ce-842e-497c5c95d953', $started->get('service_id'));
+    }
+
+    /**
+     * A line that names no service and no text of its own leaves the service as it is. That is how
+     * the papers print it, and the records have to end up saying what the papers said.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ChangeApplication::startingBilling()
+     */
+    public function testALineNamingNothingKeepsTheServiceOfTheBillingItReplaces(): void
+    {
+        $takesEffect = $this->nextMonth();
+        $billings = $this->getTableLocator()->get('Billings');
+        $service = $billings->get(self::OPEN_BILLING_ID)->service_id;
+        $proposal = $this->proposal([
+            'conclusion_date' => '2026-09-15',
+            'effective_from' => $takesEffect->toDateString(),
+            'changes' => ['billings' => [[
+                'billing_id' => self::OPEN_BILLING_ID,
+                'terminates_only' => false,
+                'quantity' => 1,
+                'percentage_discount' => 100,
+            ]]],
+        ]);
+
+        (new ChangeApplication())->apply($proposal);
+
+        $started = $billings->find()
+            ->where([
+                'Billings.contract_id' => self::CONTRACT_ID,
+                'Billings.billing_from' => $takesEffect->toDateString(),
+            ])
+            ->firstOrFail();
+
+        $this->assertNotNull($service);
+        $this->assertSame($service, $started->get('service_id'));
+        $this->assertSame(100, $started->get('percentage_discount'));
+    }
+
+    /**
+     * A text of its own is the operator saying what the line is, so the service stays behind.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ChangeApplication::startingBilling()
+     */
+    public function testALineWithATextOfItsOwnLeavesTheServiceBehind(): void
+    {
+        $takesEffect = $this->nextMonth();
+        $proposal = $this->proposal([
+            'conclusion_date' => '2026-09-15',
+            'effective_from' => $takesEffect->toDateString(),
+            'changes' => ['billings' => [[
+                'billing_id' => self::OPEN_BILLING_ID,
+                'terminates_only' => false,
+                'text' => 'An individual line',
+                'quantity' => 1,
+                'price' => '299.00',
+            ]]],
+        ]);
+
+        (new ChangeApplication())->apply($proposal);
+
+        $started = $this->getTableLocator()->get('Billings')->find()
+            ->where([
+                'Billings.contract_id' => self::CONTRACT_ID,
+                'Billings.billing_from' => $takesEffect->toDateString(),
+            ])
+            ->firstOrFail();
+
+        $this->assertNull($started->get('service_id'));
+        $this->assertSame('An individual line', $started->get('text'));
+    }
+
+    /**
+     * A line stopping a billing with a fixed term gives it the last day of the term and leaves
+     * everything else about it alone: nothing starts, and it runs until then as it always has.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ProposedBilling::endsTheBillingOn()
+     */
+    public function testALineStoppingABillingOnADayOfItsOwnWritesThatDay(): void
+    {
+        $takesEffect = $this->nextMonth();
+        $lastDay = $takesEffect->addYears(1);
+        $before = $this->billingCount();
+        $proposal = $this->proposal([
+            'conclusion_date' => '2026-09-15',
+            'effective_from' => $takesEffect->toDateString(),
+            'changes' => ['billings' => [[
+                'billing_id' => self::OPEN_BILLING_ID,
+                'terminates_only' => true,
+                'billing_from' => $lastDay->addDays(1)->toDateString(),
+            ]]],
+        ]);
+
+        (new ChangeApplication())->apply($proposal);
+
+        $this->assertSame(
+            $lastDay->toDateString(),
+            $this->getTableLocator()->get('Billings')->get(self::OPEN_BILLING_ID)->billing_until?->toDateString(),
+        );
+        $this->assertSame($before, $this->billingCount());
+    }
+
+    /**
+     * A billing written to begin after the papers end the contract never runs, so it is taken
+     * away rather than given a last day before its first - which the records would refuse.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ProposedBilling::neverRunsAfterAll()
+     */
+    public function testABillingThatWouldNeverRunIsTakenAwayRatherThanEnded(): void
+    {
+        // still to come, or it could not be taken away
+        $this->theBillingBegins($this->nextMonth()->addMonths(1)->toDateString());
+
+        (new ChangeApplication())->apply(
+            $this->terminationEndingTheBilling('2026-09-15', $this->nextMonth()->toDateString()),
+        );
+
+        $this->assertFalse(
+            $this->getTableLocator()->get('Billings')->exists(['id' => self::OPEN_BILLING_ID]),
+            'The billing was left on the contract.',
+        );
+    }
+
+    /**
+     * The same where somebody has been invoiced for it, which only a termination dated back
+     * behind an invoice can manage: nothing is written at all. It wants a credit note and
+     * somebody deciding, neither of which is the application's to do.
+     *
+     * @return void
+     */
+    public function testABillingInvoicedForIsNotTakenAwayByApplyingTheChanges(): void
+    {
+        $billings = $this->getTableLocator()->get('Billings');
+        $this->theBillingBegins('2022-06-01');
+
+        $proposal = $this->terminationEndingTheBilling('2022-05-01', '2022-05-15');
+
+        try {
+            (new ChangeApplication())->apply($proposal);
+            $this->fail('The billing was taken away from under an invoice that has gone out.');
+        } catch (RuntimeException $refused) {
+            // The refusal has to be the one about taking it away. Ending it is refused as well,
+            // and by a message that also talks about what has been invoiced.
+            $this->assertStringContainsString('may not be deleted', $refused->getMessage());
+        }
+
+        $this->assertTrue($billings->exists(['id' => self::OPEN_BILLING_ID]), 'The billing went anyway.');
+        $this->assertFalse($this->proposal()->hasBeenApplied(), 'The proposal was settled anyway.');
+    }
+
+    /**
+     * Moves the day the contract's running billing begins, which is what puts it after the day
+     * the papers would end it on.
+     *
+     * @param string $from The day it begins.
+     * @return void
+     */
+    private function theBillingBegins(string $from): void
+    {
+        $billings = $this->getTableLocator()->get('Billings');
+
+        $billings->saveOrFail(
+            $billings->patchEntity($billings->get(self::OPEN_BILLING_ID), ['billing_from' => $from]),
+            ['checkRules' => false],
+        );
+    }
+
+    /**
+     * A termination of the contract that also ends its running billing.
+     *
+     * @param string $concluded The day it was agreed to.
+     * @param string $effective The day it takes effect.
+     * @return \App\Model\Entity\ContractProposal
+     */
+    private function terminationEndingTheBilling(string $concluded, string $effective): ContractProposal
+    {
+        $ends = Date::parse($effective)->subDays(1)->toDateString();
+
+        return $this->proposal([
+            'purpose' => ProposalPurpose::Termination->value,
+            'conclusion_date' => $concluded,
+            'effective_from' => $effective,
+            'terminated_contract_number' => 'Lorem ipsum dolor sit amet',
+            'changes' => [
+                'billings' => [[
+                    'billing_id' => self::OPEN_BILLING_ID,
+                    'terminates_only' => true,
+                ]],
+                'version' => ['valid_until' => $ends],
+                'contract' => ['termination_date' => $ends],
+            ],
+        ]);
+    }
+
+    /**
+     * A line acting on a billing somebody has taken off the contract stops the whole thing, and
+     * says which billing it was looking for.
+     *
+     * @return void
+     */
+    public function testALineWhoseBillingHasGoneStopsApplyingTheChanges(): void
+    {
+        $proposal = $this->proposalAgainstAMissingBilling();
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/no longer on the contract/');
+
+        (new ChangeApplication())->apply($proposal);
+    }
+
+    /**
+     * And an administrator may have it passed over instead, so that a proposal the customer has
+     * signed can be settled at all. What was passed over is written down on it.
+     *
+     * @return void
+     * @link \App\Model\Entity\ContractProposal::whatWasLeftOut()
+     */
+    public function testALineWhoseBillingHasGoneMayBeLeftOutAndIsWrittenDown(): void
+    {
+        $proposal = $this->proposalAgainstAMissingBilling();
+
+        (new ChangeApplication())->apply($proposal, null, false, false, true);
+
+        $settled = $this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID);
+
+        $this->assertTrue($settled->hasBeenApplied(), 'The proposal was not settled.');
+        $this->assertFalse($settled->wasAppliedInFull());
+        $this->assertArrayHasKey(self::GONE_LINE_ID, $settled->whatWasLeftOut());
+        $this->assertStringContainsString(
+            'no longer on the contract',
+            $settled->whatWasLeftOut()[self::GONE_LINE_ID],
+        );
+    }
+
+    /**
+     * A proposal with one line, acting on a billing that is no longer there.
+     *
+     * @return \App\Model\Entity\ContractProposal
+     */
+    private function proposalAgainstAMissingBilling(): ContractProposal
+    {
+        $proposal = $this->proposal([
+            'conclusion_date' => '2026-09-15',
+            'effective_from' => '2026-10-01',
+            'changes' => ['billings' => [[
+                // Named, because what is written down about a line is written down against its
+                // id - and a line read back without one is given a new one every time.
+                'id' => self::GONE_LINE_ID,
+                'billing_id' => self::OPEN_BILLING_ID,
+                'terminates_only' => true,
+            ]]],
+        ]);
+
+        $billings = $this->getTableLocator()->get('Billings');
+        $billings->deleteOrFail(
+            $billings->get(self::OPEN_BILLING_ID),
+            [BillingsTable::ALLOW_CLOSED_PERIODS => true],
+        );
+
+        return $proposal;
+    }
+
+    /**
+     * A billing that stopped of its own accord is left where it is.
+     *
+     * An ending only ever shortens. Writing the day before the papers take effect onto something
+     * that stopped years ago would stretch it back over everything in between, and the customer
+     * would be invoiced for all of it.
+     *
+     * @return void
+     */
+    public function testABillingThatAlreadyStoppedIsNotPutBackOnTheInvoice(): void
+    {
+        $billings = $this->getTableLocator()->get('Billings');
+        $billings->saveOrFail(
+            $billings->patchEntity($billings->get(self::OPEN_BILLING_ID), ['billing_until' => '2022-06-30']),
+            ['checkRules' => false],
+        );
+
+        $proposal = $this->proposal([
+            'conclusion_date' => '2026-09-15',
+            'effective_from' => '2026-10-01',
+            'changes' => ['billings' => [[
+                'billing_id' => self::OPEN_BILLING_ID,
+                'terminates_only' => true,
+            ]]],
+        ]);
+
+        (new ChangeApplication())->apply($proposal);
+
+        $this->assertSame(
+            '2022-06-30',
+            $billings->get(self::OPEN_BILLING_ID)->billing_until?->toDateString(),
+            'A billing that stopped years ago was stretched back over everything in between.',
+        );
+    }
+
+    /**
+     * What the proposal asks of the version and of the contract is written too, but the state of
+     * the contract is left alone - it has its own requirements to satisfy.
+     *
+     * @return void
+     */
+    public function testTheVersionAndTheContractTakeWhatIsAskedOfThem(): void
+    {
+        $contracts = $this->getTableLocator()->get('Contracts');
+        $stateBefore = $contracts->get(self::CONTRACT_ID)->get('contract_state_id');
+
+        $proposal = $this->proposal([
+            'purpose' => ProposalPurpose::Termination->value,
+            'conclusion_date' => '2026-09-15',
+            'effective_from' => '2026-10-01',
+            'terminated_contract_number' => 'Lorem ipsum dolor sit amet',
+            'changes' => [
+                'version' => [
+                    'valid_until' => '2026-09-30',
+                    'obligation_until' => '2026-09-30',
+                ],
+                'contract' => ['termination_date' => '2026-09-30'],
+            ],
+        ]);
+
+        (new ChangeApplication())->apply($proposal);
+
+        $version = $this->getTableLocator()->get('ContractVersions')->get(self::VERSION_ID);
+        $this->assertSame('2026-09-30', $version->valid_until?->toDateString());
+        // an agreement to end a contract adds no amendment to what it ends
+        $this->assertSame(1, $version->get('number_of_amendments'));
+
+        $contract = $contracts->get(self::CONTRACT_ID);
+        $this->assertSame('2026-09-30', $contract->get('termination_date')?->toDateString());
+        $this->assertSame($stateBefore, $contract->get('contract_state_id'));
+    }
+
+    /**
+     * Applying the changes reaches the audit log, and reaches it as one entry.
+     *
+     * Audit-stash writes its queue out on a commit event CakePHP only dispatches for a save that
+     * owns its transaction, so everything inside `Connection::transactional()` was queued and
+     * then dropped - the whole act was missing from the log rather than merely split up.
+     *
+     * @return void
+     * @link \App\Model\Audit\AuditTrail
+     */
+    public function testApplyingTheChangesIsOneEntryInTheAuditLog(): void
+    {
+        $proposal = $this->proposal([
+            'purpose' => ProposalPurpose::Termination->value,
+            'conclusion_date' => '2026-09-15',
+            'effective_from' => '2026-10-01',
+            'terminated_contract_number' => 'Lorem ipsum dolor sit amet',
+            'changes' => [
+                'version' => ['valid_until' => '2026-09-30'],
+                'contract' => ['termination_date' => '2026-09-30'],
+            ],
+        ]);
+
+        // Emptied here rather than at the top: the log is not a fixture, so it carries both the
+        // tests before this one and the drawing up of the papers above.
+        $this->getTableLocator()->get('Contracts')->getConnection()->execute('DELETE FROM audit_logs');
+
+        (new ChangeApplication())->apply($proposal);
+
+        // The version, the contract and the proposal itself. The billings are asked about by the
+        // tests above and this proposal moves none of them.
+        $logged = $this->audited('source');
+        $this->assertContains('ContractVersions', $logged);
+        $this->assertContains('Contracts', $logged);
+        $this->assertContains('ContractProposals', $logged);
+
+        $this->assertCount(
+            1,
+            array_unique($this->audited('transaction_key')),
+            'applying the changes is one act and belongs under one transaction',
+        );
+    }
+
+    /**
+     * One column of everything the audit log holds.
+     *
+     * @param string $column Which column.
+     * @return array<string> One entry per row.
+     */
+    private function audited(string $column): array
+    {
+        $rows = $this->getTableLocator()->get('Contracts')->getConnection()
+            ->selectQuery([$column], 'audit_logs')
+            ->execute()
+            ->fetchAll('assoc');
+
+        return array_column($rows, $column);
+    }
+
+    /**
+     * When one part of applying the changes will not go through, none of it does. A proposal half
+     * applied is worse than none: the paper would describe one thing and the records another.
+     *
+     * @return void
+     */
+    public function testNothingIsWrittenWhenAnyOfItFails(): void
+    {
+        // A day inside a period that has been invoiced for, which the billings table refuses.
+        $proposal = $this->proposal([
+            'conclusion_date' => '2023-01-15',
+            'effective_from' => '2023-02-01',
+            'changes' => ['billings' => [[
+                'billing_id' => self::OPEN_BILLING_ID,
+                'terminates_only' => false,
+                'service_id' => 'eaacfeb3-1430-43ce-842e-497c5c95d953',
+                'quantity' => 1,
+            ]]],
+        ]);
+
+        $before = $this->billingCount();
+
+        try {
+            (new ChangeApplication())->apply($proposal);
+            $this->fail('The transfer wrote into an invoiced period.');
+        } catch (RuntimeException) {
+            // what it says is the billings table's business; that it wrote nothing is ours
+        }
+
+        $this->assertSame($before, $this->billingCount());
+        $this->assertNull(
+            $this->getTableLocator()->get('Billings')->get(self::OPEN_BILLING_ID)->billing_until,
+        );
+        $this->assertFalse(
+            $this->getTableLocator()->get('ContractProposals')
+                ->get(self::PROPOSAL_ID)
+                ->hasBeenApplied(),
+        );
+    }
+
+    /**
+     * An administrator who says so may write into an invoiced period, the same as on a service
+     * change.
+     *
+     * @return void
+     */
+    public function testAnInvoicedPeriodMayBeReachedIntoDeliberately(): void
+    {
+        $proposal = $this->proposal([
+            'conclusion_date' => '2023-01-15',
+            'effective_from' => '2023-02-01',
+            'changes' => ['billings' => [[
+                'billing_id' => self::OPEN_BILLING_ID,
+                'terminates_only' => true,
+            ]]],
+        ]);
+
+        (new ChangeApplication())->apply($proposal, null, reach_into_closed_periods: true);
+
+        $this->assertSame(
+            '2023-01-31',
+            $this->getTableLocator()->get('Billings')
+                ->get(self::OPEN_BILLING_ID)
+                ->billing_until?->toDateString(),
+        );
+    }
+
+    /**
+     * A line pricing the connection below the contract's minimum is not applied, which is the
+     * minimum having been raised after the line was written.
+     *
+     * @return void
+     */
+    public function testAConnectionBelowTheMinimumIsNotApplied(): void
+    {
+        $proposal = $this->connectionBelowTheMinimum(allowed: false);
+        $before = $this->billingCount();
+
+        try {
+            (new ChangeApplication())->apply($proposal);
+            $this->fail('The connection was carried over below the minimum.');
+        } catch (RuntimeException $refused) {
+            $this->assertStringContainsString('minimum set on the contract', $refused->getMessage());
+        }
+
+        $this->assertSame($before, $this->billingCount());
+    }
+
+    /**
+     * What an administrator allowed on the line is applied by whoever presses the button.
+     *
+     * @return void
+     */
+    public function testALineAnAdministratorAllowedIsApplied(): void
+    {
+        $before = $this->billingCount();
+
+        (new ChangeApplication())->apply($this->connectionBelowTheMinimum(allowed: true));
+
+        $this->assertSame($before + 1, $this->billingCount());
+    }
+
+    /**
+     * And the administrator may allow it when the changes are applied.
+     *
+     * @return void
+     */
+    public function testTheMinimumMayBeGoneBelowDeliberately(): void
+    {
+        $before = $this->billingCount();
+
+        (new ChangeApplication())->apply(
+            $this->connectionBelowTheMinimum(allowed: false),
+            null,
+            go_below_minimum: true,
+        );
+
+        $this->assertSame($before + 1, $this->billingCount());
+    }
+
+    /**
+     * A signed proposal replacing the connection with a cheaper one than the contract's minimum.
+     *
+     * @param bool $allowed Whether an administrator allowed it on the line.
+     * @return \App\Model\Entity\ContractProposal
+     */
+    private function connectionBelowTheMinimum(bool $allowed): ContractProposal
+    {
+        $this->getTableLocator()->get('Contracts')->updateAll(
+            ['minimum_connection_price' => '500'],
+            ['id' => self::CONTRACT_ID],
+        );
+
+        return $this->proposal([
+            'conclusion_date' => '2026-09-15',
+            'effective_from' => $this->nextMonth()->toDateString(),
+            'changes' => ['billings' => [[
+                'billing_id' => self::OPEN_BILLING_ID,
+                'terminates_only' => false,
+                'service_id' => 'eaacfeb3-1430-43ce-842e-497c5c95d953',
+                'quantity' => 1,
+                'price' => '299.00',
+                'below_minimum_allowed' => $allowed,
+            ]]],
+        ]);
+    }
+
+    /**
+     * The signature is recorded on the proposal, and the version takes it from there when it is
+     * applied. Without this the version would go on reading as unsigned, and the customer
+     * would be chased - and eventually cut off - for a paper that is on file.
+     *
+     * @return void
+     */
+    public function testTheVersionTakesTheSignatureFromTheProposal(): void
+    {
+        $versions = $this->getTableLocator()->get('ContractVersions');
+        $versions->saveOrFail(
+            $versions->patchEntity($versions->get(self::VERSION_ID), ['conclusion_date' => null]),
+            ['checkRules' => false],
+        );
+
+        (new ChangeApplication())->apply($this->proposal(['conclusion_date' => '2026-09-15']));
+
+        $this->assertSame(
+            '2026-09-15',
+            $versions->get(self::VERSION_ID)->conclusion_date?->toDateString(),
+        );
+    }
+
+    /**
+     * The papers number themselves from the count on the version - the one being printed is the
+     * next after it - so applying an amendment has to move it on. Left where it was, the
+     * second amendment would go out under the same number as the first.
+     *
+     * @return void
+     */
+    public function testAnAmendmentAppliedIsCounted(): void
+    {
+        $versions = $this->getTableLocator()->get('ContractVersions');
+        $before = $versions->get(self::VERSION_ID)->get('number_of_amendments');
+
+        (new ChangeApplication())->apply($this->proposal([
+            'purpose' => ProposalPurpose::ServiceChange->value,
+            'conclusion_date' => '2026-09-15',
+        ]));
+
+        $this->assertSame($before + 1, $versions->get(self::VERSION_ID)->get('number_of_amendments'));
+    }
+
+    /**
+     * And the count it leaves behind is the number printed on that paper, worked out from the
+     * snapshot - not one more than whatever the version happens to say when the button is pressed.
+     *
+     * @return void
+     */
+    public function testTheCountIsTheNumberThePaperCarries(): void
+    {
+        $versions = $this->getTableLocator()->get('ContractVersions');
+        $versions->saveOrFail(
+            $versions->patchEntity($versions->get(self::VERSION_ID), ['number_of_amendments' => 5]),
+            ['checkRules' => false],
+        );
+
+        $proposal = $this->proposal(['purpose' => ProposalPurpose::ServiceChange->value]);
+        $taken = $proposal->get('snapshot');
+        $taken['version']['number_of_amendments'] = 1;
+
+        (new ChangeApplication())->apply($this->proposal([
+            'snapshot' => $taken,
+            'conclusion_date' => '2026-09-15',
+        ]));
+
+        // the paper said "amendment no. 2", so that is what the version is left holding
+        $this->assertSame(2, $versions->get(self::VERSION_ID)->get('number_of_amendments'));
+    }
+
+    /**
+     * The proposal as the form draws one up whose version is still to come: no version named, and
+     * a snapshot of the version as it will be rather than of one that is already there.
+     *
+     * @param array<string, mixed> $says What else it says.
+     * @return \App\Model\Entity\ContractProposal
+     */
+    private function proposalWithoutAVersion(array $says = []): ContractProposal
+    {
+        $proposal = $this->proposal();
+        $snapshot = $proposal->snapshot;
+
+        $snapshot['version'] = [
+            'id' => null,
+            'contract_id' => self::CONTRACT_ID,
+            'valid_from' => $says['effective_from'] ?? '2026-11-01',
+            'valid_until' => null,
+            'obligation_until' => null,
+            'conclusion_date' => null,
+            'number_of_amendments' => 0,
+        ];
+
+        return $this->proposal($says + [
+            'contract_version_id' => null,
+            'snapshot' => $snapshot,
+        ]);
+    }
+
+    /**
+     * A new contract for a fixed term puts its last day on the version it starts and on the contract.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ChangePlan::onTheContract()
+     */
+    public function testAFixedTermIsWrittenOntoTheVersionAndTheContract(): void
+    {
+        $takesEffect = $this->nextMonth();
+        $lastDay = $takesEffect->addYears(1);
+        $contracts = $this->getTableLocator()->get('Contracts');
+        $contracts->updateAll(['termination_date' => null], ['id' => self::CONTRACT_ID]);
+
+        $proposal = $this->proposalWithoutAVersion([
+            'purpose' => ProposalPurpose::NewContract->value,
+            'conclusion_date' => '2026-09-15',
+            'effective_from' => $takesEffect->toDateString(),
+            'confirmations' => ['fixed_term' => true],
+            'changes' => ['version' => [
+                'valid_until' => $lastDay->toDateString(),
+                'obligation_until' => $lastDay->toDateString(),
+            ]],
+        ]);
+
+        (new ChangeApplication())->apply($proposal);
+
+        $version = $this->getTableLocator()->get('ContractVersions')->find()
+            ->where([
+                'ContractVersions.contract_id' => self::CONTRACT_ID,
+                'ContractVersions.valid_from' => $takesEffect->toDateString(),
+            ])
+            ->firstOrFail();
+
+        $this->assertSame($lastDay->toDateString(), $version->get('valid_until')?->toDateString());
+        $this->assertSame($lastDay->toDateString(), $version->get('obligation_until')?->toDateString());
+        $this->assertSame(
+            $lastDay->toDateString(),
+            $contracts->get(self::CONTRACT_ID)->termination_date?->toDateString(),
+        );
+    }
+
+    /**
+     * Papers for a new contract may be drawn up before the version they are about exists, and
+     * applying them is what brings it into being. It starts on the day the papers take effect
+     * and takes the day they were signed, so the record says what the paper said.
+     *
+     * @return void
+     */
+    public function testAProposalWithoutAVersionStartsOneWhenItIsApplied(): void
+    {
+        $versions = $this->getTableLocator()->get('ContractVersions');
+        $before = $versions->find()->where(['contract_id' => self::CONTRACT_ID])->count();
+
+        $proposal = $this->proposalWithoutAVersion([
+            'purpose' => ProposalPurpose::NewContract->value,
+            'effective_from' => '2026-11-01',
+            'conclusion_date' => '2026-10-20',
+        ]);
+
+        (new ChangeApplication())->apply($proposal);
+
+        $this->assertSame(
+            $before + 1,
+            $versions->find()->where(['contract_id' => self::CONTRACT_ID])->count(),
+        );
+
+        $carried = $this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID);
+        $this->assertNotNull($carried->contract_version_id, 'The papers did not keep their version.');
+
+        $started = $versions->get($carried->contract_version_id);
+        $this->assertSame('2026-11-01', $started->valid_from->toDateString());
+        $this->assertSame('2026-10-20', $started->conclusion_date?->toDateString());
+        $this->assertSame(0, $started->get('number_of_amendments'));
+    }
+
+    /**
+     * A new contract taking over from an old one: the papers start a version of their own and end
+     * the version of the contract being left behind. Both are the same act, so applying it has to
+     * write both - a new version standing beside one that never got its last day is two services
+     * running where the customer agreed to one.
+     *
+     * @return void
+     */
+    public function testANewContractAlsoEndsTheVersionItTakesOverFrom(): void
+    {
+        $replaced = $this->theVersionTheNewPapersTakeOverFrom();
+
+        $proposal = $this->proposalWithoutAVersion([
+            'purpose' => ProposalPurpose::NewContract->value,
+            'effective_from' => '2026-11-01',
+            'conclusion_date' => '2026-10-20',
+            'terminates_contract_version_id' => $replaced->id,
+            'terminated_contract_number' => '2022/0001',
+        ]);
+
+        (new ChangeApplication())->apply($proposal);
+
+        $versions = $this->getTableLocator()->get('ContractVersions');
+        $carried = $this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID);
+
+        $this->assertNotNull($carried->contract_version_id, 'The papers did not keep their version.');
+        $this->assertSame(
+            '2026-10-31',
+            $versions->get($replaced->id)->valid_until?->toDateString(),
+            'The version being taken over from was left without a last day.',
+        );
+    }
+
+    /**
+     * The version the new papers take over from: signed, running, and with no last day yet. New
+     * papers for the same contract are drawn up against it and are meant to end it.
+     *
+     * @return \App\Model\Entity\ContractVersion
+     */
+    private function theVersionTheNewPapersTakeOverFrom(): ContractVersion
+    {
+        $versions = $this->getTableLocator()->get('ContractVersions');
+
+        /** @var \App\Model\Entity\ContractVersion $version */
+        $version = $versions->get(self::VERSION_ID);
+        $version->set('valid_until', null);
+        $versions->saveOrFail($version, ['checkRules' => false]);
+
+        return $version;
+    }
+
+    /**
+     * And a paper that starts a version does not amend it, whatever it is for - the version has no
+     * signature of its own until this very paper gives it one.
+     *
+     * @return void
+     */
+    public function testAVersionBeingStartedIsNeverAnAmendment(): void
+    {
+        $proposal = $this->proposalWithoutAVersion([
+            'purpose' => ProposalPurpose::ServiceChange->value,
+            'effective_from' => '2026-11-01',
+            'conclusion_date' => '2026-10-20',
+        ]);
+
+        (new ChangeApplication())->apply($proposal);
+
+        $carried = $this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID);
+        $started = $this->getTableLocator()->get('ContractVersions')->get($carried->contract_version_id);
+
+        $this->assertSame(0, $started->get('number_of_amendments'));
+    }
+
+    /**
+     * A new contract is not an amendment of the version it starts - it starts its own count.
+     *
+     * @return void
+     */
+    public function testANewContractIsNotCounted(): void
+    {
+        $versions = $this->getTableLocator()->get('ContractVersions');
+        $before = $versions->get(self::VERSION_ID)->get('number_of_amendments');
+
+        (new ChangeApplication())->apply($this->proposal([
+            'purpose' => ProposalPurpose::NewContract->value,
+            'conclusion_date' => '2026-09-15',
+        ]));
+
+        $this->assertSame($before, $versions->get(self::VERSION_ID)->get('number_of_amendments'));
+    }
+
+    /**
+     * An unsigned version is not being amended, whatever the proposal says it is for - the printing
+     * would not have offered an amendment either. It takes the signature and stays at nought.
+     *
+     * @return void
+     */
+    public function testAVersionNobodyHadSignedIsNotAmended(): void
+    {
+        $versions = $this->getTableLocator()->get('ContractVersions');
+        $before = $versions->get(self::VERSION_ID)->get('number_of_amendments');
+        $versions->saveOrFail(
+            $versions->patchEntity($versions->get(self::VERSION_ID), ['conclusion_date' => null]),
+            ['checkRules' => false],
+        );
+
+        (new ChangeApplication())->apply($this->proposal([
+            'purpose' => ProposalPurpose::ServiceChange->value,
+            'conclusion_date' => '2026-09-15',
+        ]));
+
+        $version = $versions->get(self::VERSION_ID);
+        $this->assertSame('2026-09-15', $version->conclusion_date?->toDateString());
+        $this->assertSame($before, $version->get('number_of_amendments'));
+    }
+
+    /**
+     * A version signed long ago and amended today keeps the day it was agreed on. The amendment's
+     * day is the proposal's business, and writing it over would say the customer agreed to the
+     * version itself later than they did.
+     *
+     * @return void
+     */
+    public function testAVersionThatIsAlreadySignedKeepsItsOwnDay(): void
+    {
+        (new ChangeApplication())->apply($this->proposal(['conclusion_date' => '2026-09-15']));
+
+        $this->assertSame(
+            '2022-11-30',
+            $this->getTableLocator()->get('ContractVersions')
+                ->get(self::VERSION_ID)
+                ->conclusion_date?->toDateString(),
+        );
+    }
+
+    /**
+     * The day the replacement starts is the proposal's own, not today's.
+     *
+     * @return void
+     */
+    public function testTheDayItTakesEffectIsTheProposals(): void
+    {
+        $takesEffect = $this->nextMonth();
+        $proposal = $this->proposal([
+            'conclusion_date' => '2026-09-15',
+            'effective_from' => $takesEffect->toDateString(),
+            'changes' => ['billings' => [[
+                'billing_id' => self::OPEN_BILLING_ID,
+                'terminates_only' => true,
+            ]]],
+        ]);
+
+        (new ChangeApplication())->apply($proposal);
+
+        $this->assertSame(
+            $takesEffect->subDays(1)->toDateString(),
+            $this->getTableLocator()->get('Billings')
+                ->get(self::OPEN_BILLING_ID)
+                ->billing_until?->toDateString(),
+        );
+    }
+
+    /**
+     * A new contract swapping one box for another: the old one goes back and the new one is lent,
+     * both on the day the equipment changed hands rather than on the day the papers take effect.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ChangeApplication::applyTheEquipment()
+     */
+    public function testEquipmentIsSwappedOnTheDayItChangedHands(): void
+    {
+        $lent = $this->aPieceLent();
+
+        (new ChangeApplication())->apply($this->swapping($lent), handed_over_on: new Date('2026-10-25'));
+
+        $equipments = $this->getTableLocator()->get('BorrowedEquipments');
+        $this->assertSame('2026-10-25', $equipments->get($lent)->borrowed_until?->toDateString());
+
+        /** @var \App\Model\Entity\BorrowedEquipment $new */
+        $new = $equipments->find()
+            ->where(['contract_id' => self::CONTRACT_ID, 'serial_number' => 'SN-NEW-1'])
+            ->firstOrFail();
+        $this->assertSame('2026-10-25', $new->borrowed_from?->toDateString());
+        $this->assertNull($new->borrowed_until);
+        $this->assertSame(self::EQUIPMENT_TYPE_ID, (string)$new->equipment_type_id);
+    }
+
+    /**
+     * Equipment is recorded once it is handed over, so a day still to come is refused.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ChangeApplication::apply()
+     */
+    public function testEquipmentIsNotHandedOverOnADayStillToCome(): void
+    {
+        $proposal = $this->swapping($this->aPieceLent());
+
+        $this->expectException(RuntimeException::class);
+
+        (new ChangeApplication())->apply($proposal, handed_over_on: Date::today()->addDays(1));
+    }
+
+    /**
+     * A piece somebody took back by hand while the papers were out keeps the day they wrote.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ChangeApplication::applyTheEquipment()
+     */
+    public function testEquipmentReturnedByHandIsLeftAsItIs(): void
+    {
+        $lent = $this->aPieceLent();
+        $proposal = $this->swapping($lent);
+
+        $equipments = $this->getTableLocator()->get('BorrowedEquipments');
+        $equipments->updateAll(['borrowed_until' => '2026-10-01'], ['id' => $lent]);
+
+        (new ChangeApplication())->apply($proposal, handed_over_on: new Date('2026-10-25'));
+
+        $this->assertSame('2026-10-01', $equipments->get($lent)->borrowed_until?->toDateString());
+    }
+
+    /**
+     * A piece that is no longer on file stops everything, and nothing is written - unless it may be
+     * passed over, and then it is written down for somebody to see to.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ChangeApplication::applyTheEquipment()
+     */
+    public function testEquipmentThatIsGoneStopsItUnlessItMayBeLeftOut(): void
+    {
+        $lent = $this->aPieceLent();
+        $proposal = $this->swapping($lent);
+
+        $equipments = $this->getTableLocator()->get('BorrowedEquipments');
+        $equipments->deleteAll(['id' => $lent]);
+        $newOnes = fn(): int => $equipments->find()->where(['serial_number' => 'SN-NEW-1'])->count();
+
+        try {
+            (new ChangeApplication())->apply($proposal, handed_over_on: new Date('2026-10-25'));
+            $this->fail('A return of equipment that is gone was applied.');
+        } catch (RuntimeException) {
+            $this->assertSame(0, $newOnes(), 'Something was written although it stopped.');
+        }
+
+        $proposal = $this->proposal();
+        (new ChangeApplication())->apply(
+            $proposal,
+            leave_out_what_is_gone: true,
+            handed_over_on: new Date('2026-10-25'),
+        );
+
+        $this->assertSame(1, $newOnes());
+        $this->assertArrayHasKey(
+            'return',
+            $this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID)->whatWasLeftOut(),
+        );
+    }
+
+    /**
+     * What a version has come to say since the papers were signed is no reason to refuse them. The
+     * question about the term is asked when the papers are written, and these are written: nothing
+     * is left that could answer it, so a signed proposal would stay unappliable for good.
+     *
+     * @return void
+     * @link \App\Model\Table\ContractProposalsTable::lastDayOfTheTerm()
+     */
+    public function testAVersionGivenAnEndSinceTheSignatureDoesNotStopTheChanges(): void
+    {
+        $proposal = $this->proposal([
+            'conclusion_date' => '2026-09-15',
+            'confirmations' => [],
+        ]);
+
+        (new ChangeApplication())->apply($proposal);
+
+        $this->assertTrue(
+            $this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID)->hasBeenApplied(),
+        );
+    }
+
+    /**
+     * A piece moved to another contract is gone from this one, which is what the preview says. It
+     * belongs to somebody else's contract now, so it is left where it is.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ChangeApplication::applyTheEquipment()
+     */
+    public function testEquipmentMovedToAnotherContractIsNotTakenBackFromThere(): void
+    {
+        $lent = $this->aPieceLent();
+        $proposal = $this->swapping($lent);
+
+        $equipments = $this->getTableLocator()->get('BorrowedEquipments');
+        $equipments->updateAll(['contract_id' => self::ANOTHER_CONTRACT_ID], ['id' => $lent]);
+
+        (new ChangeApplication())->apply(
+            $proposal,
+            leave_out_what_is_gone: true,
+            handed_over_on: new Date('2026-10-25'),
+        );
+
+        $this->assertNull($equipments->get($lent)->borrowed_until, 'It was taken back off the other contract.');
+        $this->assertArrayHasKey(
+            'return',
+            $this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID)->whatWasLeftOut(),
+        );
+    }
+
+    /**
+     * The same goes for a billing.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ChangeApplication::applyTheBillings()
+     */
+    public function testABillingMovedToAnotherContractIsNotEndedThere(): void
+    {
+        $proposal = $this->proposal([
+            'conclusion_date' => '2026-09-15',
+            'effective_from' => '2026-10-01',
+            'changes' => ['billings' => [[
+                'id' => self::GONE_LINE_ID,
+                'billing_id' => self::OPEN_BILLING_ID,
+                'terminates_only' => true,
+            ]]],
+        ]);
+
+        $billings = $this->getTableLocator()->get('Billings');
+        $billings->updateAll(['contract_id' => self::ANOTHER_CONTRACT_ID], ['id' => self::OPEN_BILLING_ID]);
+
+        (new ChangeApplication())->apply($proposal, null, false, false, true);
+
+        $this->assertNull($billings->get(self::OPEN_BILLING_ID)->billing_until, 'It was ended on the other contract.');
+        $this->assertArrayHasKey(
+            self::GONE_LINE_ID,
+            $this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID)->whatWasLeftOut(),
+        );
+    }
+
+    /**
+     * An exchange is drawn up before the equipment changes hands, so a day before that is a mistake
+     * and stops it. Somebody catching up on one that happened first may say so, and only then is
+     * the day taken as it stands.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ChangeApplication::apply()
+     */
+    public function testAnExchangeIsHandedOverBeforeItWasDrawnUpOnlyByCatchingUp(): void
+    {
+        $lent = $this->aPieceLent();
+        $proposal = $this->exchanging($lent);
+        $equipments = $this->getTableLocator()->get('BorrowedEquipments');
+        $theDayBefore = new Date('2026-10-19');
+
+        try {
+            (new ChangeApplication())->apply($proposal, handed_over_on: $theDayBefore);
+            $this->fail('An exchange was handed over before it was drawn up.');
+        } catch (RuntimeException) {
+            $this->assertNull($equipments->get($lent)->borrowed_until);
+        }
+
+        (new ChangeApplication())->apply($proposal, handed_over_on: $theDayBefore, catching_up: true);
+
+        $this->assertSame('2026-10-19', $equipments->get($lent)->get('borrowed_until')?->toDateString());
+    }
+
+    /**
+     * An exchange of borrowed equipments hands equipment over and touches nothing else: no version
+     * is started, and the one the contract has keeps the day it was signed.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ChangeApplication::apply()
+     */
+    public function testAnExchangeHandsEquipmentOverAndNothingElse(): void
+    {
+        $lent = $this->aPieceLent();
+        $versions = $this->getTableLocator()->get('ContractVersions');
+        $before = $versions->find()->where(['contract_id' => self::CONTRACT_ID])->count();
+        $signed = $versions->get(self::VERSION_ID)->get('conclusion_date');
+
+        (new ChangeApplication())->apply($this->exchanging($lent), handed_over_on: new Date('2026-10-24'));
+
+        $this->assertSame($before, $versions->find()->where(['contract_id' => self::CONTRACT_ID])->count());
+        $this->assertEquals($signed, $versions->get(self::VERSION_ID)->get('conclusion_date'));
+        $this->assertSame(
+            '2026-10-24',
+            $this->getTableLocator()->get('BorrowedEquipments')->get($lent)->borrowed_until?->toDateString(),
+        );
+        $this->assertNull(
+            $this->getTableLocator()->get('ContractProposals')->get(self::PROPOSAL_ID)->contract_version_id,
+        );
+    }
+
+    /**
+     * The exchange is drawn up before the equipment changes hands, so a day before it is refused.
+     *
+     * @return void
+     * @link \App\Contracts\Proposal\ChangeApplication::apply()
+     */
+    public function testAnExchangeIsNotHandedOverBeforeItWasDrawnUp(): void
+    {
+        $proposal = $this->exchanging($this->aPieceLent());
+
+        $this->expectException(RuntimeException::class);
+
+        (new ChangeApplication())->apply($proposal, handed_over_on: new Date('2026-10-19'));
+    }
+
+    /**
+     * A signed exchange of borrowed equipments drawn up on 20 October that ends the given piece.
+     *
+     * @param string $lent The piece taken back.
+     * @return \App\Model\Entity\ContractProposal
+     */
+    private function exchanging(string $lent): ContractProposal
+    {
+        $snapshot = $this->proposal()->snapshot;
+        $snapshot['version'] = null;
+        $snapshot['borrowed_equipments'] = [[
+            'id' => $lent,
+            'serial_number' => 'SN-OLD-1',
+            'equipment_type' => ['id' => self::EQUIPMENT_TYPE_ID, 'name' => 'Old box', 'price' => '1.00'],
+        ]];
+
+        return $this->proposal([
+            'purpose' => ProposalPurpose::EquipmentChange->value,
+            'contract_version_id' => null,
+            'effective_from' => '2026-10-20',
+            'conclusion_date' => '2026-10-22',
+            'snapshot' => $snapshot,
+            'changes' => ['equipments' => [['id' => 'end', 'move' => 'return', 'borrowed_equipment_id' => $lent]]],
+        ]);
+    }
+
+    /**
+     * A piece of equipment lent on the contract by the previous papers.
+     *
+     * @return string Its id.
+     */
+    private function aPieceLent(): string
+    {
+        $equipments = $this->getTableLocator()->get('BorrowedEquipments');
+        $equipment = $equipments->newEntity([
+            'customer_id' => '403bab0e-52cd-4a8e-83f8-43c2457d0481',
+            'contract_id' => self::CONTRACT_ID,
+            'equipment_type_id' => self::EQUIPMENT_TYPE_ID,
+            'serial_number' => 'SN-OLD-1',
+            'borrowed_from' => '2022-01-01',
+        ]);
+        $equipments->saveOrFail($equipment);
+
+        return (string)$equipment->id;
+    }
+
+    /**
+     * A signed new contract replacing the earlier version that takes the given piece back and lends
+     * a new one in its place.
+     *
+     * @param string $lent The piece taken back.
+     * @return \App\Model\Entity\ContractProposal
+     */
+    private function swapping(string $lent): ContractProposal
+    {
+        $replaced = $this->theVersionTheNewPapersTakeOverFrom();
+
+        $snapshot = $this->proposalWithoutAVersion([
+            'purpose' => ProposalPurpose::NewContract->value,
+            'effective_from' => '2026-11-01',
+            'conclusion_date' => '2026-10-20',
+            'terminates_contract_version_id' => $replaced->id,
+            'terminated_contract_number' => '2022/0001',
+        ])->snapshot;
+        $snapshot['borrowed_equipments'] = [[
+            'id' => $lent,
+            'serial_number' => 'SN-OLD-1',
+            'equipment_type' => ['id' => self::EQUIPMENT_TYPE_ID, 'name' => 'Old box', 'price' => '1.00'],
+        ]];
+
+        return $this->proposal([
+            'snapshot' => $snapshot,
+            'changes' => [
+                'equipments' => [
+                    ['id' => 'return', 'move' => 'return', 'borrowed_equipment_id' => $lent],
+                    [
+                        'id' => 'lend',
+                        'move' => 'lend',
+                        'equipment_type_id' => self::EQUIPMENT_TYPE_ID,
+                        'serial_number' => 'SN-NEW-1',
+                        'equipment_type' => ['id' => self::EQUIPMENT_TYPE_ID, 'name' => 'New box', 'price' => '1.00'],
+                    ],
+                ],
+            ],
+        ]);
+    }
+}
